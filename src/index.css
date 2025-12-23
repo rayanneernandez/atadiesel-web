@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Parkinsans:wght@300..800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos Globais de Debug */
+body {
+  @apply bg-slate-50 text-slate-900;
+  font-family: 'Inter', sans-serif;
+  /* Garante que o fundo seja visível mesmo se o Tailwind falhar parcialmente */
+  background-color: #f8fafc; 
+}@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-50 text-slate-900;
+  font-family: 'Inter', sans-serif;
+}
+
+.font-parkinsans {
+  font-family: 'Parkinsans', sans-serif;
+}
+
+/* Barra de rolagem personalizada */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1; 
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1; 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; 
+}
