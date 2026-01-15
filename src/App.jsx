@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import { 
   LayoutDashboard, 
   Package, 
@@ -29,7 +30,10 @@ import {
   Eye,
   MapPin,
   Clock,
-  CheckCircle
+  CheckCircle,
+  Award,
+  Download,
+  Upload
 } from 'lucide-react';
 import LoginScreen from './login';
 import jsPDF from 'jspdf';
@@ -168,11 +172,20 @@ const HighlightText = ({ text, highlight }) => {
 
 // --- SUB-TELAS ---
 
-const DashboardScreen = ({ globalSearchTerm }) => {
+const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) => {
   const [dateRange, setDateRange] = useState({
     start: new Date().toISOString().slice(0, 10),
     end: new Date().toISOString().slice(0, 10)
   });
+
+  // Cálculos em Tempo Real
+  const activeClients = new Set(deliveries.map(d => d.client)).size;
+  const totalOrders = deliveries.length;
+  const monthlyRevenue = deliveries.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
+  const netProfit = monthlyRevenue * 0.30; // Estimativa de 30% de margem
+
+  // Formatação de Moeda
+  const formatCurrency = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportConfig, setReportConfig] = useState({
@@ -256,9 +269,9 @@ const DashboardScreen = ({ globalSearchTerm }) => {
       doc.text('Relatório de Entregas', 14, yPos);
       yPos += 5;
       
-      const filteredDeliveries = mockDeliveries.filter(d => {
+      const filteredDeliveries = deliveries.filter(d => {
         if (reportConfig.deliveriesCompleted && d.status === 'Entregue') return true;
-        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente')) return true;
+        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação')) return true;
         return false;
       });
 
@@ -304,9 +317,9 @@ const DashboardScreen = ({ globalSearchTerm }) => {
     }
 
     if (reportConfig.deliveries) {
-      const filteredDeliveries = mockDeliveries.filter(d => {
+      const filteredDeliveries = deliveries.filter(d => {
         if (reportConfig.deliveriesCompleted && d.status === 'Entregue') return true;
-        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente')) return true;
+        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação')) return true;
         return false;
       });
 
@@ -447,7 +460,7 @@ const DashboardScreen = ({ globalSearchTerm }) => {
       <StatCard 
         icon={Users} 
         label={<HighlightText text="Clientes Ativos" highlight={globalSearchTerm} />}
-        value={<HighlightText text="1.250" highlight={globalSearchTerm} />}
+        value={<HighlightText text={activeClients.toString()} highlight={globalSearchTerm} />}
         trend="+12.5%" 
         trendUp={true}
         color="blue" 
@@ -455,23 +468,23 @@ const DashboardScreen = ({ globalSearchTerm }) => {
       <StatCard 
         icon={ShoppingBag} 
         label={<HighlightText text="Total de Pedidos" highlight={globalSearchTerm} />}
-        value={<HighlightText text="450" highlight={globalSearchTerm} />}
+        value={<HighlightText text={totalOrders.toString()} highlight={globalSearchTerm} />}
         trend="+8.2%" 
         trendUp={true}
         color="emerald" 
       />
       <StatCard 
         icon={DollarSign} 
-        label={<HighlightText text="Receita Mensal" highlight={globalSearchTerm} />}
-        value={<HighlightText text="R$ 125k" highlight={globalSearchTerm} />}
+        label={<HighlightText text="Receita Total" highlight={globalSearchTerm} />}
+        value={<HighlightText text={formatCurrency(monthlyRevenue)} highlight={globalSearchTerm} />}
         trend="-2.4%" 
         trendUp={false}
         color="amber" 
       />
       <StatCard 
         icon={TrendingUp} 
-        label={<HighlightText text="Lucro Líquido" highlight={globalSearchTerm} />}
-        value={<HighlightText text="R$ 32.5k" highlight={globalSearchTerm} />}
+        label={<HighlightText text="Lucro Estimado" highlight={globalSearchTerm} />}
+        value={<HighlightText text={formatCurrency(netProfit)} highlight={globalSearchTerm} />}
         trend="+15.3%" 
         trendUp={true}
         color="indigo" 
@@ -611,18 +624,13 @@ const DashboardScreen = ({ globalSearchTerm }) => {
   );
 };
 
-const ProductsScreen = ({ globalSearchTerm }) => {
+const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
   const [isCreateProductModalOpen, setIsCreateProductModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
-  const [products, setProducts] = useState([
-    { id: 1, name: 'Óleo Motor 5W30', description: 'Óleo sintético de alta performance', price: '48,00', promotionalPrice: '', stock: '120', category: 'Óleos', sku: 'OL-5W30', image: null },
-    { id: 2, name: 'Filtro de Ar Esportivo', description: 'Filtro lavável de alto fluxo', price: '125,00', promotionalPrice: '110,00', stock: '85', category: 'Filtros', sku: 'FIL-AR-01', image: null },
-    { id: 3, name: 'Kit Pastilha de Freio', description: 'Cerâmica, dianteira', price: '180,00', promotionalPrice: '', stock: '60', category: 'Freios', sku: 'FRE-001', image: null },
-    { id: 4, name: 'Amortecedor Traseiro', description: 'Gás pressurizado', price: '250,00', promotionalPrice: '', stock: '45', category: 'Suspensão', sku: 'SUS-TR-02', image: null },
-    { id: 5, name: 'Bateria 60Ah', description: 'Livre de manutenção', price: '350,00', promotionalPrice: '320,00', stock: '32', category: 'Elétrica', sku: 'BAT-60', image: null },
-  ]);
+  
+  // products agora vem das props
 
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -632,7 +640,8 @@ const ProductsScreen = ({ globalSearchTerm }) => {
     stock: '',
     category: '',
     sku: '',
-    image: null
+    image: null,
+    imageFile: null
   });
 
   const uniqueCategories = React.useMemo(() => {
@@ -687,36 +696,110 @@ const ProductsScreen = ({ globalSearchTerm }) => {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setNewProduct(prev => ({ ...prev, image: reader.result }));
+        setNewProduct(prev => ({ ...prev, image: reader.result, imageFile: file }));
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSaveProduct = () => {
-    if (isEditing) {
-      setProducts(prev => prev.map(p => p.id === newProduct.id ? newProduct : p));
-      console.log("Updating product:", newProduct);
-      alert("Produto atualizado com sucesso!");
-    } else {
-      const productWithId = { ...newProduct, id: Date.now() };
-      setProducts(prev => [...prev, productWithId]);
-      console.log("Creating product:", productWithId);
-      alert("Produto cadastrado com sucesso!");
+  const handleSaveProduct = async () => {
+    try {
+      let imageUrl = newProduct.image;
+      
+      // Upload de imagem se houver novo arquivo
+      if (newProduct.imageFile) {
+        const fileExt = newProduct.imageFile.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('produtos')
+          .upload(fileName, newProduct.imageFile);
+          
+        if (uploadError) throw uploadError;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('produtos')
+          .getPublicUrl(fileName);
+          
+        imageUrl = publicUrl;
+      }
+
+      const productData = {
+        nome: newProduct.name,
+        descricao: newProduct.description,
+        preco: parseFloat(newProduct.price.replace(/\./g, '').replace(',', '.')),
+        preco_promocional: newProduct.promotionalPrice ? parseFloat(newProduct.promotionalPrice.replace(/\./g, '').replace(',', '.')) : null,
+        estoque: parseInt(newProduct.stock),
+        categoria: newProduct.category,
+        sku: newProduct.sku,
+        imagem_url: imageUrl
+      };
+
+      if (isEditing) {
+        const { error } = await supabase.from('produtos').update(productData).eq('id', newProduct.id);
+        if (error) throw error;
+        alert("Produto atualizado com sucesso!");
+      } else {
+        const { error } = await supabase.from('produtos').insert([productData]);
+        if (error) throw error;
+        alert("Produto cadastrado com sucesso!");
+      }
+
+      onRefresh(); // Chama atualização no pai
+      setIsCreateProductModalOpen(false);
+      setIsEditing(false);
+      setNewProduct({
+          name: '',
+          description: '',
+          price: '',
+          promotionalPrice: '',
+          stock: '',
+          category: '',
+          sku: '',
+          image: null,
+          imageFile: null
+      });
+
+    } catch (error) {
+      console.error("Erro ao salvar produto:", error);
+      alert(`Erro ao salvar: ${error.message || JSON.stringify(error)}`);
     }
-    
-    setIsCreateProductModalOpen(false);
-    setIsEditing(false);
-    setNewProduct({
-        name: '',
-        description: '',
-        price: '',
-        promotionalPrice: '',
-        stock: '',
-        category: '',
-        sku: '',
-        image: null
-    });
+  };
+
+  const handleExportProducts = () => {
+    const ws = XLSX.utils.json_to_sheet(products);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Produtos");
+    XLSX.writeFile(wb, "produtos.xlsx");
+  };
+
+  const handleImportProducts = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        
+        const newProducts = data.map((item, index) => ({
+             id: Date.now() + index, // Gera novos IDs para evitar conflitos
+             name: item.name || item.Nome || '',
+             description: item.description || item.Descricao || '',
+             price: item.price || item.Preco || 0,
+             promotionalPrice: item.promotionalPrice || item.PrecoPromocional || '',
+             stock: item.stock || item.Estoque || 0,
+             category: item.category || item.Categoria || '',
+             sku: item.sku || item.SKU || '',
+             image: null // Importação de imagem via excel é complexa, deixamos nulo por enquanto
+        }));
+
+        // setProducts(prev => [...prev, ...newProducts]); // Comentado pois state é global
+        alert(`${newProducts.length} produtos importados! (Salvar no banco pendente)`);
+      };
+      reader.readAsBinaryString(file);
+    }
   };
 
   const handleEditProduct = (product) => {
@@ -725,9 +808,15 @@ const ProductsScreen = ({ globalSearchTerm }) => {
     setIsCreateProductModalOpen(true);
   };
 
-  const handleDeleteProduct = (id) => {
+  const handleDeleteProduct = async (id) => {
     if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-      setProducts(prev => prev.filter(p => p.id !== id));
+      const { error } = await supabase.from('produtos').delete().eq('id', id);
+      if (error) {
+        console.error("Erro ao excluir:", error);
+        alert("Erro ao excluir produto.");
+      } else {
+        onRefresh();
+      }
     }
   };
 
@@ -909,11 +998,23 @@ const ProductsScreen = ({ globalSearchTerm }) => {
         </div>
       )}
 
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gerenciar Produtos</h1>
-        <button onClick={handleNewProduct} className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">
-          <Plus size={20} /> Novo Produto
-        </button>
+        <div className="flex gap-2">
+            <button 
+                onClick={handleExportProducts} 
+                className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/30 text-sm font-medium"
+            >
+                <Download size={18} /> Exportar
+            </button>
+            <label className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-purple-700 transition-colors shadow-lg shadow-purple-500/30 cursor-pointer text-sm font-medium">
+                <Upload size={18} /> Importar
+                <input type="file" accept=".xlsx, .xls" onChange={handleImportProducts} className="hidden" />
+            </label>
+            <button onClick={handleNewProduct} className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium">
+              <Plus size={18} /> Novo Produto
+            </button>
+        </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-100">
         <div className="p-4 border-b border-slate-100 flex justify-end gap-4">
@@ -1001,11 +1102,24 @@ const ProductsScreen = ({ globalSearchTerm }) => {
 };
 
 const HighlightsScreen = ({ globalSearchTerm }) => {
-  const [highlights, setHighlights] = useState([
-    { id: 1, title: 'Promoção de Freio 1', description: 'Desconto imperdível em todo o setor de freios.', expiration: '2024-12-25', image: null },
-    { id: 2, title: 'Promoção de Freio 2', description: 'Compre 2 leve 3 em pastilhas selecionadas.', expiration: '2024-12-25', image: null },
-    { id: 3, title: 'Promoção de Freio 3', description: 'Troca de óleo grátis na compra do kit completo.', expiration: '2024-12-25', image: null },
-  ]);
+  const [highlights, setHighlights] = useState([]);
+
+  useEffect(() => {
+    fetchHighlights();
+  }, []);
+
+  const fetchHighlights = async () => {
+    const { data, error } = await supabase.from('destaques').select('*').order('criado_em', { ascending: false });
+    if (!error) {
+      setHighlights(data.map(h => ({
+        id: h.id,
+        title: h.titulo,
+        description: h.descricao,
+        expiration: h.valido_ate,
+        image: h.banner_url
+      })));
+    }
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -1016,7 +1130,8 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
     title: '',
     description: '',
     expiration: '',
-    image: null
+    image: null,
+    imageFile: null
   });
 
   const handleImageChange = (e) => {
@@ -1024,22 +1139,55 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setNewHighlight(prev => ({ ...prev, image: reader.result }));
+        setNewHighlight(prev => ({ ...prev, image: reader.result, imageFile: file }));
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSaveHighlight = () => {
-    if (isEditing) {
-      setHighlights(prev => prev.map(h => h.id === newHighlight.id ? newHighlight : h));
-      alert("Destaque atualizado com sucesso!");
-    } else {
-      const highlightWithId = { ...newHighlight, id: Date.now() };
-      setHighlights(prev => [...prev, highlightWithId]);
-      alert("Destaque criado com sucesso!");
+  const handleSaveHighlight = async () => {
+    try {
+      let imageUrl = newHighlight.image;
+      
+      if (newHighlight.imageFile) {
+        const fileExt = newHighlight.imageFile.name.split('.').pop();
+        const fileName = `banner_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('banners')
+          .upload(fileName, newHighlight.imageFile);
+          
+        if (uploadError) throw uploadError;
+        
+        const { data: { publicUrl } } = supabase.storage
+          .from('banners')
+          .getPublicUrl(fileName);
+          
+        imageUrl = publicUrl;
+      }
+
+      const highlightData = {
+        titulo: newHighlight.title,
+        descricao: newHighlight.description,
+        valido_ate: newHighlight.expiration,
+        banner_url: imageUrl
+      };
+
+      if (isEditing) {
+        const { error } = await supabase.from('destaques').update(highlightData).eq('id', newHighlight.id);
+        if (error) throw error;
+        alert("Destaque atualizado com sucesso!");
+      } else {
+        const { error } = await supabase.from('destaques').insert([highlightData]);
+        if (error) throw error;
+        alert("Destaque criado com sucesso!");
+      }
+      
+      fetchHighlights();
+      closeModal();
+    } catch (error) {
+      console.error("Erro ao salvar destaque:", error);
+      alert("Erro ao salvar destaque.");
     }
-    closeModal();
   };
 
   const handleDeleteHighlight = (id) => {
@@ -1047,9 +1195,12 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (highlightToDelete) {
-      setHighlights(prev => prev.filter(h => h.id !== highlightToDelete));
+      const { error } = await supabase.from('destaques').delete().eq('id', highlightToDelete);
+      if (!error) {
+         fetchHighlights();
+      }
       setIsDeleteModalOpen(false);
       setHighlightToDelete(null);
     }
@@ -1253,12 +1404,35 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
   );
 };
 
-const UsersScreen = ({ globalSearchTerm }) => {
-  const [users, setUsers] = useState([
-    { id: 1, name: 'João Silva', email: 'joao@example.com', role: 'Cliente', status: 'Ativo', visits: 15, totalSpent: 2450.00, lastVisit: '2024-03-10' },
-    { id: 2, name: 'Maria Souza', email: 'maria@example.com', role: 'Administrador', status: 'Ativo', visits: 142, totalSpent: 0.00, lastVisit: '2024-03-12' },
-    { id: 3, name: 'Carlos Oliveira', email: 'carlos@example.com', role: 'Cliente', status: 'Inativo', visits: 3, totalSpent: 450.50, lastVisit: '2024-01-15' },
-  ]);
+const UsersScreen = ({ globalSearchTerm, session }) => {
+  const [users, setUsers] = useState([]);
+
+  // Buscar usuários reais do banco
+  useEffect(() => {
+    fetchUsers();
+  }, [session]);
+
+  const fetchUsers = async () => {
+    try {
+      const { data, error } = await supabase.from('administradores').select('*').order('nome');
+      if (error) throw error;
+      
+      const formatted = data.map(u => ({
+        id: u.id,
+        name: u.nome,
+        email: u.email,
+        role: u.cargo || 'Administrador',
+        // Status: Só é 'Ativo' se for o usuário logado atual
+        status: (session?.user?.email === u.email) ? 'Ativo' : 'Inativo', 
+        visits: 0, // Dados fictícios por enquanto
+        totalSpent: 0,
+        lastVisit: '-'
+      }));
+      setUsers(formatted);
+    } catch (error) {
+      console.error("Erro ao buscar usuários:", error);
+    }
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
@@ -1272,27 +1446,47 @@ const UsersScreen = ({ globalSearchTerm }) => {
     role: 'Administrador'
   });
 
-  const handleSaveUser = () => {
+  const handleSaveUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
       alert("Por favor, preencha todos os campos.");
       return;
     }
 
-    const userToAdd = {
-      id: Date.now(),
-      name: newUser.name,
-      email: newUser.email,
-      role: newUser.role,
-      status: 'Ativo',
-      visits: 0,
-      totalSpent: 0,
-      lastVisit: '-'
-    };
+    try {
+      // 1. Criar usuário no Auth (Para permitir login)
+      // Nota: Isso pode enviar um email de confirmação dependendo da configuração do Supabase
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: newUser.email,
+        password: newUser.password,
+        options: {
+          data: {
+            full_name: newUser.name,
+            role: newUser.role
+          }
+        }
+      });
 
-    setUsers(prev => [...prev, userToAdd]);
-    setIsModalOpen(false);
-    setNewUser({ name: '', email: '', password: '', role: 'Administrador' });
-    alert("Administrador criado com sucesso!");
+      if (authError) throw authError;
+
+      // 2. Criar usuário na tabela pública (Para gestão e listagem)
+      const { error: dbError } = await supabase.from('administradores').insert([{
+        nome: newUser.name,
+        email: newUser.email,
+        cargo: newUser.role,
+        criado_em: new Date().toISOString()
+      }]);
+
+      if (dbError) throw dbError;
+
+      alert("Administrador cadastrado com sucesso! (Se o login automático falhar, verifique se precisa confirmar o email)");
+      fetchUsers();
+      setIsModalOpen(false);
+      setNewUser({ name: '', email: '', password: '', role: 'Administrador' });
+
+    } catch (error) {
+      console.error("Erro ao criar usuário:", error);
+      alert("Erro ao criar administrador: " + (error.message || error.error_description || JSON.stringify(error)));
+    }
   };
 
   const handleViewDetails = (user) => {
@@ -1556,15 +1750,28 @@ const UsersScreen = ({ globalSearchTerm }) => {
   );
 };
 
-const DeliveriesScreen = ({ globalSearchTerm }) => {
+const DeliveriesScreen = ({ globalSearchTerm, deliveries = mockDeliveries, onUpdateStatus }) => {
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
-  const filteredDeliveries = mockDeliveries.filter(d => 
-    d.client.toLowerCase().includes(globalSearchTerm.toLowerCase()) ||
-    d.items.toLowerCase().includes(globalSearchTerm.toLowerCase()) ||
-    d.id.toString().includes(globalSearchTerm)
-  );
+  const statusPriority = {
+    'Pendente': 1,
+    'Em Preparação': 2,
+    'Em Trânsito': 3,
+    'Entregue': 4
+  };
+
+  const filteredDeliveries = deliveries
+    .filter(d => 
+      d.client.toLowerCase().includes(globalSearchTerm.toLowerCase()) ||
+      d.items.toLowerCase().includes(globalSearchTerm.toLowerCase()) ||
+      d.id.toString().includes(globalSearchTerm)
+    )
+    .sort((a, b) => {
+      const priorityA = statusPriority[a.status] || 99;
+      const priorityB = statusPriority[b.status] || 99;
+      return priorityA - priorityB;
+    });
 
   const handleOpenDetails = (delivery) => {
     setSelectedDelivery(delivery);
@@ -1574,8 +1781,10 @@ const DeliveriesScreen = ({ globalSearchTerm }) => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'Entregue': return 'bg-green-100 text-green-800 border-green-200';
-      case 'Em Trânsito': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'Em Trânsito': return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'Em Preparação': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
       case 'Pendente': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'Cancelado': return 'bg-red-100 text-red-800 border-red-200';
       default: return 'bg-slate-100 text-slate-800 border-slate-200';
     }
   };
@@ -1586,7 +1795,12 @@ const DeliveriesScreen = ({ globalSearchTerm }) => {
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredDeliveries.map((delivery) => (
-           <div key={delivery.id} className={`bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 ${delivery.status === 'Entregue' ? 'border-l-green-500' : delivery.status === 'Em Trânsito' ? 'border-l-yellow-400' : 'border-l-blue-500'}`}>
+           <div key={delivery.id} className={`bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 ${
+             delivery.status === 'Entregue' ? 'border-l-green-500' : 
+             delivery.status === 'Em Trânsito' ? 'border-l-amber-500' : 
+             delivery.status === 'Em Preparação' ? 'border-l-indigo-500' : 
+             'border-l-blue-500'
+           }`}>
               <div className="flex justify-between items-start mb-4">
                  <h3 className="font-bold text-slate-900">
                     <HighlightText text={`Pedido #${delivery.id}`} highlight={globalSearchTerm} />
@@ -1607,16 +1821,50 @@ const DeliveriesScreen = ({ globalSearchTerm }) => {
                 </p>
               </div>
               
-              <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
-                 <span className="font-bold text-slate-900">
-                    R$ {delivery.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                 </span>
-                 <button 
-                    onClick={() => handleOpenDetails(delivery)}
-                    className="text-sm text-primary hover:underline flex items-center gap-1"
-                 >
-                    <Eye size={16} /> Ver Detalhes
-                 </button>
+              <div className="mt-4 pt-4 border-t border-slate-50 flex flex-col gap-3">
+                 <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-900">
+                        R$ {delivery.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                    <button 
+                        onClick={() => handleOpenDetails(delivery)}
+                        className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                        <Eye size={16} /> Ver Detalhes
+                    </button>
+                 </div>
+                 
+                 {/* Action Buttons */}
+                 {(delivery.status === 'Pendente' || delivery.status === 'Em Preparação') && (
+                    <div className="flex gap-2 w-full">
+                       <button 
+                           onClick={() => {
+                             if(window.confirm('Tem certeza que deseja recusar este pedido?')) {
+                               onUpdateStatus(delivery.id, 'Cancelado');
+                             }
+                           }}
+                           className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-lg transition-colors shadow-sm text-sm border border-red-100"
+                       >
+                           Recusar
+                       </button>
+                       <button 
+                           onClick={() => onUpdateStatus(delivery.id, 'Em Trânsito')}
+                           className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
+                       >
+                           Enviar para Entrega
+                       </button>
+                    </div>
+                 )}
+                 {delivery.status === 'Em Trânsito' && (
+                    <div className="w-full py-2 bg-slate-100 text-slate-500 text-xs font-medium rounded-lg text-center italic border border-slate-200">
+                        Aguardando confirmação do cliente...
+                    </div>
+                 )}
+                 {delivery.status === 'Cancelado' && (
+                    <div className="w-full py-2 bg-red-50 text-red-500 text-xs font-medium rounded-lg text-center border border-red-100">
+                        Pedido Recusado
+                    </div>
+                 )}
               </div>
            </div>
         ))}
@@ -1712,7 +1960,7 @@ const DeliveriesScreen = ({ globalSearchTerm }) => {
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end shrink-0">
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end shrink-0 gap-3">
               <button 
                 onClick={() => setIsDetailsModalOpen(false)}
                 className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium rounded-xl transition-colors"
@@ -1785,25 +2033,880 @@ const StatCard = ({ icon: Icon, label, value, trend, trendUp, color }) => {
   );
 };
 
+const LoyaltyScreen = ({ globalSearchTerm }) => {
+  const [fidelityType, setFidelityType] = useState('cashback'); // 'cashback' | 'points'
+  const [activeTab, setActiveTab] = useState('config'); // 'config' | 'limits' | 'incentives'
+
+  const [config, setConfig] = useState({
+    calculationType: 'percentual',
+    cashbackValue: 1,
+    signupBonus: 0,
+    birthdayBonus: 0,
+    validityMonths: 117,
+    enableAccumulationLock: true,
+    accumulationLockLimit: 101,
+    minRedemption: 3,
+    maxRedemption: 100,
+    maxRedemptionsPerDay: 1,
+    enableAvailabilityDelay: false,
+    availabilityDelayUnit: 'immediate', // 'immediate' | 'hours' | 'days'
+    availabilityDelayValue: 0,
+    accumulationDuringRedemption: 'no_accumulation', // 'no_accumulation' | 'total' | 'difference'
+    enableRetentionProgram: false,
+    retentionMultiplier6Months: 10,
+    retentionMultiplier9Months: 15,
+    retentionMultiplier12Months: 20,
+    retentionBonus6Months: 0.50,
+    retentionBonus9Months: 0.75,
+    retentionBonus12Months: 1.00,
+    enableReferralProgram: true,
+    referralBonusIndicador: 10,
+    referralBonusIndicado: 10,
+    fuelTypes: [
+      { id: 1, name: 'GASOLINA A COMUM', code: '00001', cashbackPercent: 0, active: true }
+    ],
+    enableEvaluationBonus: false,
+    evaluationBonusType: 'fixed',
+    evaluationBonusValue: 5.00,
+    evaluationMinStars: 'any'
+  });
+
+  const [showToast, setShowToast] = useState(false);
+
+  const handleSave = () => {
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Programa de Fidelidade</h1>
+          <p className="text-slate-500 mt-1">Configure como os clientes acumularão benefícios no programa de fidelidade</p>
+        </div>
+      </div>
+
+      {/* Type Selector */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <button 
+          onClick={() => setFidelityType('cashback')}
+          className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-4 ${
+            fidelityType === 'cashback' 
+              ? 'bg-blue-50 border-blue-500 text-blue-600' 
+              : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+          }`}
+        >
+          <div className={`p-4 rounded-full ${fidelityType === 'cashback' ? 'bg-blue-100' : 'bg-slate-100'}`}>
+            <DollarSign size={32} />
+          </div>
+          <div className="text-center">
+            <h3 className="text-xl font-bold mb-1 text-slate-800">Cashback</h3>
+            <p className="text-sm opacity-80">Dinheiro de volta</p>
+          </div>
+        </button>
+
+        <button 
+          onClick={() => setFidelityType('points')}
+          className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-4 ${
+            fidelityType === 'points' 
+              ? 'bg-blue-50 border-blue-500 text-blue-600' 
+              : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+          }`}
+        >
+          <div className={`p-4 rounded-full ${fidelityType === 'points' ? 'bg-blue-100' : 'bg-slate-100'}`}>
+            <Star size={32} />
+          </div>
+          <div className="text-center">
+            <h3 className="text-xl font-bold mb-1 text-slate-800">Pontuação</h3>
+            <p className="text-sm opacity-80">Sistema de pontos</p>
+          </div>
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
+        {['Configurações', 'Limites de Resgate', 'Programas de Incentivo'].map((tab) => {
+           const key = tab === 'Configurações' ? 'config' : tab === 'Limites de Resgate' ? 'limits' : 'incentives';
+           return (
+             <button
+               key={key}
+               onClick={() => setActiveTab(key)}
+               className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                 activeTab === key 
+                   ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+               }`}
+             >
+               {tab}
+             </button>
+           );
+        })}
+      </div>
+
+      {/* Content */}
+      <div className="space-y-6 animate-in fade-in duration-300">
+        
+        {/* Configurações Tab */}
+        {activeTab === 'config' && (
+          <>
+            {/* Configuração de Cashback */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Configuração de Cashback 
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Defina como o cashback será calculado e distribuído</p>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-3">Tipo de Cálculo</label>
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${config.calculationType === 'percentual' ? 'border-blue-600' : 'border-slate-300 group-hover:border-blue-400'}`}>
+                        {config.calculationType === 'percentual' && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                      </div>
+                      <input 
+                        type="radio" 
+                        name="calcType" 
+                        checked={config.calculationType === 'percentual'}
+                        onChange={() => setConfig({...config, calculationType: 'percentual'})}
+                        className="hidden"
+                      />
+                      <span className="text-slate-700">Percentual</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${config.calculationType === 'fixed' ? 'border-blue-600' : 'border-slate-300 group-hover:border-blue-400'}`}>
+                        {config.calculationType === 'fixed' && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                      </div>
+                      <input 
+                        type="radio" 
+                        name="calcType" 
+                        checked={config.calculationType === 'fixed'}
+                        onChange={() => setConfig({...config, calculationType: 'fixed'})}
+                        className="hidden"
+                      />
+                      <span className="text-slate-700">Valor Fixo</span>
+                    </label>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">Escolha entre percentual sobre o valor gasto ou valor fixo por compra</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    {config.calculationType === 'percentual' ? 'Percentual de Cashback (%)' : 'Valor do Cashback (R$)'}
+                  </label>
+                  <input 
+                    type="number" 
+                    value={config.cashbackValue}
+                    onChange={(e) => setConfig({...config, cashbackValue: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">
+                    {config.calculationType === 'percentual' ? 'Percentual do valor da compra que retorna como cashback' : 'Valor fixo devolvido em cada compra'}
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Bônus */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Bônus de Cashback
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Configure bônus especiais em cashback</p>
+              
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Bônus de Cadastro (R$)</label>
+                  <input 
+                    type="number" 
+                    value={config.signupBonus}
+                    onChange={(e) => setConfig({...config, signupBonus: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Cashback dado ao cliente no primeiro cadastro</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Bônus de Aniversário (R$)</label>
+                  <input 
+                    type="number" 
+                    value={config.birthdayBonus}
+                    onChange={(e) => setConfig({...config, birthdayBonus: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Cashback dado ao cliente no mês do aniversário</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Validade */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Validade do Cashback
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Por quanto tempo o cashback fica disponível</p>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Validade (meses)</label>
+                <input 
+                  type="number" 
+                  value={config.validityMonths}
+                  onChange={(e) => setConfig({...config, validityMonths: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                />
+                <p className="text-xs text-slate-400 mt-2">Após este período, o cashback não resgatado expira</p>
+              </div>
+            </section>
+
+            {/* Trava */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Trava de Acúmulo
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Limite para forçar resgate antes de continuar acumulando</p>
+              
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div>
+                    <span className="text-sm font-medium text-slate-800 block">Habilitar Trava</span>
+                    <span className="text-xs text-slate-500">Cliente precisa resgatar para continuar acumulando</span>
+                  </div>
+                  <button 
+                    onClick={() => setConfig({...config, enableAccumulationLock: !config.enableAccumulationLock})}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${config.enableAccumulationLock ? 'bg-blue-600' : 'bg-slate-300'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enableAccumulationLock ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+
+                {config.enableAccumulationLock && (
+                  <div className="animate-in fade-in slide-in-from-top-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Limite para Trava (R$)</label>
+                    <input 
+                      type="number" 
+                      value={config.accumulationLockLimit}
+                      onChange={(e) => setConfig({...config, accumulationLockLimit: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                    />
+                    <p className="text-xs text-slate-400 mt-2">Ao atingir este valor, novas acumulações serão bloqueadas</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        )}
+
+        {/* Limites Tab */}
+        {activeTab === 'limits' && (
+           <>
+             {/* Limites de Resgate */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Limites de Resgate
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Defina valores mínimos e máximos para resgate</p>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Valor Mínimo de Resgate (R$)</label>
+                  <input 
+                    type="number" 
+                    value={config.minRedemption}
+                    onChange={(e) => setConfig({...config, minRedemption: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Valor mínimo de cashback para realizar um resgate</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Valor Máximo de Resgate (R$)</label>
+                  <input 
+                    type="number" 
+                    value={config.maxRedemption}
+                    onChange={(e) => setConfig({...config, maxRedemption: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Valor máximo de cashback por resgate</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Limite de Resgates (24h) */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Limite de Resgates (24h)
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Controle quantos resgates podem ser feitos por dia</p>
+
+              <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Máximo de Resgates em 24h</label>
+                  <input 
+                    type="number" 
+                    value={config.maxRedemptionsPerDay}
+                    onChange={(e) => setConfig({...config, maxRedemptionsPerDay: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Número máximo de resgates que um cliente pode fazer em 24 horas</p>
+              </div>
+            </section>
+
+            {/* Prazo para Disponibilização */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Prazo para Disponibilização
+               </h3>
+               <p className="text-slate-500 text-sm mb-6">Tempo de espera para o saldo ficar disponível para resgate</p>
+
+               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div>
+                    <span className="text-sm font-medium text-slate-800 block">Habilitar Prazo</span>
+                    <span className="text-xs text-slate-500">Adicionar tempo de espera antes do resgate</span>
+                  </div>
+                  <button 
+                    onClick={() => setConfig({...config, enableAvailabilityDelay: !config.enableAvailabilityDelay})}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${config.enableAvailabilityDelay ? 'bg-blue-600' : 'bg-slate-300'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enableAvailabilityDelay ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+
+                {config.enableAvailabilityDelay && (
+                   <div className="animate-in fade-in slide-in-from-top-2 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Unidade de Tempo</label>
+                        <select 
+                          value={config.availabilityDelayUnit}
+                          onChange={(e) => setConfig({...config, availabilityDelayUnit: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all appearance-none cursor-pointer"
+                        >
+                          <option value="immediate">Imediato</option>
+                          <option value="hours">Horas</option>
+                          <option value="days">Dias</option>
+                        </select>
+                      </div>
+
+                      {config.availabilityDelayUnit !== 'immediate' && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">
+                             {config.availabilityDelayUnit === 'hours' ? 'Quantidade de Horas' : 'Quantidade de Dias'}
+                          </label>
+                          <input 
+                            type="number" 
+                            min="1"
+                            value={config.availabilityDelayValue}
+                            onChange={(e) => setConfig({...config, availabilityDelayValue: e.target.value})}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                          />
+                        </div>
+                      )}
+                   </div>
+                )}
+            </section>
+
+             {/* Acúmulo Durante Resgate */}
+             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Acúmulo Durante Resgate
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Como funciona o acúmulo quando o cliente está usando cashback</p>
+
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer hover:border-blue-500/50 transition-colors group">
+                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${config.accumulationDuringRedemption === 'no_accumulation' ? 'border-blue-600' : 'border-slate-300 group-hover:border-blue-400'}`}>
+                    {config.accumulationDuringRedemption === 'no_accumulation' && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                  </div>
+                  <input 
+                    type="radio" 
+                    name="accumulationRule" 
+                    checked={config.accumulationDuringRedemption === 'no_accumulation'}
+                    onChange={() => setConfig({...config, accumulationDuringRedemption: 'no_accumulation'})}
+                    className="hidden"
+                  />
+                  <div>
+                    <span className="text-slate-800 block font-medium">Sem Acúmulo</span>
+                    <span className="text-xs text-slate-500">Cliente não acumula durante o resgate</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer hover:border-blue-500/50 transition-colors group">
+                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${config.accumulationDuringRedemption === 'total' ? 'border-blue-600' : 'border-slate-300 group-hover:border-blue-400'}`}>
+                    {config.accumulationDuringRedemption === 'total' && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                  </div>
+                  <input 
+                    type="radio" 
+                    name="accumulationRule" 
+                    checked={config.accumulationDuringRedemption === 'total'}
+                    onChange={() => setConfig({...config, accumulationDuringRedemption: 'total'})}
+                    className="hidden"
+                  />
+                   <div>
+                    <span className="text-slate-800 block font-medium">Acúmulo Total</span>
+                    <span className="text-xs text-slate-500">Acumula normalmente sobre o valor total</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer hover:border-blue-500/50 transition-colors group">
+                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${config.accumulationDuringRedemption === 'difference' ? 'border-blue-600' : 'border-slate-300 group-hover:border-blue-400'}`}>
+                    {config.accumulationDuringRedemption === 'difference' && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                  </div>
+                  <input 
+                    type="radio" 
+                    name="accumulationRule" 
+                    checked={config.accumulationDuringRedemption === 'difference'}
+                    onChange={() => setConfig({...config, accumulationDuringRedemption: 'difference'})}
+                    className="hidden"
+                  />
+                   <div>
+                    <span className="text-slate-800 block font-medium">Acúmulo sobre Diferença</span>
+                    <span className="text-xs text-slate-500">Acumula apenas sobre o valor pago (total - resgate)</span>
+                  </div>
+                </label>
+              </div>
+            </section>
+           </>
+        )}
+
+        {/* Programas de Incentivo Tab */}
+        {activeTab === 'incentives' && (
+           <div className="space-y-6">
+              
+              {/* Programa de Retenção */}
+              <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center mb-1">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 rounded-full bg-red-500/20 text-red-500">
+                      <Award size={16} />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800">Programa de Retenção</h3>
+                    <Info size={16} className="text-slate-400" />
+                  </div>
+                  <button 
+                    onClick={() => setConfig({...config, enableRetentionProgram: !config.enableRetentionProgram})}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${config.enableRetentionProgram ? 'bg-blue-600' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enableRetentionProgram ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+                <p className="text-slate-500 text-sm">Ofereça multiplicadores de cashback para clientes que se comprometerem com sua rede</p>
+
+                {config.enableRetentionProgram && (
+                  <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                    <label className="block text-sm font-medium text-slate-800 mb-3">Multiplicadores de Cashback (%)</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <span className="text-xs text-slate-500 mb-1 block">6 meses</span>
+                        <input 
+                          type="number" 
+                          value={config.retentionMultiplier6Months}
+                          onChange={(e) => setConfig({...config, retentionMultiplier6Months: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">+{config.retentionMultiplier6Months}% de bônus</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-500 mb-1 block">9 meses</span>
+                        <input 
+                          type="number" 
+                          value={config.retentionMultiplier9Months}
+                          onChange={(e) => setConfig({...config, retentionMultiplier9Months: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">+{config.retentionMultiplier9Months}% de bônus</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-500 mb-1 block">12 meses</span>
+                        <input 
+                          type="number" 
+                          value={config.retentionMultiplier12Months}
+                          onChange={(e) => setConfig({...config, retentionMultiplier12Months: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">+{config.retentionMultiplier12Months}% de bônus</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* Benefícios de Renovação */}
+              <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex items-center gap-2 mb-1">
+                   <div className="p-1 rounded-full bg-blue-500/20 text-blue-500">
+                      <FileText size={16} />
+                   </div>
+                   <h3 className="text-lg font-bold text-slate-800">Benefícios de Renovação</h3>
+                   <Info size={16} className="text-slate-400" />
+                </div>
+                <p className="text-slate-500 text-sm mb-6">Bônus para clientes que renovarem o compromisso de retenção</p>
+                
+                <label className="block text-sm font-medium text-slate-800 mb-3">Bônus de Renovação em R$</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <span className="text-xs text-slate-500 mb-1 block">6 meses</span>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={config.retentionBonus6Months}
+                      onChange={(e) => setConfig({...config, retentionBonus6Months: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">R$ {Number(config.retentionBonus6Months).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500 mb-1 block">9 meses</span>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={config.retentionBonus9Months}
+                      onChange={(e) => setConfig({...config, retentionBonus9Months: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">R$ {Number(config.retentionBonus9Months).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500 mb-1 block">12 meses</span>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      value={config.retentionBonus12Months}
+                      onChange={(e) => setConfig({...config, retentionBonus12Months: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">R$ {Number(config.retentionBonus12Months).toFixed(2)}</p>
+                  </div>
+                </div>
+              </section>
+
+              {/* Programa de Indicação */}
+              <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center mb-1">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 rounded-full bg-purple-500/20 text-purple-500">
+                      <Users size={16} />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800">Programa de Indicação</h3>
+                    <Info size={16} className="text-slate-400" />
+                  </div>
+                  <button 
+                    onClick={() => setConfig({...config, enableReferralProgram: !config.enableReferralProgram})}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${config.enableReferralProgram ? 'bg-blue-600' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enableReferralProgram ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+                <p className="text-slate-500 text-sm">Recompense clientes que indicarem novos usuários</p>
+
+                {config.enableReferralProgram && (
+                  <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-300 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-800 mb-2">Bônus Indicador (R$)</label>
+                      <input 
+                        type="number" 
+                        value={config.referralBonusIndicador}
+                        onChange={(e) => setConfig({...config, referralBonusIndicador: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Quem indica recebe</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-800 mb-2">Bônus Indicado (R$)</label>
+                      <input 
+                        type="number" 
+                        value={config.referralBonusIndicado}
+                        onChange={(e) => setConfig({...config, referralBonusIndicado: e.target.value})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Quem foi indicado recebe</p>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              <h2 className="text-lg font-bold text-slate-800 mt-8">Configurações Avançadas</h2>
+
+              {/* Bonificação por Avaliação */}
+              <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex items-center gap-2 mb-1">
+                   <div className="p-1 rounded-full bg-blue-500/20 text-blue-500">
+                      <Star size={16} />
+                   </div>
+                   <h3 className="text-lg font-bold text-slate-800">Bonificação por Avaliação</h3>
+                </div>
+                <p className="text-slate-500 text-sm mb-6">Recompense seus clientes por deixarem avaliações</p>
+                
+                <div className="space-y-6">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex justify-between items-center">
+                    <div>
+                       <span className="text-slate-800 font-medium block text-sm">Ativar Bonificação</span>
+                       <span className="text-xs text-slate-500">Sistema de bonificação {config.enableEvaluationBonus ? 'ativado' : 'desativado'}</span>
+                    </div>
+                    <button 
+                      onClick={() => setConfig({...config, enableEvaluationBonus: !config.enableEvaluationBonus})}
+                      className={`w-12 h-6 rounded-full transition-colors relative ${config.enableEvaluationBonus ? 'bg-blue-600' : 'bg-slate-300'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enableEvaluationBonus ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Modo de Cálculo</label>
+                    <select 
+                      value={config.evaluationBonusType}
+                      onChange={(e) => setConfig({...config, evaluationBonusType: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="fixed">Cashback - Valor Fixo</option>
+                      <option value="percentual">Cashback - Percentual</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Valor do Cashback (R$)</label>
+                    <input 
+                      type="number" 
+                      value={config.evaluationBonusValue}
+                      onChange={(e) => setConfig({...config, evaluationBonusValue: e.target.value})}
+                      placeholder="Ex: 5.00"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Estrelas Mínimas (Opcional)</label>
+                    <select 
+                      value={config.evaluationMinStars}
+                      onChange={(e) => setConfig({...config, evaluationMinStars: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="any">Qualquer avaliação</option>
+                      <option value="1">1 estrela ou mais</option>
+                      <option value="2">2 estrelas ou mais</option>
+                      <option value="3">3 estrelas ou mais</option>
+                      <option value="4">4 estrelas ou mais</option>
+                      <option value="5">Apenas 5 estrelas</option>
+                    </select>
+                    <p className="text-xs text-slate-500 mt-2">Bonificação será aplicada para {config.evaluationMinStars === 'any' ? 'qualquer avaliação' : `avaliações com ${config.evaluationMinStars} ou mais estrelas`}, independente das estrelas</p>
+                  </div>
+
+                  <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold text-sm transition-colors w-full md:w-auto">
+                    Salvar Configuração
+                  </button>
+                </div>
+              </section>
+           </div>
+        )}
+      </div>
+
+      {/* Footer Actions */}
+      <div className="flex justify-end pt-4 border-t border-slate-200">
+        <button 
+          onClick={handleSave}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center gap-2"
+        >
+             <CheckCircle size={24} /> Salvar Alterações
+        </button>
+      </div>
+
+      {/* Toast */}
+       {showToast && (
+        <div className="fixed top-8 right-8 bg-white border-l-4 border-emerald-500 shadow-2xl rounded-lg p-4 flex items-center gap-4 z-50 animate-in fade-in slide-in-from-top-4 duration-300 max-w-md">
+          <div className="bg-emerald-100 p-2 rounded-full text-emerald-600">
+            <CheckCircle size={24} />
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800">Sucesso!</h4>
+            <p className="text-sm text-slate-600">Configurações salvas com sucesso.</p>
+          </div>
+          <button 
+            onClick={() => setShowToast(false)} 
+            className="text-slate-400 hover:text-slate-600 ml-2 p-1 rounded-full hover:bg-slate-100 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- APP PRINCIPAL ---
 
 function App() {
+  const [session, setSession] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
+  const [deliveries, setDeliveries] = useState(mockDeliveries); // Inicializa com mock, depois carrega do Supabase
+  const [products, setProducts] = useState([]);
 
-  const deliveryRequests = mockDeliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Trânsito');
+  // Autenticação Supabase
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setIsAuthenticated(!!session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setIsAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Buscar Entregas do Supabase
+  const fetchDeliveries = async () => {
+    const { data, error } = await supabase
+      .from('entregas')
+      .select(`
+        *,
+        itens_entrega (
+          produto_nome,
+          quantidade,
+          preco_unitario
+        )
+      `)
+      .order('criado_em', { ascending: false });
+      
+    if (error) {
+       console.error('Erro ao buscar entregas:', error);
+    } else {
+       const formatted = data.map(d => ({
+          id: d.id,
+          client: d.cliente_nome || 'Cliente',
+          items: d.itens_entrega.map(i => i.produto_nome).join(', '),
+          itemsList: d.itens_entrega.map(i => ({
+              name: i.produto_nome,
+              quantity: i.quantidade,
+              unitPrice: i.preco_unitario
+          })),
+          distance: d.distancia || '0km',
+          status: d.status,
+          date: new Date(d.criado_em).toLocaleDateString('pt-BR'),
+          value: d.valor_total,
+          time: new Date(d.criado_em).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+          statusTimestamp: new Date(d.atualizado_em).getTime()
+       }));
+       setDeliveries(formatted.length > 0 ? formatted : mockDeliveries);
+    }
+  };
+
+  const fetchProducts = async () => {
+    const { data, error } = await supabase.from('produtos').select('*').order('criado_em', { ascending: false });
+    if (error) {
+      console.error("Erro ao buscar produtos:", error);
+    } else {
+      setProducts(data.map(p => ({
+        id: p.id,
+        name: p.nome,
+        description: p.descricao,
+        price: p.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
+        promotionalPrice: p.preco_promocional ? p.preco_promocional.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '',
+        stock: p.estoque,
+        category: p.categoria,
+        sku: p.sku,
+        image: p.imagem_url
+      })));
+    }
+  };
+
+  useEffect(() => {
+    if (session) {
+      fetchDeliveries();
+      fetchProducts();
+      
+      const channel = supabase
+        .channel('entregas_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => {
+           fetchDeliveries();
+        })
+        .subscribe();
+      
+      const productsChannel = supabase
+        .channel('produtos_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' }, () => {
+           fetchProducts();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+        supabase.removeChannel(productsChannel);
+      }
+    }
+  }, [session]);
+
+  const handleUpdateDeliveryStatus = async (id, newStatus) => {
+    // Atualização Otimista
+    setDeliveries(prev => prev.map(d => d.id === id ? { 
+      ...d, 
+      status: newStatus,
+      statusTimestamp: newStatus === 'Em Trânsito' ? Date.now() : d.statusTimestamp 
+    } : d));
+
+    const { error } = await supabase
+      .from('entregas')
+      .update({ 
+        status: newStatus,
+        atualizado_em: new Date().toISOString()
+      })
+      .eq('id', id);
+
+    if (error) {
+      console.error("Erro ao atualizar status:", error);
+      fetchDeliveries(); // Reverte em caso de erro
+    }
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const TWO_HOURS = 2 * 60 * 60 * 1000;
+      
+      setDeliveries(prev => {
+        const hasUpdates = prev.some(d => 
+          d.status === 'Em Trânsito' && 
+          d.statusTimestamp && 
+          (now - d.statusTimestamp > TWO_HOURS)
+        );
+
+        if (!hasUpdates) return prev;
+
+        return prev.map(d => {
+          if (d.status === 'Em Trânsito' && d.statusTimestamp && (now - d.statusTimestamp > TWO_HOURS)) {
+            return { ...d, status: 'Entregue' };
+          }
+          return d;
+        });
+      });
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const deliveryRequests = deliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Em Trânsito');
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'Dashboard': return <DashboardScreen globalSearchTerm={globalSearchTerm} />;
-      case 'Produtos': return <ProductsScreen globalSearchTerm={globalSearchTerm} />;
+      case 'Dashboard': return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
+      case 'Produtos': return <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} />;
       case 'Destaques': return <HighlightsScreen globalSearchTerm={globalSearchTerm} />;
-      case 'Usuários': return <UsersScreen globalSearchTerm={globalSearchTerm} />;
-      case 'Entregas': return <DeliveriesScreen globalSearchTerm={globalSearchTerm} />;
-      default: return <DashboardScreen globalSearchTerm={globalSearchTerm} />;
+      case 'Usuários': return <UsersScreen globalSearchTerm={globalSearchTerm} session={session} />;
+      case 'Entregas': return <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />;
+      case 'Fidelidade': return <LoyaltyScreen globalSearchTerm={globalSearchTerm} />;
+      default: return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
     }
   };
 
@@ -1835,6 +2938,7 @@ function App() {
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} />
+          <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} />
         </nav>

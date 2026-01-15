@@ -1,28 +1,53 @@
 import React, { useState } from 'react';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import logo from './assets/logo.png';
+import { supabase } from './supabaseClient';
 
 const LoginScreen = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulação de delay de rede
-    setTimeout(() => {
-      // Por enquanto, aceita qualquer login com campos preenchidos
-      if (email.trim() && password.trim()) {
-        onLogin();
-      } else {
-        setError('Por favor, preencha todos os campos.');
-        setIsLoading(false);
+    try {
+      // 1. Login no Supabase
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password
+      });
+
+      if (authError) throw authError;
+
+      // 2. Verificar se é Administrador
+      const { count, error: adminError } = await supabase
+        .from('administradores')
+        .select('*', { count: 'exact', head: true })
+        .eq('email', email.trim());
+
+      if (adminError) throw new Error('Erro ao verificar permissões.');
+      
+      if (count === 0) {
+        await supabase.auth.signOut();
+        throw new Error('Acesso negado: Usuário não é administrador.');
       }
-    }, 1000);
+
+      if (onLogin) onLogin();
+
+    } catch (err) {
+      console.error("Erro login:", err);
+      let msg = 'Erro ao fazer login.';
+      if (err.message.includes('Invalid login')) msg = 'Email ou senha incorretos.';
+      if (err.message.includes('Email not confirmed')) msg = 'Email não confirmado. Verifique sua caixa de entrada.';
+      if (err.message.includes('Acesso negado')) msg = err.message;
+      setError(msg);
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -65,12 +90,19 @@ const LoginScreen = ({ onLogin }) => {
                   <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-blue-500 transition-colors" />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                  className="block w-full pl-10 pr-10 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-blue-500 transition-colors focus:outline-none"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
               </div>
             </div>
 
@@ -100,7 +132,7 @@ const LoginScreen = ({ onLogin }) => {
         {/* Footer */}
         <div className="bg-slate-900/30 p-4 text-center border-t border-slate-700">
           <p className="text-xs text-slate-500">
-            © 2025 Atadisel Global IA. Todos os direitos reservados.
+            © 2026 Atadisel Global IA. Todos os direitos reservados.
           </p>
         </div>
       </div>
