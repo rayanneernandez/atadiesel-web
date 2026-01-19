@@ -196,6 +196,12 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
     deliveriesInProgress: true
   });
 
+  const searchTerm = globalSearchTerm?.trim().toLowerCase() || '';
+
+  const filteredTopProducts = topProducts.filter(p =>
+    !searchTerm || p.name.toLowerCase().includes(searchTerm)
+  );
+
   const toggleReport = (key) => {
     setReportConfig(prev => ({ ...prev, [key]: !prev[key] }));
   };
@@ -591,7 +597,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {topProducts.map((product) => (
+            {filteredTopProducts.map((product) => (
               <tr key={product.id} className="hover:bg-slate-50/50 transition-colors">
                 <td className="px-6 py-4 font-medium text-slate-900 flex items-center gap-3">
                   <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-400">
@@ -649,10 +655,12 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
   }, [products]);
 
   const filteredProducts = products.filter(product => {
-    const term = globalSearchTerm || '';
-    const matchesSearch = product.name.toLowerCase().includes(term.toLowerCase()) ||
-    product.category.toLowerCase().includes(term.toLowerCase()) ||
-    product.sku.toLowerCase().includes(term.toLowerCase());
+    const term = globalSearchTerm?.trim().toLowerCase() || '';
+    const matchesSearch =
+      !term ||
+      (product.name || '').toLowerCase().includes(term) ||
+      (product.category || '').toLowerCase().includes(term) ||
+      (product.sku || '').toLowerCase().includes(term);
 
     const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(product.category);
 
@@ -1762,11 +1770,16 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = mockDeliveries, onUpd
   };
 
   const filteredDeliveries = deliveries
-    .filter(d => 
-      d.client.toLowerCase().includes(globalSearchTerm.toLowerCase()) ||
-      d.items.toLowerCase().includes(globalSearchTerm.toLowerCase()) ||
-      d.id.toString().includes(globalSearchTerm)
-    )
+    .filter(d => {
+      const term = globalSearchTerm?.trim().toLowerCase() || '';
+      if (!term) return true;
+
+      return (
+        d.client.toLowerCase().includes(term) ||
+        d.items.toLowerCase().includes(term) ||
+        d.id.toString().includes(term)
+      );
+    })
     .sort((a, b) => {
       const priorityA = statusPriority[a.status] || 99;
       const priorityB = statusPriority[b.status] || 99;
