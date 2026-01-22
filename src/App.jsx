@@ -1533,7 +1533,9 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
              
              <div className="p-6 space-y-4">
                 <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-2">
-                   <div className="mt-0.5"><Info size={16} /></div>
+                   <div className="mt-0.5" title="Use este formulário apenas para novos administradores do painel.">
+                     <Info size={16} className="cursor-help" />
+                   </div>
                    <p>Este formulário é exclusivo para cadastro de novos administradores. Clientes devem se cadastrar pelo aplicativo.</p>
                 </div>
 
@@ -2499,7 +2501,9 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
                       <Award size={16} />
                     </div>
                     <h3 className="text-lg font-bold text-slate-800">Programa de Retenção</h3>
-                    <Info size={16} className="text-slate-400" />
+                    <span className="inline-flex items-center" title="Oferece multiplicadores de cashback para clientes que mantêm relacionamento por 6, 9 ou 12 meses.">
+                      <Info size={16} className="text-slate-400 cursor-help" />
+                    </span>
                   </div>
                   <button 
                     onClick={() => setConfig({...config, enableRetentionProgram: !config.enableRetentionProgram})}
@@ -2556,7 +2560,9 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
                       <FileText size={16} />
                    </div>
                    <h3 className="text-lg font-bold text-slate-800">Benefícios de Renovação</h3>
-                   <Info size={16} className="text-slate-400" />
+                   <span className="inline-flex items-center" title="Defina bônus extras para clientes que renovarem o compromisso no programa de retenção.">
+                     <Info size={16} className="text-slate-400 cursor-help" />
+                   </span>
                 </div>
                 <p className="text-slate-500 text-sm mb-6">Bônus para clientes que renovarem o compromisso de retenção</p>
                 
@@ -2606,7 +2612,9 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
                       <Users size={16} />
                     </div>
                     <h3 className="text-lg font-bold text-slate-800">Programa de Indicação</h3>
-                    <Info size={16} className="text-slate-400" />
+                    <span className="inline-flex items-center" title="Configure os bônus para quem indica novos clientes e para quem é indicado.">
+                      <Info size={16} className="text-slate-400 cursor-help" />
+                    </span>
                   </div>
                   <button 
                     onClick={() => setConfig({...config, enableReferralProgram: !config.enableReferralProgram})}
