@@ -2985,6 +2985,11 @@ function App() {
                 <Menu size={24} />
             </button>
             
+            {/* Logo Mobile */}
+            <div className="md:hidden">
+              <img src="/src/assets/logo.png" alt="Atadiesel" className="h-8 w-auto object-contain" />
+            </div>
+            
             <div className="hidden md:flex items-center bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 w-64 lg:w-96 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
                 <Search size={20} className="text-slate-400 mr-2" />
                 <input 
