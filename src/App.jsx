@@ -1017,13 +1017,6 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
             >
                 <Download size={18} /> Exportar
             </button>
-            <label className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-purple-700 transition-colors shadow-lg shadow-purple-500/30 cursor-pointer text-sm font-medium">
-                <Upload size={18} /> Importar
-                <input type="file" accept=".xlsx, .xls" onChange={handleImportProducts} className="hidden" />
-            </label>
-            <button onClick={handleNewProduct} className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium">
-              <Plus size={18} /> Novo Produto
-            </button>
         </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-100">
@@ -1424,17 +1417,23 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await supabase.from('administradores').select('*').order('nome');
+      // Buscar apenas usuários com role 'admin' na tabela profiles
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'admin')
+        .order('name');
+        
       if (error) throw error;
       
       const formatted = data.map(u => ({
         id: u.id,
-        name: u.nome,
+        name: u.name || 'Sem Nome',
         email: u.email,
-        role: u.cargo || 'Administrador',
-        // Status: Só é 'Ativo' se for o usuário logado atual
+        role: u.role || 'admin',
+        // Status: Só é 'Ativo' se for o usuário logado atual (simplificação visual)
         status: (session?.user?.email === u.email) ? 'Ativo' : 'Inativo', 
-        visits: 0, // Dados fictícios por enquanto
+        visits: 0, 
         totalSpent: 0,
         lastVisit: '-'
       }));
@@ -1478,17 +1477,18 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
       if (authError) throw authError;
 
-      // 2. Criar usuário na tabela pública (Para gestão e listagem)
-      const { error: dbError } = await supabase.from('administradores').insert([{
-        nome: newUser.name,
+      // 2. Criar registro na tabela profiles com role 'admin'
+      // Usamos upsert para garantir que se o trigger já criou, apenas atualizamos a role
+      const { error: dbError } = await supabase.from('profiles').upsert([{
+        id: authData.user.id, // Garante vínculo correto com o Auth
+        name: newUser.name,
         email: newUser.email,
-        cargo: newUser.role,
-        criado_em: new Date().toISOString()
+        role: 'admin'
       }]);
 
       if (dbError) throw dbError;
 
-      alert("Administrador cadastrado com sucesso! (Se o login automático falhar, verifique se precisa confirmar o email)");
+      alert("Administrador cadastrado com sucesso!");
       fetchUsers();
       setIsModalOpen(false);
       setNewUser({ name: '', email: '', password: '', role: 'Administrador' });

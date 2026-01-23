@@ -24,17 +24,23 @@ const LoginScreen = ({ onLogin }) => {
 
       if (authError) throw authError;
 
-      // 2. Verificar se é Administrador
-      const { count, error: adminError } = await supabase
-        .from('administradores')
-        .select('*', { count: 'exact', head: true })
-        .eq('email', email.trim());
+      // 2. Verificar se é Administrador (Consultando tabela profiles)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('email', email.trim())
+        .single();
 
-      if (adminError) throw new Error('Erro ao verificar permissões.');
+      if (profileError) {
+         // Se não encontrar perfil, nega acesso
+         await supabase.auth.signOut();
+         throw new Error('Perfil de usuário não encontrado.');
+      }
       
-      if (count === 0) {
+      // Verifica se a role é exatamente 'admin'
+      if (profileData?.role !== 'admin') {
         await supabase.auth.signOut();
-        throw new Error('Acesso negado: Usuário não é administrador.');
+        throw new Error('Acesso negado: Usuário não possui permissão de administrador.');
       }
 
       if (onLogin) onLogin();
