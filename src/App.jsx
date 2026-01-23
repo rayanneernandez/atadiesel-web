@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import logoSmall from './assets/logoso.png';
 import { 
   LayoutDashboard, 
   Package, 
@@ -2987,7 +2988,7 @@ function App() {
             
             {/* Logo Header */}
             <div className="ml-2">
-              <img src="/src/assets/logoso.png" alt="Atadiesel" className="h-10 w-auto object-contain" />
+              <img src={logoSmall} alt="Atadiesel" className="h-10 w-auto object-contain" />
             </div>
             
             <div className="hidden md:flex items-center bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 w-64 lg:w-96 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
