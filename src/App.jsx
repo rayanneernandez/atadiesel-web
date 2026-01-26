@@ -39,7 +39,9 @@ import {
   AlertCircle,
   Megaphone,
   ClipboardList,
-  Settings2
+  Settings2,
+  Mail,
+  Smartphone
 } from 'lucide-react';
 import LoginScreen from './login';
 import jsPDF from 'jspdf';
@@ -2636,6 +2638,8 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         name: u.name || 'Sem Nome',
         email: u.email,
         role: u.role || 'user',
+        receives_email: u.receives_email || false,
+        app_access: u.app_access || false,
         // Status: Só é 'Ativo' se for o usuário logado atual (simplificação visual)
         status: (session?.user?.email === u.email) ? 'Ativo' : 'Inativo', 
         visits: 0, 
@@ -2645,6 +2649,26 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       setUsers(formatted);
     } catch (error) {
       console.error("Erro ao buscar usuários:", error);
+    }
+  };
+
+  const handleToggleChecklistAccess = async (userId, currentValue) => {
+    // Optimistic update
+    setUsers(prev => prev.map(u => 
+      u.id === userId ? { ...u, app_access: !currentValue, receives_email: !currentValue } : u
+    ));
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ app_access: !currentValue, receives_email: !currentValue })
+        .eq('id', userId);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Erro ao atualizar permissão:', error);
+      alert('Erro ao atualizar permissão: ' + error.message);
+      fetchUsers(); // Revert
     }
   };
 
@@ -2716,7 +2740,15 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       user.email.toLowerCase().includes(globalSearchTerm.toLowerCase()) 
       : true;
 
-    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+    const matchesRole = (() => {
+      if (roleFilter === 'all') return true;
+      const r = user.role?.toLowerCase();
+      if (roleFilter === 'admin') return r === 'admin' || r === 'administrador';
+      if (roleFilter === 'cliente') return r === 'cliente' || r === 'user';
+      if (roleFilter === 'entregador') return r === 'entregador';
+      if (roleFilter === 'funcionario') return r === 'funcionario' || r === 'funcionário';
+      return r === roleFilter;
+    })();
 
     return matchesSearch && matchesRole;
   });
@@ -2898,16 +2930,6 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       <div className="flex justify-between items-center flex-wrap gap-4">
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gestão de Usuários</h1>
           <div className="flex gap-2">
-            <select 
-              value={roleFilter} 
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="bg-white border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none"
-            >
-              <option value="all">Todos os Cargos</option>
-              {uniqueRoles.filter(role => role !== 'all').map(role => (
-                <option key={role} value={role}>{role.charAt(0).toUpperCase() + role.slice(1)}</option>
-              ))}
-            </select>
             <button 
               onClick={() => setIsModalOpen(true)}
               className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
@@ -2916,13 +2938,42 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
             </button>
           </div>
       </div>
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-visible">
+
+      <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
+        {[
+          { id: 'all', label: 'Todos os Usuários' },
+          { id: 'admin', label: 'Admin' },
+          { id: 'cliente', label: 'Cliente' },
+          { id: 'entregador', label: 'Entregador' },
+          { id: 'funcionario', label: 'Funcionário' }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setRoleFilter(tab.id)}
+            className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+              roleFilter === tab.id 
+                ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 overflow-visible border-t-0">
          <div className="overflow-visible">
             <table className="w-full text-left border-collapse">
                <thead>
                   <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-sm">
                      <th className="px-6 py-4 font-semibold">Nome</th>
                      <th className="px-6 py-4 font-semibold">Email</th>
+                     <th className="px-6 py-4 font-semibold text-center">
+                        <div className="flex flex-col items-center gap-1">
+                           <ClipboardList size={16} />
+                           <span className="text-[10px] uppercase">Acesso Checklist</span>
+                        </div>
+                     </th>
                      <th className="px-6 py-4 font-semibold">Cargo</th>
                      <th className="px-6 py-4 font-semibold">Status</th>
                      <th className="px-6 py-4 font-semibold text-right">Ações</th>
@@ -2940,6 +2991,18 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                         </div>
                       </td>
                       <td className="px-6 py-4"><HighlightText text={user.email} highlight={globalSearchTerm} /></td>
+                      <td className="px-6 py-4 text-center">
+                        <button 
+                           onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleChecklistAccess(user.id, user.app_access);
+                           }}
+                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${user.app_access ? 'bg-primary' : 'bg-slate-300'}`}
+                           title={user.app_access ? "Clique para revogar acesso ao checklist" : "Clique para conceder acesso ao checklist"}
+                        >
+                           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${user.app_access ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
                            {user.role}
