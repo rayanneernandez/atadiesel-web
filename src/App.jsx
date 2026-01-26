@@ -61,6 +61,13 @@ const topProducts = [
   { id: 3, name: 'Kit Pastilha de Freio', sales: 60, price: 5400, growth: '-2%' },
   { id: 4, name: 'Amortecedor Traseiro', sales: 45, price: 11250, growth: '+8%' },
   { id: 5, name: 'Bateria 60Ah', sales: 32, price: 4500, growth: '+15%' },
+  { id: 6, name: 'Vela de Ignição Iridium', sales: 28, price: 320, growth: '+4%' },
+  { id: 7, name: 'Correia Dentada', sales: 25, price: 180, growth: '-1%' },
+  { id: 8, name: 'Bomba de Água', sales: 22, price: 450, growth: '+6%' },
+  { id: 9, name: 'Disco de Freio', sales: 20, price: 890, growth: '+3%' },
+  { id: 10, name: 'Filtro de Óleo', sales: 18, price: 45, growth: '+2%' },
+  { id: 11, name: 'Fluido de Freio DOT4', sales: 15, price: 35, growth: '+1%' },
+  { id: 12, name: 'Lâmpada H4 LED', sales: 12, price: 120, growth: '+7%' },
 ];
 
 const salesData = [
@@ -197,6 +204,8 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
     deliveriesCompleted: true,
     deliveriesInProgress: true
   });
+  
+  const [showAllTopProducts, setShowAllTopProducts] = useState(false);
 
   const searchTerm = globalSearchTerm?.trim().toLowerCase() || '';
 
@@ -585,7 +594,12 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
       <div className="p-6 border-b border-slate-100 flex items-center justify-between">
         <h2 className="text-lg font-bold text-slate-800">Produtos Mais Vendidos</h2>
-        <button className="text-primary text-sm font-medium hover:underline">Ver todos</button>
+        <button 
+          onClick={() => setShowAllTopProducts(!showAllTopProducts)}
+          className="text-primary text-sm font-medium hover:underline"
+        >
+          {showAllTopProducts ? 'Ver menos' : 'Ver todos'}
+        </button>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left">
@@ -599,7 +613,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredTopProducts.map((product) => (
+            {filteredTopProducts.slice(0, showAllTopProducts ? 10 : 5).map((product) => (
               <tr key={product.id} className="hover:bg-slate-50/50 transition-colors">
                 <td className="px-6 py-4 font-medium text-slate-900 flex items-center gap-3">
                   <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-400">
@@ -1011,6 +1025,27 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
       <div className="flex justify-between items-center flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gerenciar Produtos</h1>
         <div className="flex gap-2">
+            <div className="relative">
+              <input 
+                type="file" 
+                accept=".xlsx, .xls" 
+                onChange={handleImportProducts} 
+                className="hidden" 
+                id="import-products" 
+              />
+              <label 
+                htmlFor="import-products"
+                className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-sm text-sm font-medium cursor-pointer"
+              >
+                <Upload size={18} /> Importar
+              </label>
+            </div>
+            <button 
+                onClick={handleNewProduct}
+                className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium"
+            >
+                <Plus size={18} /> Novo Produto
+            </button>
             <button 
                 onClick={handleExportProducts} 
                 className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/30 text-sm font-medium"
@@ -1409,6 +1444,7 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
 
 const UsersScreen = ({ globalSearchTerm, session }) => {
   const [users, setUsers] = useState([]);
+  const [roleFilter, setRoleFilter] = useState('all');
 
   // Buscar usuários reais do banco
   useEffect(() => {
@@ -1417,11 +1453,10 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
   const fetchUsers = async () => {
     try {
-      // Buscar apenas usuários com role 'admin' na tabela profiles
+      // Buscar todos os usuários na tabela profiles
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('role', 'admin')
         .order('name');
         
       if (error) throw error;
@@ -1430,7 +1465,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         id: u.id,
         name: u.name || 'Sem Nome',
         email: u.email,
-        role: u.role || 'admin',
+        role: u.role || 'user',
         // Status: Só é 'Ativo' se for o usuário logado atual (simplificação visual)
         status: (session?.user?.email === u.email) ? 'Ativo' : 'Inativo', 
         visits: 0, 
@@ -1505,12 +1540,34 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
     setActiveMenuId(null);
   };
 
-  const filteredUsers = users.filter(user => 
-    globalSearchTerm ? 
-    user.name.toLowerCase().includes(globalSearchTerm.toLowerCase()) || 
-    user.email.toLowerCase().includes(globalSearchTerm.toLowerCase()) 
-    : true
-  );
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = globalSearchTerm ? 
+      user.name.toLowerCase().includes(globalSearchTerm.toLowerCase()) || 
+      user.email.toLowerCase().includes(globalSearchTerm.toLowerCase()) 
+      : true;
+
+    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+
+    return matchesSearch && matchesRole;
+  });
+
+  // Get unique roles for filter options
+  const uniqueRoles = ['all', ...new Set(users.map(u => u.role))].filter(Boolean);
+
+  const getRoleBadgeColor = (role) => {
+    switch (role?.toLowerCase()) {
+      case 'admin':
+      case 'administrador':
+        return 'bg-purple-100 text-purple-700';
+      case 'entregador':
+        return 'bg-orange-100 text-orange-700';
+      case 'cliente':
+      case 'user':
+        return 'bg-blue-100 text-blue-700';
+      default:
+        return 'bg-slate-100 text-slate-700';
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1622,7 +1679,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                    <div>
                       <h2 className="text-xl font-bold text-slate-900">{selectedUser.name}</h2>
                       <p className="text-slate-500">{selectedUser.email}</p>
-                      <span className={`inline-block mt-1 px-2 py-0.5 rounded-md text-xs font-medium ${selectedUser.role === 'Administrador' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                      <span className={`inline-block mt-1 px-2 py-0.5 rounded-md text-xs font-medium ${getRoleBadgeColor(selectedUser.role)}`}>
                          {selectedUser.role}
                       </span>
                    </div>
@@ -1668,14 +1725,26 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         </div>
       )}
 
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-4">
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gestão de Usuários</h1>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
-          >
-              <Plus size={20} /> Novo Administrador
-          </button>
+          <div className="flex gap-2">
+            <select 
+              value={roleFilter} 
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="bg-white border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none"
+            >
+              <option value="all">Todos os Cargos</option>
+              {uniqueRoles.filter(role => role !== 'all').map(role => (
+                <option key={role} value={role}>{role.charAt(0).toUpperCase() + role.slice(1)}</option>
+              ))}
+            </select>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
+            >
+                <Plus size={20} /> Novo Administrador
+            </button>
+          </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-visible">
          <div className="overflow-visible">
@@ -1702,7 +1771,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                       </td>
                       <td className="px-6 py-4"><HighlightText text={user.email} highlight={globalSearchTerm} /></td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-md text-xs font-medium ${user.role === 'Administrador' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
                            {user.role}
                         </span>
                       </td>
@@ -2085,7 +2154,16 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
     enableEvaluationBonus: false,
     evaluationBonusType: 'fixed',
     evaluationBonusValue: 5.00,
-    evaluationMinStars: 'any'
+    evaluationMinStars: 'any',
+    
+    // Configuração de Pontos
+    pointsPerCurrency: 1,
+    currencyPerPoint: 0.01,
+    signupBonusPoints: 0,
+    birthdayBonusPoints: 0,
+    pointsValidityMonths: 117,
+    enablePointsAccumulationLock: false,
+    pointsAccumulationLockLimit: 50000,
   });
 
   const [showToast, setShowToast] = useState(false);
@@ -2166,7 +2244,7 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
       <div className="space-y-6 animate-in fade-in duration-300">
         
         {/* Configurações Tab */}
-        {activeTab === 'config' && (
+        {activeTab === 'config' && fidelityType === 'cashback' && (
           <>
             {/* Configuração de Cashback */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
@@ -2309,6 +2387,134 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
                       type="number" 
                       value={config.accumulationLockLimit}
                       onChange={(e) => setConfig({...config, accumulationLockLimit: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                    />
+                    <p className="text-xs text-slate-400 mt-2">Ao atingir este valor, novas acumulações serão bloqueadas</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeTab === 'config' && fidelityType === 'points' && (
+          <>
+            {/* Configuração de Pontos */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Configuração de Pontos
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Defina como os pontos serão acumulados e utilizados</p>
+              
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Pontos por Real Gasto</label>
+                  <input 
+                    type="number" 
+                    value={config.pointsPerCurrency}
+                    onChange={(e) => setConfig({...config, pointsPerCurrency: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Quantos pontos o cliente ganha a cada R$ 1,00 gasto</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Valor em Real por Ponto</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    value={config.currencyPerPoint}
+                    onChange={(e) => setConfig({...config, currencyPerPoint: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Quanto vale cada ponto em reais na hora de trocar</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Bônus de Pontos */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Bônus de Pontos
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Configure bônus especiais em pontos</p>
+              
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Bônus de Cadastro (Pontos)</label>
+                  <input 
+                    type="number" 
+                    value={config.signupBonusPoints}
+                    onChange={(e) => setConfig({...config, signupBonusPoints: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Pontos dados ao cliente no primeiro cadastro</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Bônus de Aniversário (Pontos)</label>
+                  <input 
+                    type="number" 
+                    value={config.birthdayBonusPoints}
+                    onChange={(e) => setConfig({...config, birthdayBonusPoints: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Pontos dados ao cliente no mês do aniversário</p>
+                </div>
+              </div>
+            </section>
+
+            {/* Validade dos Pontos */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Validade dos Pontos
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Por quanto tempo os pontos ficam disponíveis</p>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Validade (meses)</label>
+                <input 
+                  type="number" 
+                  value={config.pointsValidityMonths}
+                  onChange={(e) => setConfig({...config, pointsValidityMonths: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                />
+                <p className="text-xs text-slate-400 mt-2">Após este período, os pontos não resgatados expiram</p>
+              </div>
+            </section>
+
+            {/* Trava de Acúmulo */}
+            <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                Trava de Acúmulo
+                <Info size={16} className="text-slate-400" />
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Limite para forçar resgate antes de continuar acumulando</p>
+              
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div>
+                    <span className="text-sm font-medium text-slate-800 block">Habilitar Trava</span>
+                    <span className="text-xs text-slate-500">Cliente precisa resgatar para continuar acumulando</span>
+                  </div>
+                  <button 
+                    onClick={() => setConfig({...config, enablePointsAccumulationLock: !config.enablePointsAccumulationLock})}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${config.enablePointsAccumulationLock ? 'bg-blue-600' : 'bg-slate-300'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enablePointsAccumulationLock ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+
+                {config.enablePointsAccumulationLock && (
+                  <div className="animate-in fade-in slide-in-from-top-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Limite para Trava (Pontos)</label>
+                    <input 
+                      type="number" 
+                      value={config.pointsAccumulationLockLimit}
+                      onChange={(e) => setConfig({...config, pointsAccumulationLockLimit: e.target.value})}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                     />
                     <p className="text-xs text-slate-400 mt-2">Ao atingir este valor, novas acumulações serão bloqueadas</p>
