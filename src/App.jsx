@@ -35,7 +35,11 @@ import {
   CheckCircle,
   Award,
   Download,
-  Upload
+  Upload,
+  AlertCircle,
+  Megaphone,
+  ClipboardList,
+  Settings2
 } from 'lucide-react';
 import LoginScreen from './login';
 import jsPDF from 'jspdf';
@@ -1139,7 +1143,8 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
   );
 };
 
-const HighlightsScreen = ({ globalSearchTerm }) => {
+const HighlightsScreen = ({ globalSearchTerm, products }) => {
+  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'inactive'
   const [highlights, setHighlights] = useState([]);
 
   useEffect(() => {
@@ -1147,14 +1152,14 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
   }, []);
 
   const fetchHighlights = async () => {
-    const { data, error } = await supabase.from('destaques').select('*').order('criado_em', { ascending: false });
+    const { data, error } = await supabase.from('highlights').select('*').order('created_at', { ascending: false });
     if (!error) {
       setHighlights(data.map(h => ({
         id: h.id,
-        title: h.titulo,
-        description: h.descricao,
-        expiration: h.valido_ate,
-        image: h.banner_url
+        title: h.title,
+        description: h.subtitle,
+        expiration: h.expires_at,
+        image: h.image_url
       })));
     }
   };
@@ -1163,6 +1168,7 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [highlightToDelete, setHighlightToDelete] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [newHighlight, setNewHighlight] = useState({
     id: null,
     title: '',
@@ -1183,7 +1189,15 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
     }
   };
 
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  const showToastMessage = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+  };
+
   const handleSaveHighlight = async () => {
+    setIsSaving(true);
     try {
       let imageUrl = newHighlight.image;
       
@@ -1204,27 +1218,77 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
       }
 
       const highlightData = {
-        titulo: newHighlight.title,
-        descricao: newHighlight.description,
-        valido_ate: newHighlight.expiration,
-        banner_url: imageUrl
+        title: newHighlight.title || '',
+        subtitle: newHighlight.description || '',
+        expires_at: newHighlight.expiration || null,
+        image_url: imageUrl
       };
 
+      console.log("Tentando salvar destaque:", highlightData);
+
       if (isEditing) {
-        const { error } = await supabase.from('destaques').update(highlightData).eq('id', newHighlight.id);
+        if (!newHighlight.id) throw new Error("ID do destaque não encontrado.");
+        
+        // Adicionado .select() para garantir retorno e confirmar update
+        const { data, error } = await supabase
+          .from('highlights')
+          .update(highlightData)
+          .eq('id', newHighlight.id)
+          .select();
+          
         if (error) throw error;
-        alert("Destaque atualizado com sucesso!");
+        
+        // Diagnóstico preciso de falha na atualização
+        if (!data || data.length === 0) {
+            // Verificar se o registro ainda existe para distinguir erro de permissão de erro de registro não encontrado
+            const { data: exists } = await supabase
+                .from('highlights')
+                .select('id')
+                .eq('id', newHighlight.id)
+                .maybeSingle();
+            
+            if (exists) {
+                // Se existe mas não atualizou, é permissão (RLS)
+                console.error("Update bloqueado por RLS. ID:", newHighlight.id);
+                throw new Error("Permissão negada pelo banco de dados. Verifique as políticas de segurança (RLS) da tabela 'highlights'.");
+            } else {
+                throw new Error("O destaque que você está tentando editar não existe mais.");
+            }
+        }
+        
+        showToastMessage("Destaque atualizado com sucesso!", 'success');
       } else {
-        const { error } = await supabase.from('destaques').insert([highlightData]);
+        const { error } = await supabase.from('highlights').insert([highlightData]);
         if (error) throw error;
-        alert("Destaque criado com sucesso!");
+        showToastMessage("Destaque criado com sucesso!", 'success');
       }
       
-      fetchHighlights();
+      await fetchHighlights();
+      
+      // Se o destaque salvo for ativo (data futura ou hoje), muda para a aba de ativos
+      if (newHighlight.expiration) {
+        const expDate = new Date(newHighlight.expiration);
+        // Ajuste para garantir comparação correta independente do fuso horário na data selecionada
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        // Criar data local baseada na string YYYY-MM-DD para comparação justa
+        const parts = newHighlight.expiration.split('-');
+        const localExpDate = new Date(parts[0], parts[1] - 1, parts[2]);
+        
+        if (localExpDate >= today) {
+          setActiveTab('active');
+        }
+      } else {
+        // Sem validade = sempre ativo
+        setActiveTab('active');
+      }
+
       closeModal();
     } catch (error) {
       console.error("Erro ao salvar destaque:", error);
-      alert("Erro ao salvar destaque.");
+      showToastMessage(error.message || "Erro ao salvar destaque. Tente novamente.", 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1235,7 +1299,7 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
 
   const confirmDelete = async () => {
     if (highlightToDelete) {
-      const { error } = await supabase.from('destaques').delete().eq('id', highlightToDelete);
+      const { error } = await supabase.from('highlights').delete().eq('id', highlightToDelete);
       if (!error) {
          fetchHighlights();
       }
@@ -1246,7 +1310,14 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
 
   const openModal = (highlight = null) => {
     if (highlight) {
-      setNewHighlight(highlight);
+      setNewHighlight({
+        id: highlight.id,
+        title: highlight.title,
+        description: highlight.description,
+        expiration: highlight.expiration ? new Date(highlight.expiration).toISOString().split('T')[0] : '',
+        image: highlight.image,
+        imageFile: null
+      });
       setIsEditing(true);
     } else {
       setNewHighlight({ id: null, title: '', description: '', expiration: '', image: null });
@@ -1264,8 +1335,68 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
     globalSearchTerm ? h.title.toLowerCase().includes(globalSearchTerm.toLowerCase()) : true
   );
 
+  const activeHighlights = filteredHighlights.filter(h => {
+    if (!h.expiration) return true;
+    const expDate = new Date(h.expiration);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Converte a data de expiração (UTC do banco) para data local correspondente ao dia
+    const localExpDate = new Date(
+      expDate.getUTCFullYear(), 
+      expDate.getUTCMonth(), 
+      expDate.getUTCDate()
+    );
+    localExpDate.setHours(0, 0, 0, 0);
+    
+    return localExpDate >= today;
+  });
+
+  const inactiveHighlights = filteredHighlights.filter(h => {
+    if (!h.expiration) return false;
+    const expDate = new Date(h.expiration);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const localExpDate = new Date(
+      expDate.getUTCFullYear(), 
+      expDate.getUTCMonth(), 
+      expDate.getUTCDate()
+    );
+    localExpDate.setHours(0, 0, 0, 0);
+    
+    return localExpDate < today;
+  });
+
+  const displayHighlights = activeTab === 'active' ? activeHighlights : inactiveHighlights;
+
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className={`fixed top-4 right-4 z-[60] animate-slide-in-right px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border ${
+          toast.type === 'success' 
+            ? 'bg-white border-emerald-100 text-slate-800' 
+            : 'bg-white border-red-100 text-slate-800'
+        }`}>
+          <div className={`p-2 rounded-full ${toast.type === 'success' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+            {toast.type === 'success' ? <CheckCircle size={24} /> : <AlertCircle size={24} />}
+          </div>
+          <div>
+            <h4 className={`font-bold text-sm ${toast.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
+              {toast.type === 'success' ? 'Sucesso!' : 'Atenção!'}
+            </h4>
+            <p className="text-sm text-slate-600">{toast.message}</p>
+          </div>
+          <button 
+            onClick={() => setToast(prev => ({ ...prev, show: false }))}
+            className="ml-4 p-1 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       {isDeleteModalOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
@@ -1308,10 +1439,10 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
           onClick={closeModal}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
-             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-none">
                 <h3 className="font-bold text-lg text-slate-800">
                    {isEditing ? 'Editar Destaque' : 'Novo Destaque'}
                 </h3>
@@ -1320,7 +1451,31 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
                 </button>
              </div>
              
-             <div className="p-6 space-y-4">
+             <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+                {/* Product Selection */}
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Importar dados de Produto</label>
+                   <select
+                      onChange={(e) => {
+                         const product = products?.find(p => p.id == e.target.value);
+                         if (product) {
+                             setNewHighlight(prev => ({
+                                 ...prev,
+                                 title: product.name,
+                                 description: product.description || '',
+                                 image: product.image || null
+                             }));
+                         }
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
+                   >
+                      <option value="">Selecione para preencher automaticamente...</option>
+                      {products?.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                   </select>
+                </div>
+
                 {/* Image Upload */}
                 <div className="relative">
                    <input 
@@ -1381,14 +1536,23 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
                    />
                 </div>
+
              </div>
 
-             <div className="p-6 border-t border-slate-100 bg-white">
+             <div className="p-6 border-t border-slate-100 bg-white flex-none">
                 <button 
                    onClick={handleSaveHighlight}
-                   className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 active:scale-[0.99]"
+                   disabled={isSaving}
+                   className={`w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 active:scale-[0.99] flex items-center justify-center gap-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
-                   Salvar Destaque
+                   {isSaving ? (
+                     <>
+                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                       Salvando...
+                     </>
+                   ) : (
+                     'Salvar Destaque'
+                   )}
                 </button>
              </div>
           </div>
@@ -1404,40 +1568,1046 @@ const HighlightsScreen = ({ globalSearchTerm }) => {
           <Plus size={20} /> Adicionar Destaque
         </button>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-         {filteredHighlights.map(highlight => (
-           <div key={highlight.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden group hover:shadow-md transition-shadow">
-              <div className="h-40 bg-slate-200 flex items-center justify-center text-slate-400 overflow-hidden relative">
-                {highlight.image ? (
-                  <img src={highlight.image} alt={highlight.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                ) : (
-                  <span>Imagem do Banner</span>
-                )}
-              </div>
-              <div className="p-4">
-                 <h3 className="font-bold text-slate-900 line-clamp-1">
-                   <HighlightText text={highlight.title} highlight={globalSearchTerm} />
-                 </h3>
-                 <p className="text-xs text-slate-500 mt-1 mb-2 line-clamp-2">{highlight.description}</p>
-                 <p className="text-sm text-slate-500 mt-1">Ativo até {new Date(highlight.expiration).toLocaleDateString('pt-BR')}</p>
-                 <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
-                    <button 
-                      onClick={() => openModal(highlight)}
-                      className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                    >
-                      <Edit size={14} /> Editar
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteHighlight(highlight.id)}
-                      className="text-sm font-medium text-red-600 hover:text-red-800 hover:underline flex items-center gap-1"
-                    >
-                      <Trash2 size={14} /> Remover
-                    </button>
-                 </div>
-              </div>
-           </div>
-         ))}
+
+      <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+            activeTab === 'active' 
+              ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          Destaques Ativos
+        </button>
+        <button
+          onClick={() => setActiveTab('inactive')}
+          className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+            activeTab === 'inactive' 
+              ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          Destaques Inativos
+        </button>
       </div>
+
+      {displayHighlights.length === 0 ? (
+        <div className="col-span-full flex flex-col items-center justify-center py-16 text-center bg-white rounded-xl border border-dashed border-slate-300">
+          <div className="bg-slate-50 p-4 rounded-full mb-4">
+            <Megaphone size={48} className="text-slate-300" />
+          </div>
+          <h3 className="text-lg font-bold text-slate-700 mb-1">
+            {activeTab === 'active' ? 'Nenhum destaque ativo' : 'Nenhum destaque inativo'}
+          </h3>
+          <p className="text-slate-500 max-w-sm mx-auto">
+            {activeTab === 'active' 
+              ? 'Crie novos destaques para promover produtos e ofertas na sua loja.' 
+              : 'Destaques expirados aparecerão aqui automaticamente.'}
+          </p>
+          {activeTab === 'active' && (
+             <button 
+                onClick={() => openModal()}
+                className="mt-6 text-primary font-medium hover:underline"
+             >
+                Criar novo destaque
+             </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+           {displayHighlights.map(highlight => (
+             <div key={highlight.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="h-40 bg-slate-200 flex items-center justify-center text-slate-400 overflow-hidden relative">
+                  {highlight.image ? (
+                    <img src={highlight.image} alt={highlight.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ) : (
+                    <span>Imagem do Banner</span>
+                  )}
+                </div>
+                <div className="p-4">
+                   <h3 className="font-bold text-slate-900 line-clamp-1">
+                     <HighlightText text={highlight.title} highlight={globalSearchTerm} />
+                   </h3>
+                   <p className="text-xs text-slate-500 mt-1 mb-2 line-clamp-2">{highlight.description}</p>
+                   {highlight.expiration && (
+                     <div className="flex items-center gap-1 text-xs text-slate-500 mt-2">
+                       <Calendar size={12} />
+                       <span>Válido até: {new Date(highlight.expiration).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                     </div>
+                   )}
+                   <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+                      <button 
+                        onClick={() => openModal(highlight)}
+                        className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                      >
+                        <Edit size={14} /> Editar
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteHighlight(highlight.id)}
+                        className="text-sm font-medium text-red-600 hover:text-red-800 hover:underline flex items-center gap-1"
+                      >
+                        <Trash2 size={14} /> Remover
+                      </button>
+                   </div>
+                </div>
+             </div>
+           ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ChecklistScreen = () => {
+  const [mainTab, setMainTab] = useState('respostas'); // 'respostas' | 'criacoes'
+  const [responseTab, setResponseTab] = useState('daily'); // 'daily' | 'monthly'
+  const [creationTab, setCreationTab] = useState('daily'); // 'daily' | 'monthly'
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [savedTemplates, setSavedTemplates] = useState([]);
+  const [showDefaultDailyTemplate, setShowDefaultDailyTemplate] = useState(true);
+  const [showDefaultMonthlyTemplate, setShowDefaultMonthlyTemplate] = useState(true);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, []);
+
+  const fetchTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('checklist_templates')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSavedTemplates(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar templates:', error);
+    }
+  };
+  
+  // Unified template state for editing/creating
+  const [currentTemplate, setCurrentTemplate] = useState({
+    id: null,
+    name: '',
+    pdfTitle: '',
+    pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+    headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
+    type: 'custom',
+    sections: []
+  });
+
+  // Dados mockados baseados na imagem enviada
+  const dailyChecklistItems = {
+    motorista: [
+      "1.1 Está se sentindo bem, teve um bom sono?",
+      "1.2 Está se sentindo concentrado para iniciar mais um turno de trabalho?",
+      "1.3 Está tranquilo, calmo, seu descanso foi adequado?",
+      "1.4 Meu descanso foi apropriado e meu sono foi de qualidade...",
+      "1.5 CNH, CRLV, CIV, CIPP, Certificado Cronotacógrafo...",
+      "1.6 Licenças de Operação Estaduais e Licenças IBAMA (Aplicáveis)"
+    ],
+    cavaloCarreta: [
+      "2.1 Computador de Bordo e Rotograma falado em funcionamento?",
+      "2.2 Tacógrafo em funcionamento?",
+      "2.3 Sistema elétrico e todas as luzes em funcionamento?",
+      "2.4 Buzina funcionando?",
+      "2.5 Para-brisas, janelas e Limpador de para-brisas em bom estado?",
+      "2.6 Documentação do Veículo dentro do prazo de validade?",
+      "2.7 Ficha de emergência e envelope?",
+      "2.8 Sistema de freios, conexão de ar, fluido de freio...",
+      "2.9 Condição e pressão dos pneus e rodas",
+      "2.10 Rodas/parafusos/porcas e suportes dos estepes devidamente fixados",
+      "2.11 Baterias protegida com chave geral blindada?",
+      "2.12 Guarda-Corpo",
+      "2.13 Triângulo de sinalização",
+      "2.14 Espelhos retrovisores em perfeito estado?",
+      "2.15 Cinto de Segurança 3 pontos em bom estado",
+      "2.16 Marcação dos Compartimentos",
+      "2.17 Faixas Refletivas Laterais e traseiras",
+      "2.18 Pontos de conexão de aterramento e cabo terra em bom estado?",
+      "2.19 KIT de Emergência completo?",
+      "2.20 Valvula de fundo, fecho rápido e tampa de visita sem vazamento?",
+      "2.21 Simbologia de Risco em bom estado e conforme nota fiscal?",
+      "2.22 Telefones de Emergência e Adesivo (Tel. Emergencia, 0800)",
+      "2.23 Alarme de Ré e Seta",
+      "2.24 Nível de água do radiador",
+      "2.25 Extintores de Incêndio da cabine e do tanque em conformidade?",
+      "2.26 O DVR das câmeras está com a luz azul e verde acesa?",
+      "2.27 Limpeza das câmeras embarcadas",
+      "2.28 Nível e pressão do óleo",
+      "2.29 02 calços de borracha com dimensões mínimas...",
+      "2.30 Tanques (Algum Vazamento)?",
+      "2.31 Cabine limpa organizada, tanque com pintura sem avarias...",
+      "2.32 Logotipo da empresa cavalo e carreta (bom estado...)",
+      "2.33 Bottom (Verificar se existe, trincas e se o visor...)",
+      "2.34 Valvula de contenção para dreno do cocho..."
+    ],
+    lacre: [
+      "3.1 Quinta-Roda/Pino rei/dolly",
+      "3.2 Existência/Integridade dos lacres"
+    ],
+    equipamentos: [
+      "4.1 Mangote",
+      "4.2 Placas Perigo afaste-se/Não fume",
+      "4.3 Placas de Simbologia Rotulo de Risco/Paineis de Segurança",
+      "4.4 Descarga Selada",
+      "4.5 Balde Metálico com cabo terra",
+      "4.6 Lanterna intrinsecamente segura",
+      "4.7 Cones laranja e preto"
+    ],
+    epis: [
+      "5.1 Capacete completo",
+      "5.2 Sapato de Segurança",
+      "5.3 Uniforme de Algodão sem bolso",
+      "5.4 Óculos antiimpacto",
+      "5.5 Luvas de Nitrílica/PVC",
+      "5.6 Máscara semi facial contra GA/VO",
+      "5.7 Cinto tipo para-quedista / Trava queda"
+    ]
+  };
+
+  const dailySectionTitles = {
+    motorista: "1. MOTORISTA",
+    cavaloCarreta: "2. CAVALO/CARRETA",
+    lacre: "3. LACRE DE SEGURANÇA",
+    equipamentos: "4. EQUIPAMENTOS DE ENTREGA",
+    epis: "5. EPI's"
+  };
+
+  const monthlyChecklistItems = {
+    geral: [
+      "1. CNH, MOPP e documentos obrigatórios dentro do prazo de validade.",
+      "2. Certificado de verificação volumétrica (toco, truck, carreta ou bitrem).",
+      "3. CIPP/CIV para transporte de produtos perigosos dentro da validade.",
+      "4. CRLV do veículo atualizado.",
+      "5. Certificado de aferição do cronotacógrafo.",
+      "6. Licenças ambientais aplicáveis.",
+      "7. Ficha de emergência e envelope de transporte.",
+      "8. Conjunto completo de EPIs (colete, luvas, óculos, máscara, calçado, etc.).",
+      "9. Conjunto para situações de emergência (cones, calços, bandeiras, etc.).",
+      "10. Pneus em bom estado, sulco mínimo adequado e sem recapagens irregulares.",
+      "11. Elementos de fixação das rodas (porcas, prisioneiros, anéis) íntegros.",
+      "12. Sistema de freios sem vazamentos e mangueiras em bom estado.",
+      "13. Condições físicas do condutor (assento, cinto, ergonomia, etc.).",
+      "14. Iluminação do veículo (faróis, lanternas, freio, ré, setas) funcionando.",
+      "15. Faixas refletivas e painéis de segurança conforme legislação.",
+      "16. Extintores dimensionados, válidos, lacrados e fixados corretamente.",
+      "17. Placas de risco, de advertência e identificação legíveis e em bom estado.",
+      "18. Válvulas, conexões e dispositivos de carga/descarga em boas condições.",
+      "19. Sistema de Bottom Loading e overfill (quando aplicável) operante.",
+      "20. Sistema de aterramento (cabos, pontos de conexão e ground ball) adequado.",
+      "21. Equipamentos de descarga (mangotes, adaptadores, bocais) íntegros.",
+      "22. Sistema pneumático e de suspensão sem vazamentos aparentes.",
+      "23. Sistemas embarcados (câmeras, sensores, GPS, etc.) funcionando.",
+      "24. Condições gerais de chassi, carroceria, travessas e guarda-corpo.",
+      "25. Proteções traseiras e dispositivos anti-encalhe em boas condições.",
+      "26. Registro de não conformidades e re-check quando aplicável."
+    ]
+  };
+
+  const monthlySectionTitles = {
+    geral: "CHECKLIST MENSAL / ADEQUAÇÃO"
+  };
+
+  const totalDailyQuestions =
+    dailyChecklistItems.motorista.length +
+    dailyChecklistItems.cavaloCarreta.length +
+    dailyChecklistItems.lacre.length +
+    dailyChecklistItems.equipamentos.length +
+    dailyChecklistItems.epis.length;
+
+  const totalMonthlyQuestions = monthlyChecklistItems.geral.length;
+
+  const openTemplateModal = (mode, templateToEdit = null) => {
+    if (mode === 'daily-default') {
+      // Checklist Diário padrão (FR MAN 06)
+      const sections = [
+        { title: dailySectionTitles.motorista, questions: [...dailyChecklistItems.motorista] },
+        { title: dailySectionTitles.cavaloCarreta, questions: [...dailyChecklistItems.cavaloCarreta] },
+        { title: dailySectionTitles.lacre, questions: [...dailyChecklistItems.lacre] },
+        { title: dailySectionTitles.equipamentos, questions: [...dailyChecklistItems.equipamentos] },
+        { title: dailySectionTitles.epis, questions: [...dailyChecklistItems.epis] }
+      ];
+      
+      setCurrentTemplate({
+        id: 'daily',
+        name: 'Checklist Diário',
+        pdfTitle: 'CHECKLIST DIÁRIO',
+        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+        headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
+        type: 'daily',
+        sections
+      });
+    } else if (mode === 'monthly-default') {
+      // Checklist Mensal/Adequação padrão (FR MAN 07)
+      const sections = [
+        { title: monthlySectionTitles.geral, questions: [...monthlyChecklistItems.geral] }
+      ];
+
+      setCurrentTemplate({
+        id: 'monthly',
+        name: 'Checklist Mensal / Adequação',
+        pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
+        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+        headerText: 'Local: __________   Data: __/__/____   Placa: __________',
+        type: 'monthly',
+        sections
+      });
+    } else if (mode === 'edit' && templateToEdit) {
+      // Editar template salvo (diário ou mensal)
+      setCurrentTemplate({
+        id: templateToEdit.id,
+        name: templateToEdit.name,
+        pdfTitle: templateToEdit.pdf_title || '',
+        pdfSubtitle: templateToEdit.pdf_subtitle || '',
+        headerText: templateToEdit.header_text || '',
+        type: templateToEdit.type || 'daily',
+        sections: typeof templateToEdit.sections === 'string' 
+          ? (templateToEdit.sections ? JSON.parse(templateToEdit.sections) : []) 
+          : (templateToEdit.sections || [])
+      });
+    } else if (mode === 'new-daily') {
+      setCurrentTemplate({
+        id: null,
+        name: 'Novo Checklist Diário',
+        pdfTitle: 'CHECKLIST DIÁRIO',
+        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+        headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
+        type: 'daily',
+        sections: [
+          { title: 'Nova Seção 1', questions: ['Pergunta 1'] }
+        ]
+      });
+    } else if (mode === 'new-monthly') {
+      setCurrentTemplate({
+        id: null,
+        name: 'Novo Checklist Mensal',
+        pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
+        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+        headerText: 'Local: __________   Data: __/__/____   Placa: __________',
+        type: 'monthly',
+        sections: [
+          { title: 'Nova Seção Mensal', questions: ['Pergunta 1'] }
+        ]
+      });
+    }
+    setIsTemplateModalOpen(true);
+  };
+
+  const closeTemplateModal = () => {
+    setIsTemplateModalOpen(false);
+  };
+
+  // Dynamic Editing Functions
+  const handleUpdateTemplateName = (name) => {
+    // Also update PDF title if it matches the name to be helpful
+    setCurrentTemplate(prev => ({ 
+        ...prev, 
+        name,
+        // Optional: keep pdfTitle in sync if user hasn't customized it manually? 
+        // For simplicity, let's keep them separate but maybe init same.
+        // Or just let user edit them separately.
+    }));
+  };
+
+  const handleUpdatePdfConfig = (field, value) => {
+    setCurrentTemplate(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleUpdateSectionTitle = (sectionIndex, title) => {
+    setCurrentTemplate(prev => {
+      const newSections = [...prev.sections];
+      newSections[sectionIndex].title = title;
+      return { ...prev, sections: newSections };
+    });
+  };
+
+  const handleUpdateQuestion = (sectionIndex, questionIndex, text) => {
+    setCurrentTemplate(prev => {
+      const newSections = [...prev.sections];
+      newSections[sectionIndex].questions[questionIndex] = text;
+      return { ...prev, sections: newSections };
+    });
+  };
+
+  const handleAddSection = () => {
+    setCurrentTemplate(prev => ({
+      ...prev,
+      sections: [...prev.sections, { title: 'Nova Seção', questions: ['Nova Pergunta'] }]
+    }));
+  };
+
+  const handleRemoveSection = (index) => {
+    if (!window.confirm("Tem certeza que deseja remover esta seção inteira?")) return;
+    setCurrentTemplate(prev => ({
+      ...prev,
+      sections: prev.sections.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleAddQuestion = (sectionIndex) => {
+    setCurrentTemplate(prev => {
+      const newSections = [...prev.sections];
+      newSections[sectionIndex].questions.push("Nova Pergunta");
+      return { ...prev, sections: newSections };
+    });
+  };
+
+  const handleRemoveQuestion = (sectionIndex, questionIndex) => {
+    setCurrentTemplate(prev => {
+      const newSections = [...prev.sections];
+      newSections[sectionIndex].questions = newSections[sectionIndex].questions.filter((_, i) => i !== questionIndex);
+      return { ...prev, sections: newSections };
+    });
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!currentTemplate.name) {
+      alert("Por favor, dê um nome ao modelo.");
+      return;
+    }
+
+    try {
+      const templateData = {
+        name: currentTemplate.name,
+        pdf_title: currentTemplate.pdfTitle,
+        pdf_subtitle: currentTemplate.pdfSubtitle,
+        header_text: currentTemplate.headerText,
+        type: currentTemplate.type || 'daily',
+        sections: currentTemplate.sections // Supabase handles JSONB automatically if column type is jsonb
+      };
+
+      let error;
+      if (currentTemplate.id && currentTemplate.id !== 'daily' && currentTemplate.id !== 'monthly') {
+        // Update existing
+        const { error: updateError } = await supabase
+          .from('checklist_templates')
+          .update(templateData)
+          .eq('id', currentTemplate.id);
+        error = updateError;
+      } else {
+        // Insert new
+        const { error: insertError } = await supabase
+          .from('checklist_templates')
+          .insert([templateData]);
+        error = insertError;
+      }
+
+      if (error) throw error;
+
+      alert("Modelo salvo com sucesso!");
+      fetchTemplates(); // Refresh list
+      setIsTemplateModalOpen(false);
+    } catch (error) {
+      console.error('Erro ao salvar modelo:', error);
+      alert("Erro ao salvar modelo: " + error.message);
+    }
+  };
+
+  const handleDeleteTemplate = async (id) => {
+    if (!window.confirm("Tem certeza que deseja excluir este modelo permanentemente?")) return;
+
+    try {
+      const { error } = await supabase
+        .from('checklist_templates')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setSavedTemplates(prev => prev.filter(t => t.id !== id));
+    } catch (error) {
+      console.error('Erro ao excluir modelo:', error);
+      alert("Erro ao excluir: " + error.message);
+    }
+  };
+
+  const generatePDF = (templateOverride = null) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Use override if provided (for list cards), otherwise current editing, otherwise daily default
+    let templateToPrint = templateOverride;
+    
+    if (!templateToPrint) {
+        templateToPrint = isTemplateModalOpen ? currentTemplate : {
+            name: "Checklist Diário",
+            pdfTitle: "CHECKLIST DIÁRIO",
+            pdfSubtitle: "FORMULÁRIO DE REGISTRO",
+            headerText: "Nome: _______________________  ID: ______  Data: __/__/____",
+            sections: [
+                { title: dailySectionTitles.motorista, questions: dailyChecklistItems.motorista },
+                { title: dailySectionTitles.cavaloCarreta, questions: dailyChecklistItems.cavaloCarreta },
+                { title: dailySectionTitles.lacre, questions: dailyChecklistItems.lacre },
+                { title: dailySectionTitles.equipamentos, questions: dailyChecklistItems.equipamentos },
+                { title: dailySectionTitles.epis, questions: dailyChecklistItems.epis }
+            ]
+        };
+    }
+    
+    // Ensure sections is an array (handle JSON string from DB and valores nulos)
+    let sectionsToPrint = [];
+    try {
+        if (Array.isArray(templateToPrint.sections)) {
+            sectionsToPrint = templateToPrint.sections;
+        } else if (typeof templateToPrint.sections === 'string' && templateToPrint.sections.trim() !== '') {
+            sectionsToPrint = JSON.parse(templateToPrint.sections) || [];
+        }
+    } catch (e) {
+        console.error('Erro ao parsear sections para PDF', e, templateToPrint);
+        sectionsToPrint = [];
+    }
+
+    // Título
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text((templateToPrint.pdfTitle || templateToPrint.pdf_title || templateToPrint.name).toUpperCase(), pageWidth / 2, 15, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.text((templateToPrint.pdfSubtitle || templateToPrint.pdf_subtitle || "FORMULÁRIO DE REGISTRO"), pageWidth / 2, 22, { align: 'center' });
+    
+    // Cabeçalho Simples
+    doc.rect(10, 25, 190, 15);
+    doc.text(templateToPrint.headerText || templateToPrint.header_text || "Nome: _______________________  ID: ______  Data: __/__/____", 12, 35);
+
+    let yPos = 50;
+
+    const addSection = (title, items) => {
+        if (yPos > 270) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFillColor(220, 220, 220);
+        doc.rect(10, yPos, 190, 7, 'F');
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.text(title, 12, yPos + 5);
+        yPos += 10;
+        
+        doc.setFont(undefined, 'normal');
+        items.forEach(item => {
+            if (yPos > 280) {
+                doc.addPage();
+                yPos = 20;
+            }
+            doc.text(item, 12, yPos);
+            // Checkboxes simulados
+            doc.rect(170, yPos - 3, 4, 4); // Sim
+            doc.rect(180, yPos - 3, 4, 4); // Não
+            yPos += 7;
+        });
+        yPos += 5;
+    };
+
+    sectionsToPrint.forEach(section => {
+        if (!section || !Array.isArray(section.questions)) return;
+        addSection(section.title || 'Seção', section.questions);
+    });
+
+    doc.save(`${templateToPrint.name.toLowerCase().replace(/\s+/g, '-')}.pdf`);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Checklists</h1>
+        
+        {/* Toggle Principal: Respostas vs Criações */}
+        <div className="bg-slate-200 p-1 rounded-lg flex gap-1">
+          <button
+            onClick={() => setMainTab('respostas')}
+            className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${
+              mainTab === 'respostas' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Respostas
+          </button>
+          <button
+            onClick={() => setMainTab('criacoes')}
+            className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${
+              mainTab === 'criacoes' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Criações (Modelos)
+          </button>
+        </div>
+      </div>
+
+      {mainTab === 'respostas' && (
+        <div className="space-y-4">
+           {/* Sub-abas de Respostas */}
+           <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
+            <button
+              onClick={() => setResponseTab('daily')}
+              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                responseTab === 'daily' 
+                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Checklist Diário
+            </button>
+            <button
+              onClick={() => setResponseTab('monthly')}
+              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                responseTab === 'monthly' 
+                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Checklist Mensal
+            </button>
+          </div>
+
+          <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 p-8 min-h-[400px]">
+             {responseTab === 'daily' ? (
+               <div className="text-center">
+                  <div className="bg-blue-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
+                    <ClipboardList size={48} className="text-blue-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta diária encontrada</h3>
+                  <p className="text-slate-500 mb-6">As respostas enviadas pelos motoristas aparecerão aqui.</p>
+                  <button className="text-primary hover:underline font-medium">Simular nova resposta</button>
+               </div>
+             ) : (
+                <div className="text-center">
+                  <div className="bg-purple-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
+                    <ClipboardList size={48} className="text-purple-400" />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta mensal encontrada</h3>
+                  <p className="text-slate-500">As respostas mensais aparecerão aqui.</p>
+               </div>
+             )}
+          </div>
+        </div>
+      )}
+
+      {mainTab === 'criacoes' && (
+        <div className="space-y-4">
+           {/* Sub-abas de Criações */}
+           <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
+            <button
+              onClick={() => setCreationTab('daily')}
+              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                creationTab === 'daily' 
+                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Checklist Diário
+            </button>
+            <button
+              onClick={() => setCreationTab('monthly')}
+              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                creationTab === 'monthly' 
+                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Checklist Mensal
+            </button>
+          </div>
+
+          <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 p-6 relative">
+            {creationTab === 'daily' ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Card Criar Novo (Diário) */}
+                  <button 
+                    onClick={() => openTemplateModal('new-daily')}
+                    className="border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-blue-50/50 transition-all group min-h-[160px]"
+                  >
+                    <div className="bg-slate-100 p-3 rounded-full group-hover:bg-blue-100 transition-colors">
+                      <Plus size={24} className="text-slate-400 group-hover:text-primary" />
+                    </div>
+                    <span className="font-bold text-slate-600 group-hover:text-primary">Criar Novo Modelo</span>
+                  </button>
+
+                  {/* Card Daily Padrão */}
+                  {showDefaultDailyTemplate && (
+                    <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 hover:bg-slate-100/70 transition-shadow shadow-sm hover:shadow-md flex flex-col justify-between relative group/card">
+                      <button
+                        onClick={() => {
+                          if (window.confirm('Tem certeza que deseja remover este modelo padrão da lista?')) {
+                            setShowDefaultDailyTemplate(false);
+                          }
+                        }}
+                        className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
+                        title="Excluir Modelo Padrão"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2 pr-6">
+                          <div>
+                            <h2 className="text-base font-bold text-slate-900">Checklist Diário</h2>
+                            <p className="text-xs text-slate-500 mt-1">Modelo padrão baseado no formulário FR MAN 06.</p>
+                          </div>
+                          <span className="px-2 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">Padrão</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
+                          <ClipboardList size={14} className="text-blue-500" />
+                          <span>{totalDailyQuestions} perguntas</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-4">
+                        <button
+                          onClick={() => openTemplateModal('daily-default')}
+                          className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-blue-800 flex items-center justify-center gap-1"
+                        >
+                          <Eye size={14} /> Visualizar / Editar
+                        </button>
+                        <button
+                          onClick={() => generatePDF()}
+                          className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                        >
+                          <Download size={14} /> Exportar PDF
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Render Saved Templates (Daily Only) */}
+                  {savedTemplates
+                    .filter(template => template.type !== 'monthly')
+                    .map(template => {
+                    let sections = [];
+                    try {
+                      if (Array.isArray(template.sections)) {
+                        sections = template.sections;
+                      } else if (typeof template.sections === 'string' && template.sections.trim() !== '') {
+                        sections = JSON.parse(template.sections) || [];
+                      }
+                    } catch (e) {
+                      console.error('Erro ao parsear sections do template', template.id, e);
+                      sections = [];
+                    }
+
+                    const totalQuestions = sections.reduce((acc, curr) => {
+                      if (!curr || !Array.isArray(curr.questions)) return acc;
+                      return acc + curr.questions.length;
+                    }, 0);
+                    
+                    return (
+                      <div key={template.id} className="border border-slate-200 rounded-xl p-4 bg-white hover:bg-slate-50 transition-shadow shadow-sm hover:shadow-md flex flex-col justify-between relative group/card">
+                        <button 
+                            onClick={() => handleDeleteTemplate(template.id)}
+                            className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
+                            title="Excluir Modelo"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                        <div>
+                          <div className="flex items-start justify-between gap-2 mb-2 pr-6">
+                            <div>
+                              <h2 className="text-base font-bold text-slate-900 line-clamp-1">{template.name}</h2>
+                              <p className="text-xs text-slate-500 mt-1 line-clamp-2">Modelo personalizado</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
+                            <ClipboardList size={14} className="text-purple-500" />
+                            <span>{totalQuestions} perguntas</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          <button
+                            onClick={() => openTemplateModal('edit', template)}
+                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
+                          >
+                            <Edit size={14} /> Editar
+                          </button>
+                          <button
+                            onClick={() => generatePDF(template)}
+                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                          >
+                            <Download size={14} /> PDF
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {isTemplateModalOpen && (
+                  <div 
+                    className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+                    onClick={closeTemplateModal}
+                  >
+                    <div 
+                      className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-up"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-none">
+                        <div className="flex-1 mr-4">
+                           <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1 block">Nome do Modelo</label>
+                           <input 
+                              type="text" 
+                              value={currentTemplate.name}
+                              onChange={(e) => handleUpdateTemplateName(e.target.value)}
+                              className="text-lg font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-primary focus:outline-none w-full"
+                              placeholder="Nome do Checklist"
+                           />
+                        </div>
+                        <button onClick={closeTemplateModal} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                          <X size={20} />
+                        </button>
+                      </div>
+
+                      <div className="p-6 space-y-8 overflow-y-auto flex-1 custom-scrollbar">
+                        
+                        {/* Configurações do PDF (Cabeçalho) */}
+                        <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                            <h4 className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                <Settings2 size={14} /> Configuração do Cabeçalho (PDF)
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] text-slate-500 font-bold uppercase mb-1 block">Título no PDF</label>
+                                    <input 
+                                        value={currentTemplate.pdfTitle}
+                                        onChange={(e) => handleUpdatePdfConfig('pdfTitle', e.target.value)}
+                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-800 focus:border-blue-500 focus:outline-none"
+                                        placeholder="Ex: CHECKLIST DIÁRIO"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-slate-500 font-bold uppercase mb-1 block">Subtítulo</label>
+                                    <input 
+                                        value={currentTemplate.pdfSubtitle}
+                                        onChange={(e) => handleUpdatePdfConfig('pdfSubtitle', e.target.value)}
+                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium text-slate-800 focus:border-blue-500 focus:outline-none"
+                                        placeholder="Ex: FORMULÁRIO DE REGISTRO"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="text-[10px] text-slate-500 font-bold uppercase mb-1 block">Linha de Campos (Nome, ID, Data...)</label>
+                                    <input 
+                                        value={currentTemplate.headerText}
+                                        onChange={(e) => handleUpdatePdfConfig('headerText', e.target.value)}
+                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-slate-700 focus:border-blue-500 focus:outline-none"
+                                        placeholder="Nome: _________ ID: ____"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {currentTemplate.sections.map((section, sIndex) => (
+                          <div key={sIndex} className="bg-slate-50 p-4 rounded-xl border border-slate-200 relative group/section">
+                             <div className="absolute right-2 top-2 opacity-0 group-hover/section:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => handleRemoveSection(sIndex)}
+                                  className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                  title="Remover Seção"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                             </div>
+
+                             <div className="mb-4 pr-8">
+                                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">Título da Seção</label>
+                                <input
+                                  value={section.title}
+                                  onChange={(e) => handleUpdateSectionTitle(sIndex, e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 focus:border-primary focus:ring-1 focus:ring-primary/30 outline-none"
+                                  placeholder="Ex: Motorista"
+                                />
+                             </div>
+
+                             <div className="space-y-3 pl-2 border-l-2 border-slate-200">
+                                {section.questions.map((q, qIndex) => (
+                                  <div key={qIndex} className="flex gap-2 items-start group/question">
+                                    <span className="mt-2 text-xs text-slate-400 w-6 font-mono text-right">{qIndex + 1}.</span>
+                                    <textarea
+                                      value={q}
+                                      onChange={(e) => handleUpdateQuestion(sIndex, qIndex, e.target.value)}
+                                      rows={2}
+                                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:border-primary focus:ring-1 focus:ring-primary/30 outline-none resize-none"
+                                      placeholder="Digite a pergunta..."
+                                    />
+                                    <button 
+                                      onClick={() => handleRemoveQuestion(sIndex, qIndex)}
+                                      className="mt-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/question:opacity-100 transition-opacity"
+                                      title="Remover Pergunta"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                ))}
+                                <button 
+                                  onClick={() => handleAddQuestion(sIndex)}
+                                  className="ml-8 text-xs font-semibold text-primary hover:text-blue-700 flex items-center gap-1 py-1"
+                                >
+                                  <Plus size={12} /> Adicionar Pergunta
+                                </button>
+                             </div>
+                          </div>
+                        ))}
+
+                        <button 
+                          onClick={handleAddSection}
+                          className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-slate-500 font-semibold hover:border-primary hover:text-primary hover:bg-blue-50/30 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Plus size={20} /> Adicionar Nova Seção
+                        </button>
+                      </div>
+
+                      <div className="p-6 border-t border-slate-100 bg-white flex-none flex justify-between gap-3">
+                        <button
+                          onClick={generatePDF}
+                          className="px-4 py-2 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 flex items-center gap-2 text-sm font-medium"
+                        >
+                          <Download size={16} /> PDF Preview
+                        </button>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={closeTemplateModal}
+                            className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 text-sm font-medium"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={handleSaveTemplate}
+                            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-800 text-sm font-bold shadow-lg shadow-blue-500/20"
+                          >
+                            Salvar Modelo
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Card Criar Novo (Mensal) */}
+                <button 
+                  onClick={() => openTemplateModal('new-monthly')}
+                  className="border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-blue-50/50 transition-all group min-h-[160px]"
+                >
+                  <div className="bg-slate-100 p-3 rounded-full group-hover:bg-blue-100 transition-colors">
+                    <Plus size={24} className="text-slate-400 group-hover:text-primary" />
+                  </div>
+                  <span className="font-bold text-slate-600 group-hover:text-primary">Criar Modelo Mensal</span>
+                </button>
+
+                {/* Card Mensal Padrão */}
+                {showDefaultMonthlyTemplate && (
+                  <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 hover:bg-slate-100/70 transition-shadow shadow-sm hover:shadow-md flex flex-col justify-between relative group/card">
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Tem certeza que deseja remover este modelo padrão da lista?')) {
+                          setShowDefaultMonthlyTemplate(false);
+                        }
+                      }}
+                      className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
+                      title="Excluir Modelo Padrão"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-2 pr-6">
+                        <div>
+                          <h2 className="text-base font-bold text-slate-900">Checklist Mensal / Adequação</h2>
+                          <p className="text-xs text-slate-500 mt-1">Modelo padrão baseado no formulário FR MAN 07.</p>
+                        </div>
+                        <span className="px-2 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">Padrão</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
+                        <ClipboardList size={14} className="text-purple-500" />
+                        <span>{totalMonthlyQuestions} perguntas</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <button
+                        onClick={() => openTemplateModal('monthly-default')}
+                        className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-blue-800 flex items-center justify-center gap-1"
+                      >
+                        <Eye size={14} /> Visualizar / Editar
+                      </button>
+                      <button
+                        onClick={() => generatePDF({
+                          name: 'Checklist Mensal / Adequação',
+                          pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
+                          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+                          headerText: 'Local: __________   Data: __/__/____   Placa: __________',
+                          sections: [
+                            { title: monthlySectionTitles.geral, questions: monthlyChecklistItems.geral }
+                          ]
+                        })}
+                        className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                      >
+                        <Download size={14} /> Exportar PDF
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Modelos Mensais Salvos */}
+                {savedTemplates
+                  .filter(template => template.type === 'monthly')
+                  .map(template => {
+                    let sections = [];
+                    try {
+                      if (Array.isArray(template.sections)) {
+                        sections = template.sections;
+                      } else if (typeof template.sections === 'string' && template.sections.trim() !== '') {
+                        sections = JSON.parse(template.sections) || [];
+                      }
+                    } catch (e) {
+                      console.error('Erro ao parsear sections do template mensal', template.id, e);
+                      sections = [];
+                    }
+
+                    const totalQuestions = sections.reduce((acc, curr) => {
+                      if (!curr || !Array.isArray(curr.questions)) return acc;
+                      return acc + curr.questions.length;
+                    }, 0);
+
+                    return (
+                      <div key={template.id} className="border border-slate-200 rounded-xl p-4 bg-white hover:bg-slate-50 transition-shadow shadow-sm hover:shadow-md flex flex-col justify-between relative group/card">
+                        <button 
+                          onClick={() => handleDeleteTemplate(template.id)}
+                          className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
+                          title="Excluir Modelo Mensal"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                        <div>
+                          <div className="flex items-start justify-between gap-2 mb-2 pr-6">
+                            <div>
+                              <h2 className="text-base font-bold text-slate-900 line-clamp-1">{template.name}</h2>
+                              <p className="text-xs text-slate-500 mt-1 line-clamp-2">Modelo mensal personalizado</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
+                            <ClipboardList size={14} className="text-purple-500" />
+                            <span>{totalQuestions} perguntas</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          <button
+                            onClick={() => openTemplateModal('edit', template)}
+                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
+                          >
+                            <Edit size={14} /> Editar
+                          </button>
+                          <button
+                            onClick={() => generatePDF(template)}
+                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                          >
+                            <Download size={14} /> PDF
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -3131,10 +4301,11 @@ function App() {
     switch (activeTab) {
       case 'Dashboard': return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
       case 'Produtos': return <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} />;
-      case 'Destaques': return <HighlightsScreen globalSearchTerm={globalSearchTerm} />;
+      case 'Destaques': return <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} />;
       case 'Usuários': return <UsersScreen globalSearchTerm={globalSearchTerm} session={session} />;
       case 'Entregas': return <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />;
       case 'Fidelidade': return <LoyaltyScreen globalSearchTerm={globalSearchTerm} />;
+      case 'Checklist': return <ChecklistScreen />;
       default: return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
     }
   };
@@ -3168,6 +4339,7 @@ function App() {
           <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} />
+          <SidebarItem icon={ClipboardList} label="Checklist" active={activeTab === 'Checklist'} onClick={() => setActiveTab('Checklist')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} />
         </nav>
