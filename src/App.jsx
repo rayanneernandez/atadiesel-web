@@ -1822,79 +1822,105 @@ const ChecklistScreen = () => {
   const totalMonthlyQuestions = monthlyChecklistItems.geral.length;
 
   const openTemplateModal = (mode, templateToEdit = null) => {
-    if (mode === 'daily-default') {
-      // Checklist Diário padrão (FR MAN 06)
-      const sections = [
-        { title: dailySectionTitles.motorista, questions: [...dailyChecklistItems.motorista] },
-        { title: dailySectionTitles.cavaloCarreta, questions: [...dailyChecklistItems.cavaloCarreta] },
-        { title: dailySectionTitles.lacre, questions: [...dailyChecklistItems.lacre] },
-        { title: dailySectionTitles.equipamentos, questions: [...dailyChecklistItems.equipamentos] },
-        { title: dailySectionTitles.epis, questions: [...dailyChecklistItems.epis] }
-      ];
-      
-      setCurrentTemplate({
-        id: 'daily',
-        name: 'Checklist Diário',
-        pdfTitle: 'CHECKLIST DIÁRIO',
-        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
-        headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
-        type: 'daily',
-        sections
-      });
-    } else if (mode === 'monthly-default') {
-      // Checklist Mensal/Adequação padrão (FR MAN 07)
-      const sections = [
-        { title: monthlySectionTitles.geral, questions: [...monthlyChecklistItems.geral] }
-      ];
+    // Force close first to ensure state reset
+    setIsTemplateModalOpen(false);
 
-      setCurrentTemplate({
-        id: 'monthly',
-        name: 'Checklist Mensal / Adequação',
-        pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
-        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
-        headerText: 'Local: __________   Data: __/__/____   Placa: __________',
-        type: 'monthly',
-        sections
-      });
-    } else if (mode === 'edit' && templateToEdit) {
-      // Editar template salvo (diário ou mensal)
-      setCurrentTemplate({
-        id: templateToEdit.id,
-        name: templateToEdit.name,
-        pdfTitle: templateToEdit.pdf_title || '',
-        pdfSubtitle: templateToEdit.pdf_subtitle || '',
-        headerText: templateToEdit.header_text || '',
-        type: templateToEdit.type || 'daily',
-        sections: typeof templateToEdit.sections === 'string' 
-          ? (templateToEdit.sections ? JSON.parse(templateToEdit.sections) : []) 
-          : (templateToEdit.sections || [])
-      });
-    } else if (mode === 'new-daily') {
-      setCurrentTemplate({
-        id: null,
-        name: 'Novo Checklist Diário',
-        pdfTitle: 'CHECKLIST DIÁRIO',
-        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
-        headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
-        type: 'daily',
-        sections: [
-          { title: 'Nova Seção 1', questions: ['Pergunta 1'] }
-        ]
-      });
-    } else if (mode === 'new-monthly') {
-      setCurrentTemplate({
-        id: null,
-        name: 'Novo Checklist Mensal',
-        pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
-        pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
-        headerText: 'Local: __________   Data: __/__/____   Placa: __________',
-        type: 'monthly',
-        sections: [
-          { title: 'Nova Seção Mensal', questions: ['Pergunta 1'] }
-        ]
-      });
+    try {
+      if (mode === 'daily-default') {
+        // Checklist Diário padrão (FR MAN 06)
+        const sections = [
+          { title: dailySectionTitles.motorista, questions: [...dailyChecklistItems.motorista] },
+          { title: dailySectionTitles.cavaloCarreta, questions: [...dailyChecklistItems.cavaloCarreta] },
+          { title: dailySectionTitles.lacre, questions: [...dailyChecklistItems.lacre] },
+          { title: dailySectionTitles.equipamentos, questions: [...dailyChecklistItems.equipamentos] },
+          { title: dailySectionTitles.epis, questions: [...dailyChecklistItems.epis] }
+        ];
+        
+        setCurrentTemplate({
+          id: 'daily',
+          name: 'Checklist Diário',
+          pdfTitle: 'CHECKLIST DIÁRIO',
+          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+          headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
+          type: 'daily',
+          sections
+        });
+      } else if (mode === 'monthly-default') {
+        // Checklist Mensal/Adequação padrão (FR MAN 07)
+        const sections = [
+          { title: monthlySectionTitles.geral, questions: [...monthlyChecklistItems.geral] }
+        ];
+
+        setCurrentTemplate({
+          id: 'monthly',
+          name: 'Checklist Mensal / Adequação',
+          pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
+          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+          headerText: 'Local: __________   Data: __/__/____   Placa: __________',
+          type: 'monthly',
+          sections
+        });
+      } else if (mode === 'edit' && templateToEdit) {
+        // Editar template salvo (diário ou mensal)
+        let sections = [];
+        try {
+          // Handle both string JSON and array
+          if (Array.isArray(templateToEdit.sections)) {
+             sections = templateToEdit.sections;
+          } else {
+             sections = typeof templateToEdit.sections === 'string' 
+              ? (templateToEdit.sections ? JSON.parse(templateToEdit.sections) : []) 
+              : (templateToEdit.sections || []);
+          }
+        } catch (e) {
+          console.error('Erro ao processar seções do template:', e);
+          sections = [];
+        }
+
+        setCurrentTemplate({
+          id: templateToEdit.id,
+          name: templateToEdit.name,
+          pdfTitle: templateToEdit.pdf_title || '',
+          pdfSubtitle: templateToEdit.pdf_subtitle || '',
+          headerText: templateToEdit.header_text || '',
+          type: templateToEdit.type || 'daily',
+          sections
+        });
+      } else if (mode === 'new-daily') {
+        setCurrentTemplate({
+          id: null,
+          name: 'Novo Checklist Diário',
+          pdfTitle: 'CHECKLIST DIÁRIO',
+          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+          headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
+          type: 'daily',
+          sections: [
+            { title: 'Nova Seção 1', questions: ['Pergunta 1'] }
+          ]
+        });
+      } else if (mode === 'new-monthly') {
+        setCurrentTemplate({
+          id: null,
+          name: 'Novo Checklist Mensal',
+          pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
+          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
+          headerText: 'Local: __________   Data: __/__/____   Placa: __________',
+          type: 'monthly',
+          sections: [
+            { title: 'Nova Seção Mensal', questions: ['Pergunta 1'] }
+          ]
+        });
+      }
+      
+      // Pequeno delay para garantir que o estado do template foi processado
+      setTimeout(() => {
+        setIsTemplateModalOpen(true);
+      }, 50);
+      
+    } catch (error) {
+      console.error('Erro crítico ao abrir modal de template:', error);
+      alert('Ocorreu um erro ao abrir o modelo. Por favor, tente novamente ou recarregue a página.');
     }
-    setIsTemplateModalOpen(true);
   };
 
   const closeTemplateModal = () => {
@@ -2025,12 +2051,13 @@ const ChecklistScreen = () => {
     }
   };
 
-  const generatePDF = (templateOverride = null) => {
+  const generatePDF = (templateOverride = null, isPreview = false, returnBlob = false) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
 
     // Use override if provided (for list cards), otherwise current editing, otherwise daily default
-    let templateToPrint = templateOverride;
+    // Ensure templateOverride is not a React event object (check for .name property which templates have but events don't)
+    let templateToPrint = (templateOverride && templateOverride.name) ? templateOverride : null;
     
     if (!templateToPrint) {
         templateToPrint = isTemplateModalOpen ? currentTemplate : {
@@ -2108,7 +2135,15 @@ const ChecklistScreen = () => {
         addSection(section.title || 'Seção', section.questions);
     });
 
-    doc.save(`${templateToPrint.name.toLowerCase().replace(/\s+/g, '-')}.pdf`);
+    if (returnBlob) {
+        return doc.output('bloburl');
+    }
+
+    if (isPreview) {
+        window.open(doc.output('bloburl'), '_blank');
+    } else {
+        doc.save(`${templateToPrint.name.toLowerCase().replace(/\s+/g, '-')}.pdf`);
+    }
   };
 
   return (
@@ -2213,9 +2248,8 @@ const ChecklistScreen = () => {
           </div>
 
           <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 p-6 relative">
-            {creationTab === 'daily' ? (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {creationTab === 'daily' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Card Criar Novo (Diário) */}
                   <button 
                     onClick={() => openTemplateModal('new-daily')}
@@ -2331,8 +2365,9 @@ const ChecklistScreen = () => {
                     );
                   })}
                 </div>
+            )}
 
-                {isTemplateModalOpen && (
+            {isTemplateModalOpen && (
                   <div 
                     className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
                     onClick={closeTemplateModal}
@@ -2457,10 +2492,10 @@ const ChecklistScreen = () => {
 
                       <div className="p-6 border-t border-slate-100 bg-white flex-none flex justify-between gap-3">
                         <button
-                          onClick={generatePDF}
+                          onClick={() => generatePDF(currentTemplate, true, false)}
                           className="px-4 py-2 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 flex items-center gap-2 text-sm font-medium"
                         >
-                          <Download size={16} /> PDF Preview
+                          <Eye size={16} /> PDF Preview
                         </button>
                         <div className="flex gap-3">
                           <button
@@ -2480,8 +2515,8 @@ const ChecklistScreen = () => {
                     </div>
                   </div>
                 )}
-              </>
-            ) : (
+
+            {creationTab !== 'daily' && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {/* Card Criar Novo (Mensal) */}
                 <button 
@@ -2968,14 +3003,14 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                   <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-sm">
                      <th className="px-6 py-4 font-semibold">Nome</th>
                      <th className="px-6 py-4 font-semibold">Email</th>
+                     <th className="px-6 py-4 font-semibold">Cargo</th>
+                     <th className="px-6 py-4 font-semibold">Status</th>
                      <th className="px-6 py-4 font-semibold text-center">
                         <div className="flex flex-col items-center gap-1">
                            <ClipboardList size={16} />
                            <span className="text-[10px] uppercase">Acesso Checklist</span>
                         </div>
                      </th>
-                     <th className="px-6 py-4 font-semibold">Cargo</th>
-                     <th className="px-6 py-4 font-semibold">Status</th>
                      <th className="px-6 py-4 font-semibold text-right">Ações</th>
                   </tr>
                </thead>
@@ -2991,6 +3026,17 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                         </div>
                       </td>
                       <td className="px-6 py-4"><HighlightText text={user.email} highlight={globalSearchTerm} /></td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
+                           {user.role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`flex items-center gap-1.5 ${user.status === 'Ativo' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                           <div className={`w-1.5 h-1.5 rounded-full ${user.status === 'Ativo' ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                           {user.status}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 text-center">
                         <button 
                            onClick={(e) => {
@@ -3002,17 +3048,6 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                         >
                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${user.app_access ? 'translate-x-6' : 'translate-x-1'}`} />
                         </button>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
-                           {user.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`flex items-center gap-1.5 ${user.status === 'Ativo' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                           <div className={`w-1.5 h-1.5 rounded-full ${user.status === 'Ativo' ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
-                           {user.status}
-                        </span>
                       </td>
                       <td className="px-6 py-4 text-right relative">
                          <div className="relative inline-block text-left">
@@ -4427,11 +4462,6 @@ function App() {
             >
                 <Menu size={24} />
             </button>
-            
-            {/* Logo Header */}
-            <div className="ml-2">
-              <img src={logoSmall} alt="Atadiesel" className="h-10 w-auto object-contain" />
-            </div>
             
             <div className="hidden md:flex items-center bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 w-64 lg:w-96 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
                 <Search size={20} className="text-slate-400 mr-2" />
