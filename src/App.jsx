@@ -1667,8 +1667,6 @@ const ChecklistScreen = () => {
   const [creationTab, setCreationTab] = useState('daily'); // 'daily' | 'monthly'
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState([]);
-  const [showDefaultDailyTemplate, setShowDefaultDailyTemplate] = useState(true);
-  const [showDefaultMonthlyTemplate, setShowDefaultMonthlyTemplate] = useState(true);
 
   useEffect(() => {
     fetchTemplates();
@@ -1699,168 +1697,14 @@ const ChecklistScreen = () => {
     sections: []
   });
 
-  // Dados mockados baseados na imagem enviada
-  const dailyChecklistItems = {
-    motorista: [
-      "1.1 Está se sentindo bem, teve um bom sono?",
-      "1.2 Está se sentindo concentrado para iniciar mais um turno de trabalho?",
-      "1.3 Está tranquilo, calmo, seu descanso foi adequado?",
-      "1.4 Meu descanso foi apropriado e meu sono foi de qualidade...",
-      "1.5 CNH, CRLV, CIV, CIPP, Certificado Cronotacógrafo...",
-      "1.6 Licenças de Operação Estaduais e Licenças IBAMA (Aplicáveis)"
-    ],
-    cavaloCarreta: [
-      "2.1 Computador de Bordo e Rotograma falado em funcionamento?",
-      "2.2 Tacógrafo em funcionamento?",
-      "2.3 Sistema elétrico e todas as luzes em funcionamento?",
-      "2.4 Buzina funcionando?",
-      "2.5 Para-brisas, janelas e Limpador de para-brisas em bom estado?",
-      "2.6 Documentação do Veículo dentro do prazo de validade?",
-      "2.7 Ficha de emergência e envelope?",
-      "2.8 Sistema de freios, conexão de ar, fluido de freio...",
-      "2.9 Condição e pressão dos pneus e rodas",
-      "2.10 Rodas/parafusos/porcas e suportes dos estepes devidamente fixados",
-      "2.11 Baterias protegida com chave geral blindada?",
-      "2.12 Guarda-Corpo",
-      "2.13 Triângulo de sinalização",
-      "2.14 Espelhos retrovisores em perfeito estado?",
-      "2.15 Cinto de Segurança 3 pontos em bom estado",
-      "2.16 Marcação dos Compartimentos",
-      "2.17 Faixas Refletivas Laterais e traseiras",
-      "2.18 Pontos de conexão de aterramento e cabo terra em bom estado?",
-      "2.19 KIT de Emergência completo?",
-      "2.20 Valvula de fundo, fecho rápido e tampa de visita sem vazamento?",
-      "2.21 Simbologia de Risco em bom estado e conforme nota fiscal?",
-      "2.22 Telefones de Emergência e Adesivo (Tel. Emergencia, 0800)",
-      "2.23 Alarme de Ré e Seta",
-      "2.24 Nível de água do radiador",
-      "2.25 Extintores de Incêndio da cabine e do tanque em conformidade?",
-      "2.26 O DVR das câmeras está com a luz azul e verde acesa?",
-      "2.27 Limpeza das câmeras embarcadas",
-      "2.28 Nível e pressão do óleo",
-      "2.29 02 calços de borracha com dimensões mínimas...",
-      "2.30 Tanques (Algum Vazamento)?",
-      "2.31 Cabine limpa organizada, tanque com pintura sem avarias...",
-      "2.32 Logotipo da empresa cavalo e carreta (bom estado...)",
-      "2.33 Bottom (Verificar se existe, trincas e se o visor...)",
-      "2.34 Valvula de contenção para dreno do cocho..."
-    ],
-    lacre: [
-      "3.1 Quinta-Roda/Pino rei/dolly",
-      "3.2 Existência/Integridade dos lacres"
-    ],
-    equipamentos: [
-      "4.1 Mangote",
-      "4.2 Placas Perigo afaste-se/Não fume",
-      "4.3 Placas de Simbologia Rotulo de Risco/Paineis de Segurança",
-      "4.4 Descarga Selada",
-      "4.5 Balde Metálico com cabo terra",
-      "4.6 Lanterna intrinsecamente segura",
-      "4.7 Cones laranja e preto"
-    ],
-    epis: [
-      "5.1 Capacete completo",
-      "5.2 Sapato de Segurança",
-      "5.3 Uniforme de Algodão sem bolso",
-      "5.4 Óculos antiimpacto",
-      "5.5 Luvas de Nitrílica/PVC",
-      "5.6 Máscara semi facial contra GA/VO",
-      "5.7 Cinto tipo para-quedista / Trava queda"
-    ]
-  };
-
-  const dailySectionTitles = {
-    motorista: "1. MOTORISTA",
-    cavaloCarreta: "2. CAVALO/CARRETA",
-    lacre: "3. LACRE DE SEGURANÇA",
-    equipamentos: "4. EQUIPAMENTOS DE ENTREGA",
-    epis: "5. EPI's"
-  };
-
-  const monthlyChecklistItems = {
-    geral: [
-      "1. CNH, MOPP e documentos obrigatórios dentro do prazo de validade.",
-      "2. Certificado de verificação volumétrica (toco, truck, carreta ou bitrem).",
-      "3. CIPP/CIV para transporte de produtos perigosos dentro da validade.",
-      "4. CRLV do veículo atualizado.",
-      "5. Certificado de aferição do cronotacógrafo.",
-      "6. Licenças ambientais aplicáveis.",
-      "7. Ficha de emergência e envelope de transporte.",
-      "8. Conjunto completo de EPIs (colete, luvas, óculos, máscara, calçado, etc.).",
-      "9. Conjunto para situações de emergência (cones, calços, bandeiras, etc.).",
-      "10. Pneus em bom estado, sulco mínimo adequado e sem recapagens irregulares.",
-      "11. Elementos de fixação das rodas (porcas, prisioneiros, anéis) íntegros.",
-      "12. Sistema de freios sem vazamentos e mangueiras em bom estado.",
-      "13. Condições físicas do condutor (assento, cinto, ergonomia, etc.).",
-      "14. Iluminação do veículo (faróis, lanternas, freio, ré, setas) funcionando.",
-      "15. Faixas refletivas e painéis de segurança conforme legislação.",
-      "16. Extintores dimensionados, válidos, lacrados e fixados corretamente.",
-      "17. Placas de risco, de advertência e identificação legíveis e em bom estado.",
-      "18. Válvulas, conexões e dispositivos de carga/descarga em boas condições.",
-      "19. Sistema de Bottom Loading e overfill (quando aplicável) operante.",
-      "20. Sistema de aterramento (cabos, pontos de conexão e ground ball) adequado.",
-      "21. Equipamentos de descarga (mangotes, adaptadores, bocais) íntegros.",
-      "22. Sistema pneumático e de suspensão sem vazamentos aparentes.",
-      "23. Sistemas embarcados (câmeras, sensores, GPS, etc.) funcionando.",
-      "24. Condições gerais de chassi, carroceria, travessas e guarda-corpo.",
-      "25. Proteções traseiras e dispositivos anti-encalhe em boas condições.",
-      "26. Registro de não conformidades e re-check quando aplicável."
-    ]
-  };
-
-  const monthlySectionTitles = {
-    geral: "CHECKLIST MENSAL / ADEQUAÇÃO"
-  };
-
-  const totalDailyQuestions =
-    dailyChecklistItems.motorista.length +
-    dailyChecklistItems.cavaloCarreta.length +
-    dailyChecklistItems.lacre.length +
-    dailyChecklistItems.equipamentos.length +
-    dailyChecklistItems.epis.length;
-
-  const totalMonthlyQuestions = monthlyChecklistItems.geral.length;
+  // Dados mockados removidos conforme solicitação para uso via banco de dados
 
   const openTemplateModal = (mode, templateToEdit = null) => {
     // Force close first to ensure state reset
     setIsTemplateModalOpen(false);
 
     try {
-      if (mode === 'daily-default') {
-        // Checklist Diário padrão (FR MAN 06)
-        const sections = [
-          { title: dailySectionTitles.motorista, questions: [...dailyChecklistItems.motorista] },
-          { title: dailySectionTitles.cavaloCarreta, questions: [...dailyChecklistItems.cavaloCarreta] },
-          { title: dailySectionTitles.lacre, questions: [...dailyChecklistItems.lacre] },
-          { title: dailySectionTitles.equipamentos, questions: [...dailyChecklistItems.equipamentos] },
-          { title: dailySectionTitles.epis, questions: [...dailyChecklistItems.epis] }
-        ];
-        
-        setCurrentTemplate({
-          id: 'daily',
-          name: 'Checklist Diário',
-          pdfTitle: 'CHECKLIST DIÁRIO',
-          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
-          headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
-          type: 'daily',
-          sections
-        });
-      } else if (mode === 'monthly-default') {
-        // Checklist Mensal/Adequação padrão (FR MAN 07)
-        const sections = [
-          { title: monthlySectionTitles.geral, questions: [...monthlyChecklistItems.geral] }
-        ];
-
-        setCurrentTemplate({
-          id: 'monthly',
-          name: 'Checklist Mensal / Adequação',
-          pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
-          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
-          headerText: 'Local: __________   Data: __/__/____   Placa: __________',
-          type: 'monthly',
-          sections
-        });
-      } else if (mode === 'edit' && templateToEdit) {
+      if (mode === 'edit' && templateToEdit) {
         // Editar template salvo (diário ou mensal)
         let sections = [];
         try {
@@ -2060,19 +1904,12 @@ const ChecklistScreen = () => {
     let templateToPrint = (templateOverride && templateOverride.name) ? templateOverride : null;
     
     if (!templateToPrint) {
-        templateToPrint = isTemplateModalOpen ? currentTemplate : {
-            name: "Checklist Diário",
-            pdfTitle: "CHECKLIST DIÁRIO",
-            pdfSubtitle: "FORMULÁRIO DE REGISTRO",
-            headerText: "Nome: _______________________  ID: ______  Data: __/__/____",
-            sections: [
-                { title: dailySectionTitles.motorista, questions: dailyChecklistItems.motorista },
-                { title: dailySectionTitles.cavaloCarreta, questions: dailyChecklistItems.cavaloCarreta },
-                { title: dailySectionTitles.lacre, questions: dailyChecklistItems.lacre },
-                { title: dailySectionTitles.equipamentos, questions: dailyChecklistItems.equipamentos },
-                { title: dailySectionTitles.epis, questions: dailyChecklistItems.epis }
-            ]
-        };
+        templateToPrint = isTemplateModalOpen ? currentTemplate : null;
+    }
+
+    if (!templateToPrint) {
+        alert("Nenhum modelo selecionado para gerar o PDF.");
+        return;
     }
     
     // Ensure sections is an array (handle JSON string from DB and valores nulos)
@@ -2260,50 +2097,6 @@ const ChecklistScreen = () => {
                     </div>
                     <span className="font-bold text-slate-600 group-hover:text-primary">Criar Novo Modelo</span>
                   </button>
-
-                  {/* Card Daily Padrão */}
-                  {showDefaultDailyTemplate && (
-                    <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 hover:bg-slate-100/70 transition-shadow shadow-sm hover:shadow-md flex flex-col justify-between relative group/card">
-                      <button
-                        onClick={() => {
-                          if (window.confirm('Tem certeza que deseja remover este modelo padrão da lista?')) {
-                            setShowDefaultDailyTemplate(false);
-                          }
-                        }}
-                        className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
-                        title="Excluir Modelo Padrão"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                      <div>
-                        <div className="flex items-start justify-between gap-2 mb-2 pr-6">
-                          <div>
-                            <h2 className="text-base font-bold text-slate-900">Checklist Diário</h2>
-                            <p className="text-xs text-slate-500 mt-1">Modelo padrão baseado no formulário FR MAN 06.</p>
-                          </div>
-                          <span className="px-2 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">Padrão</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
-                          <ClipboardList size={14} className="text-blue-500" />
-                          <span>{totalDailyQuestions} perguntas</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2 mt-4">
-                        <button
-                          onClick={() => openTemplateModal('daily-default')}
-                          className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-blue-800 flex items-center justify-center gap-1"
-                        >
-                          <Eye size={14} /> Visualizar / Editar
-                        </button>
-                        <button
-                          onClick={() => generatePDF()}
-                          className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
-                        >
-                          <Download size={14} /> Exportar PDF
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Render Saved Templates (Daily Only) */}
                   {savedTemplates
@@ -2528,58 +2321,6 @@ const ChecklistScreen = () => {
                   </div>
                   <span className="font-bold text-slate-600 group-hover:text-primary">Criar Modelo Mensal</span>
                 </button>
-
-                {/* Card Mensal Padrão */}
-                {showDefaultMonthlyTemplate && (
-                  <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 hover:bg-slate-100/70 transition-shadow shadow-sm hover:shadow-md flex flex-col justify-between relative group/card">
-                    <button
-                      onClick={() => {
-                        if (window.confirm('Tem certeza que deseja remover este modelo padrão da lista?')) {
-                          setShowDefaultMonthlyTemplate(false);
-                        }
-                      }}
-                      className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
-                      title="Excluir Modelo Padrão"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-2 pr-6">
-                        <div>
-                          <h2 className="text-base font-bold text-slate-900">Checklist Mensal / Adequação</h2>
-                          <p className="text-xs text-slate-500 mt-1">Modelo padrão baseado no formulário FR MAN 07.</p>
-                        </div>
-                        <span className="px-2 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">Padrão</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
-                        <ClipboardList size={14} className="text-purple-500" />
-                        <span>{totalMonthlyQuestions} perguntas</span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-4">
-                      <button
-                        onClick={() => openTemplateModal('monthly-default')}
-                        className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-blue-800 flex items-center justify-center gap-1"
-                      >
-                        <Eye size={14} /> Visualizar / Editar
-                      </button>
-                      <button
-                        onClick={() => generatePDF({
-                          name: 'Checklist Mensal / Adequação',
-                          pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
-                          pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
-                          headerText: 'Local: __________   Data: __/__/____   Placa: __________',
-                          sections: [
-                            { title: monthlySectionTitles.geral, questions: monthlyChecklistItems.geral }
-                          ]
-                        })}
-                        className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
-                      >
-                        <Download size={14} /> Exportar PDF
-                      </button>
-                    </div>
-                  </div>
-                )}
 
                 {/* Modelos Mensais Salvos */}
                 {savedTemplates
