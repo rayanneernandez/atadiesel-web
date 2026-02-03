@@ -41,7 +41,12 @@ import {
   ClipboardList,
   Settings2,
   Mail,
-  Smartphone
+  Smartphone,
+  UserCog,
+  UserPlus,
+  Boxes,
+  History,
+  List
 } from 'lucide-react';
 import LoginScreen from './login';
 import jsPDF from 'jspdf';
@@ -59,113 +64,6 @@ import {
   Pie, 
   Cell 
 } from 'recharts';
-
-// --- DADOS MOCKADOS ---
-const topProducts = [
-  { id: 1, name: 'Óleo Motor 5W30', sales: 120, price: 4800, growth: '+12%' },
-  { id: 2, name: 'Filtro de Ar Esportivo', sales: 85, price: 2125, growth: '+5%' },
-  { id: 3, name: 'Kit Pastilha de Freio', sales: 60, price: 5400, growth: '-2%' },
-  { id: 4, name: 'Amortecedor Traseiro', sales: 45, price: 11250, growth: '+8%' },
-  { id: 5, name: 'Bateria 60Ah', sales: 32, price: 4500, growth: '+15%' },
-  { id: 6, name: 'Vela de Ignição Iridium', sales: 28, price: 320, growth: '+4%' },
-  { id: 7, name: 'Correia Dentada', sales: 25, price: 180, growth: '-1%' },
-  { id: 8, name: 'Bomba de Água', sales: 22, price: 450, growth: '+6%' },
-  { id: 9, name: 'Disco de Freio', sales: 20, price: 890, growth: '+3%' },
-  { id: 10, name: 'Filtro de Óleo', sales: 18, price: 45, growth: '+2%' },
-  { id: 11, name: 'Fluido de Freio DOT4', sales: 15, price: 35, growth: '+1%' },
-  { id: 12, name: 'Lâmpada H4 LED', sales: 12, price: 120, growth: '+7%' },
-];
-
-const salesData = [
-  { name: 'Jan', vendas: 4000, lucro: 2400 },
-  { name: 'Fev', vendas: 3000, lucro: 1398 },
-  { name: 'Mar', vendas: 2000, lucro: 9800 },
-  { name: 'Abr', vendas: 2780, lucro: 3908 },
-  { name: 'Mai', vendas: 1890, lucro: 4800 },
-  { name: 'Jun', vendas: 2390, lucro: 3800 },
-  { name: 'Jul', vendas: 3490, lucro: 4300 },
-];
-
-const categoryData = [
-  { name: 'Motor', value: 400 },
-  { name: 'Freios', value: 300 },
-  { name: 'Suspensão', value: 300 },
-  { name: 'Elétrica', value: 200 },
-];
-
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
-
-const mockDeliveries = [
-  { 
-    id: 1, 
-    client: 'Oficina do Pedro', 
-    items: 'Kit Embreagem', 
-    itemsList: [
-      { name: 'Kit Embreagem Luk', quantity: 1, unitPrice: 450.00 }
-    ],
-    distance: '2.5km', 
-    status: 'Pendente', 
-    date: '2024-03-10', 
-    value: 450.00, 
-    time: 'Há 5 min' 
-  },
-  { 
-    id: 2, 
-    client: 'Auto Center Silva', 
-    items: '4x Pneus 175/70', 
-    itemsList: [
-      { name: 'Pneu Pirelli 175/70 R13', quantity: 4, unitPrice: 300.00 }
-    ],
-    distance: '5.1km', 
-    status: 'Em Trânsito', 
-    date: '2024-03-09', 
-    value: 1200.00, 
-    time: 'Há 25 min' 
-  },
-  { 
-    id: 3, 
-    client: 'Mecânica Rápida', 
-    items: 'Óleo + Filtros', 
-    itemsList: [
-      { name: 'Óleo Motor 5W30', quantity: 4, unitPrice: 35.00 },
-      { name: 'Filtro de Óleo', quantity: 1, unitPrice: 40.00 },
-      { name: 'Filtro de Ar', quantity: 1, unitPrice: 70.00 }
-    ],
-    distance: '1.2km', 
-    status: 'Entregue', 
-    date: '2024-03-08', 
-    value: 250.00, 
-    time: 'Há 1 hora' 
-  },
-  { 
-    id: 4, 
-    client: 'Posto Ipiranga', 
-    items: 'Aditivos', 
-    itemsList: [
-      { name: 'Aditivo Radiador', quantity: 3, unitPrice: 40.00 },
-      { name: 'Limpa Bico', quantity: 2, unitPrice: 30.00 }
-    ],
-    distance: '8.0km', 
-    status: 'Entregue', 
-    date: '2024-03-08', 
-    value: 180.00, 
-    time: 'Ontem' 
-  },
-  { 
-    id: 5, 
-    client: 'Oficina Central', 
-    items: 'Pastilhas de Freio', 
-    itemsList: [
-      { name: 'Pastilha Dianteira', quantity: 1, unitPrice: 180.00 },
-      { name: 'Pastilha Traseira', quantity: 1, unitPrice: 140.00 }
-    ],
-    distance: '3.4km', 
-    status: 'Pendente', 
-    date: '2024-03-10', 
-    value: 320.00, 
-    time: 'Há 2 horas' 
-  },
-];
 
 // --- UTILS ---
 const HighlightText = ({ text, highlight }) => {
@@ -193,11 +91,137 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
     end: new Date().toISOString().slice(0, 10)
   });
 
+  // --- PROCESSAMENTO DE DADOS REAIS ---
+  const { processedSales, processedCategories, processedTopProducts } = React.useMemo(() => {
+    // 1. Fluxo de Caixa (Últimos 7 meses)
+    const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const salesList = [];
+    const now = new Date();
+    
+    // Inicializa os últimos 7 meses
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthName = months[d.getMonth()];
+        const year = d.getFullYear();
+        salesList.push({ 
+            name: monthName, 
+            vendas: 0, 
+            lucro: 0,
+            monthIndex: d.getMonth(),
+            year: year
+        });
+    }
+
+    // 2. Categorias e Produtos Mais Vendidos
+    const catMap = {};
+    const prodMap = {};
+
+    const currentMonthIndex = now.getMonth();
+    const currentYear = now.getFullYear();
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthIndex = prevMonthDate.getMonth();
+    const prevYear = prevMonthDate.getFullYear();
+
+    deliveries.forEach(order => {
+        let orderMonth = -1;
+        let orderYear = -1;
+
+        // Processar Vendas por Mês
+        if (order.date) { // Formato esperado: "DD/MM/YYYY"
+            const parts = order.date.split('/');
+            if (parts.length === 3) {
+                const monthStr = parts[1];
+                const yearStr = parts[2];
+                orderMonth = parseInt(monthStr) - 1;
+                orderYear = parseInt(yearStr);
+                
+                const match = salesList.find(m => m.monthIndex === orderMonth && m.year === orderYear);
+                if (match) {
+                     match.vendas += (Number(order.value) || 0);
+                     // Estimativa de lucro (30%) já que não temos custo no pedido
+                     match.lucro += (Number(order.value) || 0) * 0.3;
+                }
+            }
+        }
+
+        // Processar Produtos e Categorias
+        if (order.itemsList && Array.isArray(order.itemsList)) {
+            order.itemsList.forEach(item => {
+                const itemName = item.name || 'Desconhecido';
+                const qty = Number(item.quantity) || 0;
+                
+                // Top Produtos
+                if (!prodMap[itemName]) {
+                    prodMap[itemName] = { 
+                        name: itemName, 
+                        sales: 0, 
+                        value: 0,
+                        currentMonthSales: 0,
+                        prevMonthSales: 0
+                    };
+                }
+                prodMap[itemName].sales += qty;
+                prodMap[itemName].value += (qty * (Number(item.unitPrice) || 0));
+
+                if (orderMonth === currentMonthIndex && orderYear === currentYear) {
+                    prodMap[itemName].currentMonthSales += qty;
+                } else if (orderMonth === prevMonthIndex && orderYear === prevYear) {
+                    prodMap[itemName].prevMonthSales += qty;
+                }
+
+                // Categorias
+                const product = products.find(p => 
+                    (p.name && p.name.toLowerCase() === itemName.toLowerCase()) || 
+                    (p.title && p.title.toLowerCase() === itemName.toLowerCase())
+                );
+                const catName = product?.category || 'Outros';
+                
+                if (!catMap[catName]) {
+                    catMap[catName] = 0;
+                }
+                catMap[catName] += qty;
+            });
+        }
+    });
+
+    // Formata Categorias para o Gráfico
+    const processedCategories = Object.entries(catMap)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value); // Ordena por quantidade
+    
+    // Formata Top Produtos
+    const processedTopProducts = Object.values(prodMap)
+        .sort((a, b) => b.sales - a.sales)
+        .slice(0, 10)
+        .map((p, index) => {
+            let growth = 0;
+            if (p.prevMonthSales > 0) {
+                growth = ((p.currentMonthSales - p.prevMonthSales) / p.prevMonthSales) * 100;
+            } else if (p.currentMonthSales > 0) {
+                growth = 100; // Crescimento de 100% (ou infinito) se não houve vendas no mês anterior
+            }
+
+            const sign = growth >= 0 ? '+' : '';
+            
+            return {
+                id: index,
+                name: p.name,
+                sales: p.sales,
+                price: p.value, // Valor total vendido
+                growth: `${sign}${growth.toFixed(0)}%`
+            };
+        });
+
+    return { processedSales: salesList, processedCategories, processedTopProducts };
+  }, [deliveries, products]);
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
+
   // Cálculos em Tempo Real
   const activeClients = new Set(deliveries.map(d => d.client)).size;
   const totalOrders = deliveries.length;
   const monthlyRevenue = deliveries.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
-  const netProfit = monthlyRevenue * 0.30; // Estimativa de 30% de margem
+  const averageTicket = totalOrders > 0 ? monthlyRevenue / totalOrders : 0;
 
   // Formatação de Moeda
   const formatCurrency = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -215,7 +239,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
 
   const searchTerm = globalSearchTerm?.trim().toLowerCase() || '';
 
-  const filteredTopProducts = topProducts.filter(p =>
+  const filteredTopProducts = processedTopProducts.filter(p =>
     !searchTerm || p.name.toLowerCase().includes(searchTerm)
   );
 
@@ -251,7 +275,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
         ['Clientes Ativos', '1.250', '+12.5%'],
         ['Total de Pedidos', '450', '+8.2%'],
         ['Receita Mensal', 'R$ 125.000,00', '-2.4%'],
-        ['Lucro Líquido', 'R$ 32.500,00', '+15.3%']
+        ['Ticket Médio', 'R$ 345,00', '+1.3%']
       ];
       
       autoTable(doc, {
@@ -272,7 +296,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
       doc.text('Estoque e Vendas', 14, yPos);
       yPos += 5;
       
-      const productData = topProducts.map(p => [p.name, p.sales, `R$ ${p.price}`, p.growth]);
+      const productData = processedTopProducts.map(p => [p.name, p.sales, `R$ ${p.price}`, p.growth]);
       
       autoTable(doc, {
         startY: yPos,
@@ -322,14 +346,14 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
         { Metrica: 'Clientes Ativos', Valor: '1.250', Tendencia: '+12.5%' },
         { Metrica: 'Total de Pedidos', Valor: '450', Tendencia: '+8.2%' },
         { Metrica: 'Receita Mensal', Valor: 125000, Tendencia: '-2.4%' },
-        { Metrica: 'Lucro Líquido', Valor: 32500, Tendencia: '+15.3%' }
+        { Metrica: 'Ticket Médio', Valor: 345, Tendencia: '+1.3%' }
       ];
       const ws = XLSX.utils.json_to_sheet(kpiData);
       XLSX.utils.book_append_sheet(wb, ws, "Visão Geral");
     }
 
     if (reportConfig.products) {
-      const productData = topProducts.map(p => ({
+      const productData = processedTopProducts.map(p => ({
         Produto: p.name,
         Vendas: p.sales,
         Preco: p.price,
@@ -506,9 +530,9 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
       />
       <StatCard 
         icon={TrendingUp} 
-        label={<HighlightText text="Lucro Estimado" highlight={globalSearchTerm} />}
-        value={<HighlightText text={formatCurrency(netProfit)} highlight={globalSearchTerm} />}
-        trend="+15.3%" 
+        label={<HighlightText text="Ticket Médio" highlight={globalSearchTerm} />}
+        value={<HighlightText text={formatCurrency(averageTicket)} highlight={globalSearchTerm} />}
+        trend="+1.3%" 
         trendUp={true}
         color="indigo" 
       />
@@ -520,7 +544,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-lg font-bold text-slate-800">Fluxo de Caixa</h2>
-            <p className="text-sm text-slate-400">Receita vs Lucro nos últimos 7 meses</p>
+            <p className="text-sm text-slate-400">Receita nos últimos 7 meses</p>
           </div>
           <button className="p-2 hover:bg-slate-50 rounded-lg transition-colors">
             <MoreVertical size={20} className="text-slate-400" />
@@ -528,15 +552,11 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
         </div>
         <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={salesData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <AreaChart data={processedSales} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#0047AB" stopOpacity={0.1}/>
                   <stop offset="95%" stopColor="#0047AB" stopOpacity={0}/>
-                </linearGradient>
-                <linearGradient id="colorLucro" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -546,7 +566,6 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
               <Area type="monotone" dataKey="vendas" stroke="#0047AB" strokeWidth={3} fillOpacity={1} fill="url(#colorVendas)" />
-              <Area type="monotone" dataKey="lucro" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorLucro)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -559,7 +578,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={categoryData}
+                data={processedCategories}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -567,7 +586,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
                 paddingAngle={5}
                 dataKey="value"
               >
-                {categoryData.map((entry, index) => (
+                {processedCategories.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
@@ -577,19 +596,23 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
           {/* Centro do Donut */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
-              <span className="block text-2xl font-bold text-slate-800">1.2k</span>
+              <span className="block text-2xl font-bold text-slate-800">
+                {processedCategories.reduce((acc, curr) => acc + curr.value, 0)}
+              </span>
               <span className="text-xs text-slate-400">Itens</span>
             </div>
           </div>
         </div>
         <div className="mt-6 space-y-3">
-          {categoryData.map((item, index) => (
+          {processedCategories.map((item, index) => (
             <div key={item.name} className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
                 <span className="text-slate-600">{item.name}</span>
               </div>
-              <span className="font-semibold text-slate-900">{((item.value / 1200) * 100).toFixed(0)}%</span>
+              <span className="font-semibold text-slate-900">
+                {((item.value / (processedCategories.reduce((acc, curr) => acc + curr.value, 0) || 1)) * 100).toFixed(0)}%
+              </span>
             </div>
           ))}
         </div>
@@ -652,11 +675,18 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
   );
 };
 
-const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
+const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
   const [isCreateProductModalOpen, setIsCreateProductModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
+  const [originalProduct, setOriginalProduct] = useState(null);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+
+  const showToastMessage = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
+  };
   
   // products agora vem das props
 
@@ -734,44 +764,80 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
 
   const handleSaveProduct = async () => {
     try {
+      if (!newProduct.name || !newProduct.price) {
+        showToastMessage("Nome e Preço são obrigatórios!", 'error');
+        return;
+      }
+
       let imageUrl = newProduct.image;
-      
+
       // Upload de imagem se houver novo arquivo
       if (newProduct.imageFile) {
         const fileExt = newProduct.imageFile.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
-          .from('produtos')
+          .from('products')
           .upload(fileName, newProduct.imageFile);
           
         if (uploadError) throw uploadError;
         
         const { data: { publicUrl } } = supabase.storage
-          .from('produtos')
+          .from('products')
           .getPublicUrl(fileName);
           
         imageUrl = publicUrl;
       }
 
+      const priceFloat = parseFloat(newProduct.price.replace(/\./g, '').replace(',', '.'));
+      const promoPriceFloat = newProduct.promotionalPrice ? parseFloat(newProduct.promotionalPrice.replace(/\./g, '').replace(',', '.')) : null;
+
       const productData = {
-        nome: newProduct.name,
-        descricao: newProduct.description,
-        preco: parseFloat(newProduct.price.replace(/\./g, '').replace(',', '.')),
-        preco_promocional: newProduct.promotionalPrice ? parseFloat(newProduct.promotionalPrice.replace(/\./g, '').replace(',', '.')) : null,
-        estoque: parseInt(newProduct.stock),
-        categoria: newProduct.category,
+        title: newProduct.name,
+        description: newProduct.description,
+        price_cents: Math.round(priceFloat * 100),
+        old_price_cents: promoPriceFloat ? Math.round(promoPriceFloat * 100) : null,
+        stock: parseInt(newProduct.stock),
+        category: newProduct.category,
         sku: newProduct.sku,
-        imagem_url: imageUrl
+        image_url: imageUrl
       };
 
       if (isEditing) {
-        const { error } = await supabase.from('produtos').update(productData).eq('id', newProduct.id);
+        const { error } = await supabase.from('products').update(productData).eq('id', newProduct.id);
         if (error) throw error;
-        alert("Produto atualizado com sucesso!");
+
+        // Log Product Changes
+        if (originalProduct && logAction) {
+            const changes = [];
+            const oldP = parseFloat(originalProduct.price.replace(/\./g, '').replace(',', '.'));
+            const newP = priceFloat;
+            const oldPromo = originalProduct.promotionalPrice ? parseFloat(originalProduct.promotionalPrice.replace(/\./g, '').replace(',', '.')) : null;
+            const newPromo = promoPriceFloat;
+
+            if (oldP !== newP) changes.push({ field: 'Preço', old: originalProduct.price, new: newProduct.price });
+            if (oldPromo !== newPromo) changes.push({ field: 'Preço Promocional', old: originalProduct.promotionalPrice || 'N/A', new: newProduct.promotionalPrice || 'N/A' });
+            if (originalProduct.name !== newProduct.name) changes.push({ field: 'Nome', old: originalProduct.name, new: newProduct.name });
+            if (originalProduct.description !== newProduct.description) changes.push({ field: 'Descrição', old: originalProduct.description, new: newProduct.description });
+            if (originalProduct.category !== newProduct.category) changes.push({ field: 'Categoria', old: originalProduct.category, new: newProduct.category });
+            if (originalProduct.stock != newProduct.stock) changes.push({ field: 'Estoque', old: originalProduct.stock, new: newProduct.stock });
+            if (originalProduct.sku !== newProduct.sku) changes.push({ field: 'SKU', old: originalProduct.sku, new: newProduct.sku });
+            if (originalProduct.image !== imageUrl) changes.push({ field: 'Imagem', old: 'Anterior', new: 'Nova' });
+            
+            if (changes.length > 0) {
+                logAction('PRODUCT_CHANGE', newProduct.name, { changes });
+            }
+        }
+
+        showToastMessage("Produto atualizado com sucesso!", 'success');
       } else {
-        const { error } = await supabase.from('produtos').insert([productData]);
+        const { error } = await supabase.from('products').insert([productData]);
         if (error) throw error;
-        alert("Produto cadastrado com sucesso!");
+        
+        if (logAction) {
+             logAction('PRODUCT_CHANGE', newProduct.name, { action: 'Criação', details: 'Novo produto cadastrado' });
+        }
+        
+        showToastMessage("Produto cadastrado com sucesso!", 'success');
       }
 
       onRefresh(); // Chama atualização no pai
@@ -791,7 +857,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
 
     } catch (error) {
       console.error("Erro ao salvar produto:", error);
-      alert(`Erro ao salvar: ${error.message || JSON.stringify(error)}`);
+      showToastMessage(`Erro ao salvar: ${error.message || JSON.stringify(error)}`, 'error');
     }
   };
 
@@ -826,7 +892,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
         }));
 
         // setProducts(prev => [...prev, ...newProducts]); // Comentado pois state é global
-        alert(`${newProducts.length} produtos importados! (Salvar no banco pendente)`);
+        showToastMessage(`${newProducts.length} produtos importados! (Salvar no banco pendente)`, 'success');
       };
       reader.readAsBinaryString(file);
     }
@@ -834,16 +900,17 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
 
   const handleEditProduct = (product) => {
     setNewProduct(product);
+    setOriginalProduct(product);
     setIsEditing(true);
     setIsCreateProductModalOpen(true);
   };
 
   const handleDeleteProduct = async (id) => {
     if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-      const { error } = await supabase.from('produtos').delete().eq('id', id);
+      const { error } = await supabase.from('products').delete().eq('id', id);
       if (error) {
         console.error("Erro ao excluir:", error);
-        alert("Erro ao excluir produto.");
+        showToastMessage("Erro ao excluir produto.", 'error');
       } else {
         onRefresh();
       }
@@ -867,6 +934,31 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className={`fixed top-4 right-4 z-[60] animate-slide-in-right px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border ${
+          toast.type === 'success' 
+            ? 'bg-white border-emerald-100 text-slate-800' 
+            : 'bg-white border-red-100 text-slate-800'
+        }`}>
+          <div className={`p-2 rounded-full ${toast.type === 'success' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+            {toast.type === 'success' ? <CheckCircle size={24} /> : <AlertCircle size={24} />}
+          </div>
+          <div>
+            <h4 className={`font-bold text-sm ${toast.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
+              {toast.type === 'success' ? 'Sucesso!' : 'Atenção!'}
+            </h4>
+            <p className="text-sm text-slate-600">{toast.message}</p>
+          </div>
+          <button 
+            onClick={() => setToast(prev => ({ ...prev, show: false }))}
+            className="ml-4 p-1 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
+
       {/* Modal de Cadastro de Produto */}
       {isCreateProductModalOpen && (
         <div 
@@ -945,7 +1037,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    {/* Price */}
                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Preço Atual</label>
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5">Preço Cheio</label>
                       <div className="relative">
                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-medium">R$</span>
                          <input 
@@ -1125,7 +1217,14 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
               <tr key={product.id} className="bg-white border-b hover:bg-slate-50">
                 <td className="px-6 py-4 font-medium text-slate-900"><HighlightText text={product.name} highlight={globalSearchTerm} /></td>
                 <td className="px-6 py-4"><HighlightText text={product.category} highlight={globalSearchTerm} /></td>
-                <td className="px-6 py-4">R$ {product.price}</td>
+                <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                        <span className="font-bold text-slate-900">R$ {product.price}</span>
+                        {product.promotionalPrice && (
+                            <span className="text-sm text-red-500 line-through">R$ {product.promotionalPrice}</span>
+                        )}
+                    </div>
+                </td>
                 <td className="px-6 py-4">
                     <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${parseInt(product.stock) > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                         {parseInt(product.stock) > 0 ? `${product.stock} em Estoque` : 'Sem Estoque'}
@@ -1145,7 +1244,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh }) => {
   );
 };
 
-const HighlightsScreen = ({ globalSearchTerm, products }) => {
+const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   const [activeTab, setActiveTab] = useState('active'); // 'active' | 'inactive'
   const [highlights, setHighlights] = useState([]);
 
@@ -1259,10 +1358,26 @@ const HighlightsScreen = ({ globalSearchTerm, products }) => {
         }
         
         showToastMessage("Destaque atualizado com sucesso!", 'success');
+        
+        if (logAction) {
+            logAction('HIGHLIGHT_CHANGE', newHighlight.title, { 
+                action: 'Atualização',
+                validUntil: newHighlight.expiration || 'Sempre',
+                subtitle: newHighlight.description
+            });
+        }
       } else {
         const { error } = await supabase.from('highlights').insert([highlightData]);
         if (error) throw error;
         showToastMessage("Destaque criado com sucesso!", 'success');
+        
+        if (logAction) {
+            logAction('HIGHLIGHT_CHANGE', newHighlight.title || 'Novo Destaque', { 
+                action: 'Criação',
+                validUntil: newHighlight.expiration || 'Sempre',
+                subtitle: newHighlight.description
+            });
+        }
       }
       
       await fetchHighlights();
@@ -1301,8 +1416,12 @@ const HighlightsScreen = ({ globalSearchTerm, products }) => {
 
   const confirmDelete = async () => {
     if (highlightToDelete) {
+      const deletedItem = highlights.find(h => h.id === highlightToDelete);
       const { error } = await supabase.from('highlights').delete().eq('id', highlightToDelete);
       if (!error) {
+         if (logAction) {
+            logAction('HIGHLIGHT_CHANGE', deletedItem?.title || 'Destaque', { action: 'Exclusão', id: highlightToDelete });
+         }
          fetchHighlights();
       }
       setIsDeleteModalOpen(false);
@@ -1661,26 +1780,177 @@ const HighlightsScreen = ({ globalSearchTerm, products }) => {
   );
 };
 
-const ChecklistScreen = () => {
+const ChecklistScreen = ({ session }) => {
   const [mainTab, setMainTab] = useState('respostas'); // 'respostas' | 'criacoes'
   const [responseTab, setResponseTab] = useState('daily'); // 'daily' | 'monthly'
   const [creationTab, setCreationTab] = useState('daily'); // 'daily' | 'monthly'
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState([]);
+  const [isDeleteTemplateModalOpen, setIsDeleteTemplateModalOpen] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState(null);
+
+  // Assignment Logic State
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [assignTemplate, setAssignTemplate] = useState(null);
+  const [allUsers, setAllUsers] = useState([]);
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+
+  const [assignMode, setAssignMode] = useState('users'); // 'users' | 'roles'
+  const [selectedRoles, setSelectedRoles] = useState([]);
 
   useEffect(() => {
-    fetchTemplates();
-  }, []);
+    if (session?.user) {
+      fetchTemplates();
+    }
+  }, [session]);
+
+  const fetchUsersForAssignment = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, name, role, email')
+      .order('name');
+    setAllUsers(data || []);
+  };
+
+  // Get unique roles
+  const availableRoles = [...new Set(allUsers.map(u => u.role).filter(Boolean))];
+
+  const toggleRoleSelection = (role) => {
+    const isSelected = selectedRoles.includes(role);
+    let newSelectedRoles;
+    
+    if (isSelected) {
+      newSelectedRoles = selectedRoles.filter(r => r !== role);
+      // Optional: Deselect users of this role? 
+      // Let's decide: if I uncheck a role, I uncheck all users of that role.
+      const usersOfRole = allUsers.filter(u => u.role === role).map(u => u.id);
+      setSelectedUserIds(prev => prev.filter(id => !usersOfRole.includes(id)));
+    } else {
+      newSelectedRoles = [...selectedRoles, role];
+      // Select all users of this role
+      const usersOfRole = allUsers.filter(u => u.role === role).map(u => u.id);
+      setSelectedUserIds(prev => [...new Set([...prev, ...usersOfRole])]);
+    }
+    
+    setSelectedRoles(newSelectedRoles);
+  };
+
+
+  const openAssignModal = async (template) => {
+    setAssignTemplate(template);
+    setIsAssignModalOpen(true);
+    
+    // Fetch users if not already loaded
+    if (allUsers.length === 0) await fetchUsersForAssignment();
+    
+    // Fetch existing assignments
+    try {
+      const { data, error } = await supabase
+        .from('checklist_assignments')
+        .select('user_id')
+        .eq('template_id', template.id);
+        
+      if (error) throw error;
+      setSelectedUserIds(data ? data.map(d => d.user_id) : []);
+    } catch (error) {
+      console.error("Erro ao buscar atribuições:", error);
+      // Se a tabela não existir, apenas ignora
+    }
+  };
+
+  const toggleUserAssignment = (userId) => {
+    setSelectedUserIds(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const saveAssignments = async () => {
+    if (!assignTemplate) return;
+
+    try {
+      // 1. Delete old assignments
+      const { error: deleteError } = await supabase
+        .from('checklist_assignments')
+        .delete()
+        .eq('template_id', assignTemplate.id);
+      
+      if (deleteError) throw deleteError;
+
+      // 2. Insert new ones
+      if (selectedUserIds.length > 0) {
+        const toInsert = selectedUserIds.map(uid => ({
+          template_id: assignTemplate.id,
+          user_id: uid
+        }));
+        
+        const { error: insertError } = await supabase
+          .from('checklist_assignments')
+          .insert(toInsert);
+          
+        if (insertError) throw insertError;
+      }
+      
+      alert('Checklist atribuído com sucesso!');
+      setIsAssignModalOpen(false);
+    } catch (error) {
+      console.error("Erro ao salvar atribuições:", error);
+      alert("Erro ao salvar atribuições. Verifique se você criou a tabela 'checklist_assignments' no banco de dados.");
+    }
+  };
+
 
   const fetchTemplates = async () => {
     try {
-      const { data, error } = await supabase
-        .from('checklist_templates')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const user = session?.user;
+      if (!user) return;
 
-      if (error) throw error;
-      setSavedTemplates(data || []);
+      // 1. Get User Profile to check role and app_access
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, app_access')
+        .eq('id', user.id)
+        .single();
+
+      const isAdmin = profile?.role === 'admin' || profile?.role === 'administrador';
+      const hasFullAccess = profile?.app_access === true;
+
+      if (isAdmin || hasFullAccess) {
+        // Fetch ALL
+        const { data, error } = await supabase
+          .from('checklist_templates')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setSavedTemplates(data || []);
+      } else {
+        // Fetch ONLY Assigned
+        const { data: assignments, error: assignError } = await supabase
+            .from('checklist_assignments')
+            .select('template_id')
+            .eq('user_id', user.id);
+            
+        if (assignError) throw assignError;
+        
+        const templateIds = assignments?.map(a => a.template_id) || [];
+        
+        if (templateIds.length === 0) {
+            setSavedTemplates([]);
+            return;
+        }
+
+        const { data, error } = await supabase
+          .from('checklist_templates')
+          .select('*')
+          .in('id', templateIds)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setSavedTemplates(data || []);
+      }
     } catch (error) {
       console.error('Erro ao buscar templates:', error);
     }
@@ -1795,10 +2065,26 @@ const ChecklistScreen = () => {
     });
   };
 
-  const handleUpdateQuestion = (sectionIndex, questionIndex, text) => {
+  const handleUpdateQuestion = (sectionIndex, questionIndex, field, value) => {
     setCurrentTemplate(prev => {
       const newSections = [...prev.sections];
-      newSections[sectionIndex].questions[questionIndex] = text;
+      const currentQ = newSections[sectionIndex].questions[questionIndex];
+      
+      // Normalize to object
+      const qObj = typeof currentQ === 'object' ? { ...currentQ } : { text: currentQ, type: 'options', options: ['Sim', 'Não'] };
+      
+      if (field === 'addOption') {
+         if (!qObj.options) qObj.options = [];
+         qObj.options.push(value);
+      } else if (field === 'removeOption') {
+         qObj.options = qObj.options.filter((_, i) => i !== value);
+      } else if (field === 'updateOption') {
+         qObj.options[value.index] = value.text;
+      } else {
+         qObj[field] = value;
+      }
+      
+      newSections[sectionIndex].questions[questionIndex] = qObj;
       return { ...prev, sections: newSections };
     });
   };
@@ -1806,7 +2092,7 @@ const ChecklistScreen = () => {
   const handleAddSection = () => {
     setCurrentTemplate(prev => ({
       ...prev,
-      sections: [...prev.sections, { title: 'Nova Seção', questions: ['Nova Pergunta'] }]
+      sections: [...prev.sections, { title: 'Nova Seção', questions: [{ text: 'Nova Pergunta', type: 'options', options: ['Sim', 'Não'] }] }]
     }));
   };
 
@@ -1821,7 +2107,7 @@ const ChecklistScreen = () => {
   const handleAddQuestion = (sectionIndex) => {
     setCurrentTemplate(prev => {
       const newSections = [...prev.sections];
-      newSections[sectionIndex].questions.push("Nova Pergunta");
+      newSections[sectionIndex].questions.push({ text: "Nova Pergunta", type: 'options', options: ['Sim', 'Não'] });
       return { ...prev, sections: newSections };
     });
   };
@@ -1877,18 +2163,25 @@ const ChecklistScreen = () => {
     }
   };
 
-  const handleDeleteTemplate = async (id) => {
-    if (!window.confirm("Tem certeza que deseja excluir este modelo permanentemente?")) return;
+  const handleDeleteTemplate = (id) => {
+    setTemplateToDelete(id);
+    setIsDeleteTemplateModalOpen(true);
+  };
 
+  const confirmDeleteTemplate = async () => {
+    if (!templateToDelete) return;
+    
     try {
       const { error } = await supabase
         .from('checklist_templates')
         .delete()
-        .eq('id', id);
+        .eq('id', templateToDelete);
 
       if (error) throw error;
       
-      setSavedTemplates(prev => prev.filter(t => t.id !== id));
+      setSavedTemplates(prev => prev.filter(t => t.id !== templateToDelete));
+      setIsDeleteTemplateModalOpen(false);
+      setTemplateToDelete(null);
     } catch (error) {
       console.error('Erro ao excluir modelo:', error);
       alert("Erro ao excluir: " + error.message);
@@ -1900,7 +2193,6 @@ const ChecklistScreen = () => {
     const pageWidth = doc.internal.pageSize.getWidth();
 
     // Use override if provided (for list cards), otherwise current editing, otherwise daily default
-    // Ensure templateOverride is not a React event object (check for .name property which templates have but events don't)
     let templateToPrint = (templateOverride && templateOverride.name) ? templateOverride : null;
     
     if (!templateToPrint) {
@@ -1911,8 +2203,17 @@ const ChecklistScreen = () => {
         alert("Nenhum modelo selecionado para gerar o PDF.");
         return;
     }
+
+    // Set document properties
+    const safeName = (templateToPrint.pdfTitle || templateToPrint.name || 'Checklist').replace(/[^a-z0-9]/gi, '_');
+    doc.setProperties({
+        title: templateToPrint.pdfTitle || templateToPrint.name,
+        subject: templateToPrint.pdfSubtitle || 'Checklist',
+        author: 'Atadiesel',
+        creator: 'Atadiesel App'
+    });
     
-    // Ensure sections is an array (handle JSON string from DB and valores nulos)
+    // Ensure sections is an array
     let sectionsToPrint = [];
     try {
         if (Array.isArray(templateToPrint.sections)) {
@@ -1945,24 +2246,54 @@ const ChecklistScreen = () => {
             yPos = 20;
         }
         
-        doc.setFillColor(220, 220, 220);
+        doc.setFillColor(240, 240, 240);
         doc.rect(10, yPos, 190, 7, 'F');
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
         doc.text(title, 12, yPos + 5);
-        yPos += 10;
+        yPos += 12;
         
         doc.setFont(undefined, 'normal');
         items.forEach(item => {
-            if (yPos > 280) {
+            if (yPos > 275) {
                 doc.addPage();
                 yPos = 20;
             }
-            doc.text(item, 12, yPos);
-            // Checkboxes simulados
-            doc.rect(170, yPos - 3, 4, 4); // Sim
-            doc.rect(180, yPos - 3, 4, 4); // Não
-            yPos += 7;
+            
+            // Normalize item
+            const text = typeof item === 'object' ? item.text : item;
+            const type = typeof item === 'object' ? (item.type || 'options') : 'options';
+            const options = (typeof item === 'object' && Array.isArray(item.options) && item.options.length > 0) 
+                            ? item.options 
+                            : ['Sim', 'Não']; 
+
+            // Question Text
+            doc.text(text, 12, yPos);
+            
+            if (type === 'text') {
+                // Free text line
+                doc.setLineWidth(0.1);
+                doc.line(12, yPos + 5, 200, yPos + 5);
+                yPos += 12;
+            } else {
+                // Options (Checkboxes) - Standardized below text
+                yPos += 8; 
+                let optX = 15; // Indent slightly
+
+                options.forEach(opt => {
+                    const optWidth = doc.getTextWidth(opt) + 12;
+                    
+                    if (optX + optWidth > 190) {
+                        yPos += 8;
+                        optX = 15;
+                    }
+                    
+                    doc.rect(optX, yPos - 4, 4, 4);
+                    doc.text(opt, optX + 6, yPos - 1);
+                    optX += optWidth + 8;
+                });
+                yPos += 12;
+            }
         });
         yPos += 5;
     };
@@ -1979,7 +2310,7 @@ const ChecklistScreen = () => {
     if (isPreview) {
         window.open(doc.output('bloburl'), '_blank');
     } else {
-        doc.save(`${templateToPrint.name.toLowerCase().replace(/\s+/g, '-')}.pdf`);
+        doc.save(`${safeName}.pdf`);
     }
   };
 
@@ -2143,13 +2474,20 @@ const ChecklistScreen = () => {
                         <div className="flex flex-wrap gap-2 mt-4">
                           <button
                             onClick={() => openTemplateModal('edit', template)}
-                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
                           >
                             <Edit size={14} /> Editar
                           </button>
                           <button
+                            onClick={() => openAssignModal(template)}
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
+                            title="Atribuir a Funcionários"
+                          >
+                            <UserPlus size={14} /> Atribuir
+                          </button>
+                          <button
                             onClick={() => generatePDF(template)}
-                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
                           >
                             <Download size={14} /> PDF
                           </button>
@@ -2246,16 +2584,99 @@ const ChecklistScreen = () => {
                              </div>
 
                              <div className="space-y-3 pl-2 border-l-2 border-slate-200">
-                                {section.questions.map((q, qIndex) => (
-                                  <div key={qIndex} className="flex gap-2 items-start group/question">
+                                {section.questions.map((q, qIndex) => {
+                                  // Normalize question data
+                                  const qText = typeof q === 'object' ? q.text : q;
+                                  const qType = typeof q === 'object' ? (q.type || 'options') : 'options';
+                                  const qOptions = (typeof q === 'object' && Array.isArray(q.options)) ? q.options : ['Sim', 'Não'];
+                                  
+                                  return (
+                                  <div key={qIndex} className="flex gap-2 items-start group/question border-b border-slate-100 pb-3 mb-2 last:border-0">
                                     <span className="mt-2 text-xs text-slate-400 w-6 font-mono text-right">{qIndex + 1}.</span>
-                                    <textarea
-                                      value={q}
-                                      onChange={(e) => handleUpdateQuestion(sIndex, qIndex, e.target.value)}
-                                      rows={2}
-                                      className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:border-primary focus:ring-1 focus:ring-primary/30 outline-none resize-none"
-                                      placeholder="Digite a pergunta..."
-                                    />
+                                    <div className="flex-1 flex flex-col gap-2">
+                                        <textarea
+                                          value={qText}
+                                          onChange={(e) => handleUpdateQuestion(sIndex, qIndex, 'text', e.target.value)}
+                                          rows={2}
+                                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:border-primary focus:ring-1 focus:ring-primary/30 outline-none resize-none"
+                                          placeholder="Digite a pergunta..."
+                                        />
+                                        
+                                        <div className="flex flex-col gap-2 mt-2">
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-100 px-2 py-1 rounded">Tipo de Resposta</div>
+                                                <div className="flex bg-slate-100 p-1 rounded-lg">
+                                                    <button
+                                                        onClick={() => handleUpdateQuestion(sIndex, qIndex, 'type', 'options')}
+                                                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                                                            qType === 'options' 
+                                                            ? 'bg-white text-primary shadow-sm' 
+                                                            : 'text-slate-500 hover:text-slate-700'
+                                                        }`}
+                                                    >
+                                                        Múltipla Escolha
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleUpdateQuestion(sIndex, qIndex, 'type', 'text')}
+                                                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                                                            qType === 'text' 
+                                                            ? 'bg-white text-primary shadow-sm' 
+                                                            : 'text-slate-500 hover:text-slate-700'
+                                                        }`}
+                                                    >
+                                                        Texto Livre
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {qType === 'options' && (
+                                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Opções Disponíveis</div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {qOptions.map((opt, optIndex) => (
+                                                            <div key={optIndex} className="group flex items-center bg-white border border-slate-200 rounded-lg pl-3 pr-1 py-1.5 shadow-sm hover:border-blue-200 hover:shadow-md transition-all">
+                                                                <input 
+                                                                    className="text-xs font-medium bg-transparent outline-none w-auto min-w-[60px] max-w-[120px] text-slate-700 placeholder:text-slate-300"
+                                                                    value={opt}
+                                                                    onChange={(e) => handleUpdateQuestion(sIndex, qIndex, 'updateOption', { index: optIndex, text: e.target.value })}
+                                                                    placeholder="Opção..."
+                                                                />
+                                                                <button 
+                                                                    onClick={() => handleUpdateQuestion(sIndex, qIndex, 'removeOption', optIndex)}
+                                                                    className="ml-1 p-1 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                                                    title="Remover opção"
+                                                                >
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        
+                                                        <div className="flex items-center bg-white border border-dashed border-slate-300 rounded-lg px-2 py-1.5 hover:border-primary hover:bg-blue-50/30 transition-all">
+                                                            <Plus size={12} className="text-primary mr-1" />
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Nova opção..."
+                                                                className="text-xs bg-transparent outline-none w-24 text-slate-600 placeholder:text-slate-400"
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter' && e.target.value.trim()) {
+                                                                        handleUpdateQuestion(sIndex, qIndex, 'addOption', e.target.value.trim());
+                                                                        e.target.value = '';
+                                                                    }
+                                                                }}
+                                                                onBlur={(e) => {
+                                                                    if (e.target.value.trim()) {
+                                                                        handleUpdateQuestion(sIndex, qIndex, 'addOption', e.target.value.trim());
+                                                                        e.target.value = '';
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    
                                     <button 
                                       onClick={() => handleRemoveQuestion(sIndex, qIndex)}
                                       className="mt-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/question:opacity-100 transition-opacity"
@@ -2264,7 +2685,8 @@ const ChecklistScreen = () => {
                                       <X size={14} />
                                     </button>
                                   </div>
-                                ))}
+                                  );
+                                })}
                                 <button 
                                   onClick={() => handleAddQuestion(sIndex)}
                                   className="ml-8 text-xs font-semibold text-primary hover:text-blue-700 flex items-center gap-1 py-1"
@@ -2367,13 +2789,20 @@ const ChecklistScreen = () => {
                         <div className="flex flex-wrap gap-2 mt-4">
                           <button
                             onClick={() => openTemplateModal('edit', template)}
-                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
                           >
                             <Edit size={14} /> Editar
                           </button>
                           <button
+                            onClick={() => openAssignModal(template)}
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
+                            title="Atribuir a Funcionários"
+                          >
+                            <UserPlus size={14} /> Atribuir
+                          </button>
+                          <button
                             onClick={() => generatePDF(template)}
-                            className="flex-1 min-w-[120px] px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
                           >
                             <Download size={14} /> PDF
                           </button>
@@ -2383,6 +2812,179 @@ const ChecklistScreen = () => {
                   })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Atribuição de Checklist */}
+      {isAssignModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsAssignModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                 <UserPlus size={20} className="text-primary" />
+                 Atribuir Checklist
+              </h3>
+              <button onClick={() => setIsAssignModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                 <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+               <div className="mb-4">
+                 <p className="text-sm text-slate-500 mb-2">Selecione os usuários que devem responder ao checklist:</p>
+                 <div className="font-semibold text-slate-700 p-2 bg-slate-50 rounded border border-slate-200 mb-4">
+                   {assignTemplate?.name}
+                 </div>
+                 
+                 <div className="relative mb-2">
+                   <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                   <input
+                     type="text"
+                     placeholder="Buscar usuário..."
+                     value={userSearchTerm}
+                     onChange={(e) => setUserSearchTerm(e.target.value)}
+                     className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                   />
+                 </div>
+
+                 {/* Tabs de Seleção */}
+                 <div className="flex border-b border-slate-200 mb-4">
+                   <button
+                     onClick={() => setAssignMode('users')}
+                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                       assignMode === 'users' 
+                         ? 'border-primary text-primary' 
+                         : 'border-transparent text-slate-500 hover:text-slate-700'
+                     }`}
+                   >
+                     Por Usuário
+                   </button>
+                   <button
+                     onClick={() => setAssignMode('roles')}
+                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                       assignMode === 'roles' 
+                         ? 'border-primary text-primary' 
+                         : 'border-transparent text-slate-500 hover:text-slate-700'
+                     }`}
+                   >
+                     Por Cargo
+                   </button>
+                 </div>
+               </div>
+
+               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                 {allUsers.length === 0 ? (
+                   <div className="text-center py-4 text-slate-400 text-sm">Carregando usuários...</div>
+                 ) : assignMode === 'users' ? (
+                   allUsers
+                     .filter(user => 
+                       (user.name?.toLowerCase() || '').includes(userSearchTerm.toLowerCase()) || 
+                       (user.email?.toLowerCase() || '').includes(userSearchTerm.toLowerCase())
+                     )
+                     .map(user => (
+                     <label key={user.id} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors">
+                       <input 
+                         type="checkbox"
+                         className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                         checked={selectedUserIds.includes(user.id)}
+                         onChange={() => toggleUserAssignment(user.id)}
+                       />
+                       <div className="flex-1">
+                         <div className="font-medium text-slate-700">{user.name || 'Sem Nome'}</div>
+                         <div className="text-xs text-slate-500 flex gap-2">
+                           <span>{user.email}</span>
+                           <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 uppercase text-[10px] tracking-wide">
+                             {user.role || 'user'}
+                           </span>
+                         </div>
+                       </div>
+                     </label>
+                   ))
+                 ) : (
+                   availableRoles.map(role => {
+                     const usersCount = allUsers.filter(u => u.role === role).length;
+                     const isSelected = selectedRoles.includes(role);
+                     
+                     return (
+                       <label key={role} className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors">
+                         <input 
+                           type="checkbox"
+                           className="w-4 h-4 text-primary rounded border-slate-300 focus:ring-primary"
+                           checked={isSelected}
+                           onChange={() => toggleRoleSelection(role)}
+                         />
+                         <div className="flex-1 flex justify-between items-center">
+                           <div className="font-medium text-slate-700 capitalize">{role}</div>
+                           <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-full">
+                             {usersCount} usuários
+                           </span>
+                         </div>
+                       </label>
+                     );
+                   })
+                 )}
+               </div>
+
+               <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100">
+                 <button 
+                   onClick={() => setIsAssignModalOpen(false)}
+                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors"
+                 >
+                   Cancelar
+                 </button>
+                 <button 
+                   onClick={saveAssignments}
+                   className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-colors"
+                 >
+                   Salvar Atribuições
+                 </button>
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão */}
+      {isDeleteTemplateModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsDeleteTemplateModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={32} className="text-red-500" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Modelo?</h3>
+              <p className="text-slate-500 text-sm mb-6">
+                Tem certeza que deseja excluir este modelo permanentemente? Esta ação não pode ser desfeita.
+              </p>
+              
+              <div className="flex gap-3 justify-center">
+                <button 
+                  onClick={() => setIsDeleteTemplateModalOpen(false)}
+                  className="px-5 py-2.5 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDeleteTemplate}
+                  className="px-5 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 size={16} /> Sim, Excluir
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2450,8 +3052,10 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isChangeRoleModalOpen, setIsChangeRoleModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [newRoleSelection, setNewRoleSelection] = useState('user');
 
   const [newUser, setNewUser] = useState({
     name: '',
@@ -2504,10 +3108,83 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
     }
   };
 
-  const handleViewDetails = (user) => {
-    setSelectedUser(user);
+  const handleViewDetails = async (user) => {
+    // Inicia com os dados básicos e flag de carregamento
+    setSelectedUser({ ...user, isLoadingStats: true });
     setIsDetailsModalOpen(true);
     setActiveMenuId(null);
+
+    try {
+        // Busca estatísticas reais de entregas
+        const { data: deliveries, error } = await supabase
+            .from('deliveries')
+            .select('total_value, created_at')
+            .eq('client_id', user.id)
+            .neq('status', 'Cancelado'); // Opcional: Ignorar cancelados
+
+        if (error) throw error;
+
+        const visits = deliveries?.length || 0;
+        const totalSpent = deliveries?.reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0) || 0;
+        
+        let lastVisit = '-';
+        if (deliveries && deliveries.length > 0) {
+            // Ordena para pegar a data mais recente
+            const sorted = deliveries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            lastVisit = sorted[0].created_at;
+        }
+
+        // Atualiza o modal com os dados calculados
+        setSelectedUser(prev => {
+            // Garante que ainda estamos vendo o mesmo usuário
+            if (!prev || prev.id !== user.id) return prev;
+            
+            return {
+                ...prev,
+                visits,
+                totalSpent,
+                lastVisit,
+                isLoadingStats: false
+            };
+        });
+
+    } catch (err) {
+        console.error("Erro ao carregar estatísticas do usuário:", err);
+        // Remove estado de loading em caso de erro
+        setSelectedUser(prev => prev ? { ...prev, isLoadingStats: false } : null);
+    }
+  };
+
+  const handleOpenChangeRoleModal = (user) => {
+    setSelectedUser(user);
+    setNewRoleSelection(user.role || 'client');
+    setIsChangeRoleModalOpen(true);
+    setActiveMenuId(null);
+  };
+
+  const handleChangeRole = async () => {
+    if (!selectedUser) return;
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRoleSelection })
+        .eq('id', selectedUser.id);
+
+      if (error) throw error;
+
+      alert(`Cargo de ${selectedUser.name} alterado para ${newRoleSelection} com sucesso!`);
+      
+      // Update local state
+      setUsers(prev => prev.map(u => 
+        u.id === selectedUser.id ? { ...u, role: newRoleSelection } : u
+      ));
+      
+      setIsChangeRoleModalOpen(false);
+    } catch (error) {
+      console.error("Erro ao alterar cargo:", error);
+      alert("Erro ao alterar cargo: " + error.message);
+    }
   };
 
   const filteredUsers = users.filter(user => {
@@ -2520,7 +3197,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       if (roleFilter === 'all') return true;
       const r = user.role?.toLowerCase();
       if (roleFilter === 'admin') return r === 'admin' || r === 'administrador';
-      if (roleFilter === 'cliente') return r === 'cliente' || r === 'user';
+      if (roleFilter === 'cliente') return r === 'cliente' || r === 'user' || r === 'client';
       if (roleFilter === 'entregador') return r === 'entregador';
       if (roleFilter === 'funcionario') return r === 'funcionario' || r === 'funcionário';
       return r === roleFilter;
@@ -2541,6 +3218,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         return 'bg-orange-100 text-orange-700';
       case 'cliente':
       case 'user':
+      case 'client':
         return 'bg-blue-100 text-blue-700';
       default:
         return 'bg-slate-100 text-slate-700';
@@ -2671,7 +3349,13 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                          </div>
                          <span className="text-slate-600 font-medium">Total de Visitas</span>
                       </div>
-                      <span className="text-xl font-bold text-slate-900">{selectedUser.visits}</span>
+                      <span className="text-xl font-bold text-slate-900">
+                        {selectedUser.isLoadingStats ? (
+                            <div className="w-4 h-4 border-2 border-slate-200 border-t-primary rounded-full animate-spin" />
+                        ) : (
+                            selectedUser.visits
+                        )}
+                      </span>
                    </div>
 
                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between group hover:border-emerald-200 transition-colors">
@@ -2682,7 +3366,11 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                          <span className="text-slate-600 font-medium">Total Gasto</span>
                       </div>
                       <span className="text-xl font-bold text-slate-900">
-                         {selectedUser.totalSpent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                         {selectedUser.isLoadingStats ? (
+                            <div className="w-4 h-4 border-2 border-slate-200 border-t-primary rounded-full animate-spin" />
+                         ) : (
+                            selectedUser.totalSpent.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                         )}
                       </span>
                    </div>
 
@@ -2694,10 +3382,95 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                          <span className="text-slate-600 font-medium">Última Visita</span>
                       </div>
                       <span className="text-lg font-bold text-slate-900">
-                         {selectedUser.lastVisit === '-' ? '-' : new Date(selectedUser.lastVisit).toLocaleDateString('pt-BR')}
+                         {selectedUser.isLoadingStats ? (
+                            <div className="w-4 h-4 border-2 border-slate-200 border-t-primary rounded-full animate-spin" />
+                         ) : (
+                            selectedUser.lastVisit === '-' ? '-' : new Date(selectedUser.lastVisit).toLocaleDateString('pt-BR')
+                         )}
                       </span>
                    </div>
                 </div>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Alteração de Cargo */}
+      {isChangeRoleModalOpen && selectedUser && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsChangeRoleModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                   <UserCog size={20} className="text-primary" />
+                   Alterar Cargo
+                </h3>
+                <button onClick={() => setIsChangeRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                   <X size={20} />
+                </button>
+             </div>
+             
+             <div className="p-6 space-y-4">
+                <div className="text-center mb-4">
+                   <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-2xl border-4 border-white shadow-lg mx-auto mb-2">
+                      {selectedUser.name.charAt(0)}
+                   </div>
+                   <h2 className="text-lg font-bold text-slate-900">{selectedUser.name}</h2>
+                   <p className="text-sm text-slate-500">Selecione o novo cargo para este usuário</p>
+                </div>
+
+                <div className="space-y-2">
+                   {[
+                     { id: 'admin', label: 'Administrador', desc: 'Acesso total ao sistema' },
+                     { id: 'client', label: 'Cliente', desc: 'Acesso apenas ao app' },
+                     { id: 'entregador', label: 'Entregador', desc: 'Acesso a entregas' },
+                     { id: 'funcionario', label: 'Funcionário', desc: 'Acesso restrito' }
+                   ].map((role) => (
+                     <label 
+                       key={role.id}
+                       className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                         newRoleSelection === role.id 
+                           ? 'border-primary bg-blue-50/50' 
+                           : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                       }`}
+                     >
+                        <input 
+                           type="radio" 
+                           name="role" 
+                           value={role.id}
+                           checked={newRoleSelection === role.id}
+                           onChange={() => setNewRoleSelection(role.id)}
+                           className="mt-1"
+                        />
+                        <div>
+                           <span className={`block font-bold text-sm ${newRoleSelection === role.id ? 'text-primary' : 'text-slate-700'}`}>
+                             {role.label}
+                           </span>
+                           <span className="text-xs text-slate-400">{role.desc}</span>
+                        </div>
+                     </label>
+                   ))}
+                </div>
+             </div>
+
+             <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                <button 
+                   onClick={() => setIsChangeRoleModalOpen(false)}
+                   className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                   Cancelar
+                </button>
+                <button 
+                   onClick={handleChangeRole}
+                   className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20"
+                >
+                   Salvar Alteração
+                </button>
              </div>
           </div>
         </div>
@@ -2818,6 +3591,13 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                                         <Eye size={16} className="text-slate-400" /> 
                                         Ver Detalhes
                                      </button>
+                                     <button
+                                       onClick={() => handleOpenChangeRoleModal(user)}
+                                       className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
+                                     >
+                                        <UserCog size={16} className="text-slate-400" /> 
+                                        Alterar Cargo
+                                     </button>
                                   </div>
                                </div>
                              </>
@@ -2840,7 +3620,420 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
   );
 };
 
-const DeliveriesScreen = ({ globalSearchTerm, deliveries = mockDeliveries, onUpdateStatus }) => {
+const LogsScreen = ({ globalSearchTerm, session }) => {
+  const [logs, setLogs] = useState([]);
+  const [activeTab, setActiveTab] = useState('products'); // products | stock | loyalty | highlights
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [activeTab]);
+
+  const fetchLogs = async () => {
+    setLoading(true);
+    let types = [];
+    if (activeTab === 'products') types = ['PRODUCT_CHANGE', 'PRICE_CHANGE'];
+    if (activeTab === 'stock') types = ['STOCK_CHANGE'];
+    if (activeTab === 'loyalty') types = ['LOYALTY_CHANGE'];
+    if (activeTab === 'highlights') types = ['HIGHLIGHT_CHANGE'];
+    
+    try {
+        const { data, error } = await supabase
+            .from('audit_logs')
+            .select('*')
+            .in('action_type', types)
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        if (error) {
+            console.error("Erro ao buscar logs:", error);
+        } else {
+            // Buscar nomes dos usuários
+            const userIds = [...new Set(data.map(log => log.user_id).filter(Boolean))];
+            let profilesMap = {};
+            
+            if (userIds.length > 0) {
+                const { data: profiles, error: profilesError } = await supabase
+                    .from('profiles')
+                    .select('id, name, full_name')
+                    .in('id', userIds);
+                
+                if (!profilesError && profiles) {
+                    profiles.forEach(p => {
+                        profilesMap[p.id] = p.name || p.full_name;
+                    });
+                }
+            }
+
+            const logsWithNames = data.map(log => ({
+                ...log,
+                user_name: profilesMap[log.user_id]
+            }));
+
+            setLogs(logsWithNames || []);
+        }
+    } catch (err) {
+        console.error("Erro inesperado:", err);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleString('pt-BR');
+  };
+
+  return (
+    <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
+            <History className="text-primary" /> Logs de Auditoria
+        </h1>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        {/* Tabs */}
+        <div className="flex border-b border-slate-100 overflow-x-auto">
+            <button 
+                onClick={() => setActiveTab('products')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'products' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+                Produtos
+            </button>
+            <button 
+                onClick={() => setActiveTab('stock')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'stock' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+                Estoque
+            </button>
+            <button 
+                onClick={() => setActiveTab('loyalty')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'loyalty' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+                Fidelidade
+            </button>
+            <button 
+                onClick={() => setActiveTab('highlights')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'highlights' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+                Destaques
+            </button>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left text-slate-500">
+                <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+                    <tr>
+                        <th className="px-6 py-3">Data/Hora</th>
+                        <th className="px-6 py-3">Usuário</th>
+                        <th className="px-6 py-3">Item/Entidade</th>
+                        <th className="px-6 py-3">Detalhes da Alteração</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {loading ? (
+                        <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">Carregando logs...</td></tr>
+                    ) : logs.length === 0 ? (
+                        <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">Nenhum registro encontrado.</td></tr>
+                    ) : (
+                        logs.map((log) => (
+                            <tr key={log.id} className="bg-white hover:bg-slate-50 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="flex items-center gap-2">
+                                        <Clock size={14} className="text-slate-400" />
+                                        {formatDate(log.created_at)}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-slate-800">{log.user_name || 'Usuário'}</span>
+                                        <span className="text-xs text-slate-500">{log.user_email}</span>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 font-medium text-slate-800">
+                                    {log.entity_name}
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="max-w-md">
+                                        {/* Products Tab (Handles both PRICE_CHANGE and PRODUCT_CHANGE) */}
+                                        {activeTab === 'products' && log.details && (
+                                            <div className="space-y-2">
+                                                {/* Backward Compatibility for PRICE_CHANGE */}
+                                                {(log.details.oldPrice !== undefined || log.details.newPrice !== undefined) && !log.details.changes && (
+                                                    <div className="space-y-1">
+                                                        {log.details.oldPrice !== log.details.newPrice && (
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-bold text-slate-500">Preço:</span>
+                                                                <span className="text-red-500 line-through text-xs">{log.details.oldPrice}</span>
+                                                                <ArrowUpRight size={12} className="text-slate-400" />
+                                                                <span className="text-emerald-600 font-bold">{log.details.newPrice}</span>
+                                                            </div>
+                                                        )}
+                                                        {log.details.oldPromo !== log.details.newPromo && (
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-bold text-slate-500">Promo:</span>
+                                                                <span className="text-red-500 line-through text-xs">{log.details.oldPromo || 'N/A'}</span>
+                                                                <ArrowUpRight size={12} className="text-slate-400" />
+                                                                <span className="text-emerald-600 font-bold">{log.details.newPromo || 'N/A'}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                
+                                                {/* New PRODUCT_CHANGE format */}
+                                                {log.details.changes && Array.isArray(log.details.changes) && (
+                                                    <div className="space-y-1.5">
+                                                        {log.details.changes.map((change, idx) => (
+                                                            <div key={idx} className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                                                                <span className="text-xs font-bold text-slate-600">{change.field}:</span>
+                                                                <span className="text-red-500 line-through text-xs">{change.old}</span>
+                                                                <ArrowUpRight size={12} className="text-slate-400" />
+                                                                <span className="text-emerald-600 font-bold">{change.new}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {log.details.action === 'Criação' && (
+                                                    <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-bold">Produto Criado</span>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Stock Tab */}
+                                        {activeTab === 'stock' && log.details && (
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${log.details.adjustmentType === 'add' ? 'bg-emerald-100 text-emerald-700' : log.details.adjustmentType === 'remove' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                    {log.details.adjustmentType === 'add' ? 'Adição' : log.details.adjustmentType === 'remove' ? 'Remoção' : 'Ajuste'}
+                                                </span>
+                                                <span className="font-mono font-bold text-slate-700">{log.details.value} un.</span>
+                                                <span className="text-slate-400 mx-1">|</span>
+                                                <span className="text-xs text-slate-500">Saldo: {log.details.oldStock} → {log.details.newStock}</span>
+                                            </div>
+                                        )}
+
+                                        {/* Loyalty Tab */}
+                                        {activeTab === 'loyalty' && log.details && (
+                                            <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                                                <div className="font-bold mb-1">Alteração de Configuração</div>
+                                                <div className="opacity-80 break-words">{JSON.stringify(log.details)}</div>
+                                            </div>
+                                        )}
+
+                                        {/* Highlights Tab */}
+                                        {activeTab === 'highlights' && log.details && (
+                                            <div className="space-y-1">
+                                                <div className={`px-2 py-1 rounded text-xs font-bold inline-block mb-1 ${
+                                                    log.details.action === 'Criação' ? 'bg-emerald-100 text-emerald-700' : 
+                                                    log.details.action === 'Exclusão' ? 'bg-red-100 text-red-700' : 
+                                                    'bg-blue-100 text-blue-700'
+                                                }`}>
+                                                    {log.details.action}
+                                                </div>
+                                                {log.details.validUntil && (
+                                                    <div className="text-xs text-slate-500">
+                                                        Validade: <span className="font-medium text-slate-700">{log.details.validUntil}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        ))
+                    )}
+                </tbody>
+            </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [adjustment, setAdjustment] = useState({ type: 'add', value: '' });
+
+  const filteredProducts = products.filter(product => {
+    const term = globalSearchTerm?.trim().toLowerCase() || '';
+    return !term || (product.name || '').toLowerCase().includes(term) || (product.category || '').toLowerCase().includes(term);
+  });
+
+  const handleOpenEdit = (product) => {
+    setSelectedProduct(product);
+    setAdjustment({ type: 'add', value: '' });
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveStock = async () => {
+    if (!selectedProduct) return;
+    
+    const currentStock = parseInt(selectedProduct.stock) || 0;
+    const value = parseInt(adjustment.value);
+    
+    if (isNaN(value) || value < 0) {
+        alert("Por favor, insira um valor válido.");
+        return;
+    }
+
+    let newStock = currentStock;
+    if (adjustment.type === 'add') newStock += value;
+    if (adjustment.type === 'remove') newStock = Math.max(0, currentStock - value);
+    if (adjustment.type === 'set') newStock = value;
+
+    try {
+        const { error } = await supabase.from('products').update({ stock: newStock }).eq('id', selectedProduct.id);
+        if (error) throw error;
+        
+        if (logAction) {
+            logAction('STOCK_CHANGE', selectedProduct.name, {
+                adjustmentType: adjustment.type,
+                value: value,
+                oldStock: currentStock,
+                newStock: newStock
+            });
+        }
+
+        onRefresh();
+        setIsEditModalOpen(false);
+    } catch (error) {
+        console.error("Erro ao atualizar estoque:", error);
+        alert("Erro ao atualizar estoque.");
+    }
+  };
+
+  return (
+    <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
+        {/* Modal de Ajuste */}
+        {isEditModalOpen && selectedProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 className="font-bold text-lg text-slate-800">Ajustar Estoque</h3>
+                    <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="p-6 space-y-6">
+                    <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                         {selectedProduct.image ? (
+                             <img src={selectedProduct.image} alt="" className="w-12 h-12 object-contain rounded-lg bg-white p-1" />
+                         ) : (
+                             <div className="w-12 h-12 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400">
+                                 <Package size={20} />
+                             </div>
+                         )}
+                         <div>
+                             <h4 className="font-bold text-slate-900">{selectedProduct.name}</h4>
+                             <p className="text-sm text-slate-500">Estoque Atual: <span className="font-bold text-slate-900">{selectedProduct.stock}</span></p>
+                         </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <label className="text-sm font-bold text-slate-700">Tipo de Ajuste</label>
+                        <div className="grid grid-cols-3 gap-2">
+                            <button 
+                                onClick={() => setAdjustment(prev => ({ ...prev, type: 'add' }))}
+                                className={`p-2 rounded-lg text-sm font-medium border transition-all ${adjustment.type === 'add' ? 'bg-green-50 border-green-200 text-green-700 ring-2 ring-green-500/20' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                Adicionar
+                            </button>
+                            <button 
+                                onClick={() => setAdjustment(prev => ({ ...prev, type: 'remove' }))}
+                                className={`p-2 rounded-lg text-sm font-medium border transition-all ${adjustment.type === 'remove' ? 'bg-red-50 border-red-200 text-red-700 ring-2 ring-red-500/20' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                Remover
+                            </button>
+                            <button 
+                                onClick={() => setAdjustment(prev => ({ ...prev, type: 'set' }))}
+                                className={`p-2 rounded-lg text-sm font-medium border transition-all ${adjustment.type === 'set' ? 'bg-blue-50 border-blue-200 text-blue-700 ring-2 ring-blue-500/20' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                Definir
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                         <label className="text-sm font-bold text-slate-700">Quantidade</label>
+                         <input 
+                            type="number" 
+                            value={adjustment.value} 
+                            onChange={(e) => setAdjustment(prev => ({ ...prev, value: e.target.value }))}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-bold text-lg"
+                            placeholder="0"
+                            autoFocus
+                         />
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                    <button onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 px-4 rounded-xl text-slate-600 font-medium hover:bg-slate-200 transition-colors">
+                        Cancelar
+                    </button>
+                    <button onClick={handleSaveStock} className="flex-1 py-3 px-4 rounded-xl bg-primary text-white font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20">
+                        Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
+        )}
+
+        <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
+                <Boxes className="text-primary" /> Controle de Estoque
+            </h1>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left text-slate-500">
+                    <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+                        <tr>
+                            <th className="px-6 py-3">Produto</th>
+                            <th className="px-6 py-3">Categoria</th>
+                            <th className="px-6 py-3">Estoque Atual</th>
+                            <th className="px-6 py-3">Status</th>
+                            <th className="px-6 py-3 text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {filteredProducts.map((product) => (
+                            <tr key={product.id} className="bg-white hover:bg-slate-50 transition-colors">
+                                <td className="px-6 py-4 font-medium text-slate-900 flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center p-1">
+                                        {product.image ? <img src={product.image} className="w-full h-full object-contain" /> : <Package size={16} className="text-slate-400" />}
+                                    </div>
+                                    <HighlightText text={product.name} highlight={globalSearchTerm} />
+                                </td>
+                                <td className="px-6 py-4"><HighlightText text={product.category} highlight={globalSearchTerm} /></td>
+                                <td className="px-6 py-4 font-bold text-slate-800 text-lg">{product.stock}</td>
+                                <td className="px-6 py-4">
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${parseInt(product.stock) <= 5 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                                        {parseInt(product.stock) <= 5 ? 'Baixo Estoque' : 'Normal'}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                    <button 
+                                        onClick={() => handleOpenEdit(product)}
+                                        className="text-primary hover:text-blue-700 font-medium text-sm bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                                    >
+                                        <Edit size={14} /> Ajustar
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+  );
+};
+
+const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus }) => {
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
@@ -2896,10 +4089,15 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = mockDeliveries, onUpd
              delivery.status === 'Em Preparação' ? 'border-l-indigo-500' : 
              'border-l-blue-500'
            }`}>
-              <div className="flex justify-between items-start mb-4">
-                 <h3 className="font-bold text-slate-900">
-                    <HighlightText text={`Pedido #${delivery.id}`} highlight={globalSearchTerm} />
-                 </h3>
+              <div className="flex justify-between items-start mb-2">
+                 <div>
+                    <h3 className="font-bold text-slate-900">
+                        <HighlightText text={`Pedido #${delivery.id}`} highlight={globalSearchTerm} />
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                        <Calendar size={12} /> {delivery.date} às {delivery.time}
+                    </p>
+                 </div>
                  <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(delivery.status)}`}>
                     {delivery.status}
                  </span>
@@ -2967,8 +4165,14 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = mockDeliveries, onUpd
 
       {/* Modal de Detalhes */}
       {isDetailsModalOpen && selectedDelivery && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in flex flex-col max-h-[90vh]">
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
+          onClick={() => setIsDetailsModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <Truck className="text-primary" />
@@ -3005,17 +4209,27 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = mockDeliveries, onUpd
                  </h3>
                  <div className="bg-slate-50 p-4 rounded-xl space-y-2 border border-slate-100">
                     <div className="flex justify-between">
+                       <span className="text-slate-500 text-sm">Data da Compra</span>
+                       <span className="font-medium text-slate-900">{selectedDelivery.date} às {selectedDelivery.time}</span>
+                    </div>
+                    <div className="flex justify-between">
                        <span className="text-slate-500 text-sm">Cliente</span>
                        <span className="font-medium text-slate-900">{selectedDelivery.client}</span>
                     </div>
                     <div className="flex justify-between">
                        <span className="text-slate-500 text-sm">Endereço</span>
-                       <span className="font-medium text-slate-900 text-right">Rua Exemplo, {selectedDelivery.id}00<br/>Centro, Cidade - UF</span>
+                       <span className="font-medium text-slate-900 text-right max-w-[60%] text-right">{selectedDelivery.fullAddress}</span>
                     </div>
                     <div className="flex justify-between">
                        <span className="text-slate-500 text-sm">Distância</span>
                        <span className="font-medium text-slate-900">{selectedDelivery.distance}</span>
                     </div>
+                    {selectedDelivery.driver && (
+                      <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
+                         <span className="text-slate-500 text-sm">Entregador</span>
+                         <span className="font-medium text-slate-900">{selectedDelivery.driver.name}</span>
+                      </div>
+                    )}
                  </div>
               </div>
 
@@ -3128,7 +4342,38 @@ const StatCard = ({ icon: Icon, label, value, trend, trendUp, color }) => {
   );
 };
 
-const LoyaltyScreen = ({ globalSearchTerm }) => {
+const HelpTooltip = ({ title, text, importantTitle, importantText }) => {
+  return (
+    <div className="relative group inline-flex items-center ml-2">
+      <Info size={16} className="text-slate-400 cursor-help hover:text-slate-600 transition-colors" />
+      
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-72 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-50">
+        <div className="bg-slate-800 text-white p-4 rounded-xl shadow-xl relative">
+          {/* Arrow */}
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-slate-800 rotate-45 transform" />
+          
+          <div className="relative z-10">
+            {title && (
+              <div className="mb-3">
+                <h4 className="font-bold text-white mb-1 text-sm">{title}</h4>
+                <p className="text-xs text-slate-300 leading-relaxed font-normal text-left">{text}</p>
+              </div>
+            )}
+            
+            {importantTitle && (
+              <div className="pt-3 border-t border-slate-700/50">
+                <h4 className="font-bold text-white mb-1 text-sm">{importantTitle}</h4>
+                <p className="text-xs text-slate-300 leading-relaxed font-normal text-left">{importantText}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
   const [fidelityType, setFidelityType] = useState('cashback'); // 'cashback' | 'points'
   const [activeTab, setActiveTab] = useState('config'); // 'config' | 'limits' | 'incentives'
 
@@ -3179,6 +4424,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
 
   const handleSave = () => {
     setShowToast(true);
+    if (logAction) {
+        logAction('LOYALTY_CHANGE', 'Configuração de Fidelidade', {
+            type: fidelityType,
+            updatedAt: new Date().toISOString()
+        });
+    }
     setTimeout(() => setShowToast(false), 3000);
   };
 
@@ -3257,9 +4508,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
           <>
             {/* Configuração de Cashback */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Configuração de Cashback 
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Escolha se o cashback será uma porcentagem da compra ou um valor fixo, e defina o valor correspondente."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Defina como o cashback será calculado e distribuído</p>
 
@@ -3316,9 +4570,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
 
             {/* Bônus */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Bônus de Cashback
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Ofereça recompensas extras para novos cadastros ou aniversariantes para incentivar a fidelidade."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Configure bônus especiais em cashback</p>
               
@@ -3349,9 +4606,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
 
             {/* Validade */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Validade do Cashback
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Determine o prazo de validade dos benefícios acumulados. Após esse período, o saldo expira."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Por quanto tempo o cashback fica disponível</p>
               
@@ -3369,9 +4629,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
 
             {/* Trava */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Trava de Acúmulo
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Estabeleça um teto para o acúmulo. Ao atingir esse valor, o cliente deve realizar um resgate para voltar a pontuar."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Limite para forçar resgate antes de continuar acumulando</p>
               
@@ -3410,9 +4673,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
           <>
             {/* Configuração de Pontos */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Configuração de Pontos
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Defina a taxa de conversão de Reais para Pontos e quanto cada ponto vale no momento do resgate."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Defina como os pontos serão acumulados e utilizados</p>
               
@@ -3444,9 +4710,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
 
             {/* Bônus de Pontos */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Bônus de Pontos
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Bonifique clientes com pontos extras em ocasiões especiais como cadastro e aniversário."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Configure bônus especiais em pontos</p>
               
@@ -3477,9 +4746,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
 
             {/* Validade dos Pontos */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Validade dos Pontos
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Defina por quantos meses os pontos permanecem válidos antes de expirarem."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Por quanto tempo os pontos ficam disponíveis</p>
               
@@ -3497,9 +4769,12 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
 
             {/* Trava de Acúmulo */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+               <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Trava de Acúmulo
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Estabeleça um teto para o acúmulo. Ao atingir esse valor, o cliente deve realizar um resgate para voltar a pontuar."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Limite para forçar resgate antes de continuar acumulando</p>
               
@@ -3539,9 +4814,14 @@ const LoyaltyScreen = ({ globalSearchTerm }) => {
            <>
              {/* Limites de Resgate */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
                 Limites de Resgate
-                <Info size={16} className="text-slate-400" />
+                <HelpTooltip 
+                  title="Como funciona:"
+                  text="Define valores mínimo e máximo que o cliente pode resgatar por transação. Útil para controlar o uso do cashback/pontos."
+                  importantTitle="Importante:"
+                  importantText="Valores muito baixos podem gerar muitas transações pequenas. Valores muito altos podem desestimular o resgate."
+                />
               </h3>
               <p className="text-slate-500 text-sm mb-6">Defina valores mínimos e máximos para resgate</p>
 
@@ -3984,7 +5264,7 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
-  const [deliveries, setDeliveries] = useState(mockDeliveries); // Inicializa com mock, depois carrega do Supabase
+  const [deliveries, setDeliveries] = useState([]); // Inicializa vazio, depois carrega do Supabase
   const [products, setProducts] = useState([]);
 
   // Autenticação Supabase
@@ -4004,59 +5284,185 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Buscar Entregas do Supabase
+  // Helper de Tradução de Status (Inglês -> Português)
+  const translateStatus = (status) => {
+    if (!status) return 'Pendente';
+    const map = {
+      'pending': 'Pendente',
+      'processing': 'Em Preparação',
+      'out_for_delivery': 'Em Trânsito',
+      'delivered': 'Entregue',
+      'cancelled': 'Cancelado',
+      // Fallbacks
+      'Pendente': 'Pendente',
+      'Em Preparação': 'Em Preparação',
+      'Em Trânsito': 'Em Trânsito',
+      'Entregue': 'Entregue',
+      'Cancelado': 'Cancelado'
+    };
+    return map[status] || status;
+  };
+
+  const reverseTranslateStatus = (status) => {
+    const map = {
+      'Pendente': 'pending',
+      'Em Preparação': 'processing',
+      'Em Trânsito': 'out_for_delivery',
+      'Entregue': 'delivered',
+      'Cancelado': 'cancelled'
+    };
+    return map[status] || status;
+  };
+
+  // Buscar Entregas (Pedidos) do Supabase
   const fetchDeliveries = async () => {
-    const { data, error } = await supabase
-      .from('entregas')
-      .select(`
-        *,
-        itens_entrega (
-          produto_nome,
-          quantidade,
-          preco_unitario
-        )
-      `)
-      .order('criado_em', { ascending: false });
+    try {
+      const { data: ordersData, error: ordersError } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (ordersError) throw ordersError;
       
-    if (error) {
-       console.error('Erro ao buscar entregas:', error);
-    } else {
-       const formatted = data.map(d => ({
+      if (!ordersData || ordersData.length === 0) {
+        setDeliveries([]);
+        return;
+      }
+
+      // Buscar itens dos pedidos
+      const orderIds = ordersData.map(o => o.id);
+      const { data: itemsData } = await supabase
+        .from('order_items')
+        .select('*')
+        .in('order_id', orderIds);
+
+      // Buscar perfis (clientes)
+      // Tenta todos os possíveis campos de ID (priorizando user_id)
+      const rawUserIds = ordersData.map(o => o.user_id || o.customer_id || o.client_id || o.profile_id);
+      const userIds = [...new Set(rawUserIds.filter(Boolean))];
+      
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', userIds);
+
+      // Buscar produtos para garantir o nome correto (title)
+      const { data: productsData } = await supabase
+        .from('products')
+        .select('id, title');
+
+      const formatted = ordersData.map(d => {
+        // Resolução do Cliente
+        const clientId = d.user_id || d.customer_id || d.client_id || d.profile_id;
+        const client = profilesData?.find(p => p.id === clientId);
+        
+        // Tenta pegar o nome de várias formas
+        const clientName = client?.name || client?.full_name || client?.email || d.client_name || d.customer_name || 'Cliente';
+
+        // Resolução dos Itens
+        const items = itemsData?.filter(i => i.order_id === d.id) || [];
+        
+        const formatItemName = (item) => {
+            // 1. Tenta pelo ID do produto
+            if (item.product_id && productsData) {
+                const prod = productsData.find(p => p.id == item.product_id);
+                if (prod) return prod.title || prod.name;
+            }
+
+            // 2. Tenta pelo nome exato na lista de produtos (recuperação)
+            if ((item.name || item.title) && productsData) {
+                 const searchName = (item.name || item.title).toLowerCase();
+                 const prodByName = productsData.find(p => 
+                    (p.name && p.name.toLowerCase() === searchName) || 
+                    (p.title && p.title.toLowerCase() === searchName)
+                 );
+                 if (prodByName) return prodByName.title || prodByName.name;
+            }
+
+            // 3. Fallbacks diretos
+            if (item.title) return item.title;
+            if (item.product_name) return item.product_name;
+            if (item.name) return item.name;
+            
+            return 'Item Indisponível';
+        };
+
+        const formatDistance = (d) => {
+            // Prioriza campos numéricos em metros
+            const meters = d.eta_distance_meters ?? d.distance ?? d.shipping_distance;
+            if (meters !== null && meters !== undefined && !isNaN(meters)) {
+                return `${(Number(meters) / 1000).toFixed(1).replace('.', ',')} km`;
+            }
+            // Fallback para campos de texto ou pré-formatados
+            return d.distance_text || d.km || 'N/A';
+        };
+        
+        return {
           id: d.id,
-          client: d.cliente_nome || 'Cliente',
-          items: d.itens_entrega.map(i => i.produto_nome).join(', '),
-          itemsList: d.itens_entrega.map(i => ({
-              name: i.produto_nome,
-              quantity: i.quantidade,
-              unitPrice: i.preco_unitario
+          client: clientName,
+          items: items.map(i => formatItemName(i)).join(', ') || 'Sem itens',
+          itemsList: items.map(i => ({
+              name: formatItemName(i),
+              quantity: i.quantity,
+              unitPrice: i.unit_price
           })),
-          distance: d.distancia || '0km',
-          status: d.status,
-          date: new Date(d.criado_em).toLocaleDateString('pt-BR'),
-          value: d.valor_total,
-          time: new Date(d.criado_em).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
-          statusTimestamp: new Date(d.atualizado_em).getTime()
-       }));
-       setDeliveries(formatted.length > 0 ? formatted : mockDeliveries);
+          distance: formatDistance(d),
+          status: translateStatus(d.status),
+          date: new Date(d.created_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
+          value: d.total || 0,
+          time: new Date(d.created_at).toLocaleTimeString('pt-BR', { timeZone: 'UTC', hour: '2-digit', minute:'2-digit' }),
+          statusTimestamp: new Date(d.updated_at || d.created_at).getTime(),
+          driver: null,
+          fullAddress: d.address || d.address_text || 'Endereço não informado'
+       };
+      });
+      setDeliveries(formatted);
+    } catch (error) {
+       console.error('Erro ao buscar entregas:', error);
     }
   };
 
   const fetchProducts = async () => {
-    const { data, error } = await supabase.from('produtos').select('*').order('criado_em', { ascending: false });
+    // Selecionamos todas as colunas para lidar com mudanças de schema
+    const { data, error } = await supabase.from('products').select('*, price_cents, old_price_cents');
     if (error) {
       console.error("Erro ao buscar produtos:", error);
     } else {
-      setProducts(data.map(p => ({
-        id: p.id,
-        name: p.nome,
-        description: p.descricao,
-        price: p.preco.toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-        promotionalPrice: p.preco_promocional ? p.preco_promocional.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '',
-        stock: p.estoque,
-        category: p.categoria,
-        sku: p.sku,
-        image: p.imagem_url
-      })));
+      console.log("Produtos brutos do Supabase:", data); // Debug para verificar o que chega
+      setProducts(data.map(p => {
+        // Tenta pegar price_cents ou old_price_cents
+        const priceCents = p.price_cents;
+        const oldPriceCents = p.old_price_cents;
+
+        let finalPrice = '0,00';
+        if (priceCents !== undefined && priceCents !== null) {
+            finalPrice = (Number(priceCents) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+        } else if (p.price !== undefined && p.price !== null) {
+            finalPrice = Number(p.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+        }
+
+        let finalPromoPrice = '';
+        if (oldPriceCents !== undefined && oldPriceCents !== null) {
+            finalPromoPrice = (Number(oldPriceCents) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+        } else if (p.promotional_price) {
+            finalPromoPrice = Number(p.promotional_price).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+        }
+
+        return {
+          id: p.id,
+          name: p.title || p.name, 
+          description: p.description,
+          price: finalPrice,
+          promotionalPrice: finalPromoPrice,
+          stock: p.stock || 0,
+          category: p.category,
+          sku: p.sku,
+          image: p.image_url,
+          // Mantemos os valores originais para referência se necessário
+          rawPriceCents: priceCents,
+          rawOldPriceCents: oldPriceCents
+        };
+      }));
     }
   };
 
@@ -4067,14 +5473,14 @@ function App() {
       
       const channel = supabase
         .channel('entregas_changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'entregas' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
            fetchDeliveries();
         })
         .subscribe();
       
       const productsChannel = supabase
         .channel('produtos_changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'produtos' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
            fetchProducts();
         })
         .subscribe();
@@ -4086,7 +5492,26 @@ function App() {
     }
   }, [session]);
 
+  const logAction = async (actionType, entityName, details) => {
+    if (!session?.user) return;
+    try {
+        const { error } = await supabase.from('audit_logs').insert([{
+            user_id: session.user.id,
+            user_email: session.user.email,
+            action_type: actionType,
+            entity_name: entityName,
+            details: details,
+            created_at: new Date().toISOString()
+        }]);
+        if (error) console.error("Erro ao registrar log:", error);
+    } catch (err) {
+        console.error("Erro inesperado no log:", err);
+    }
+  };
+
   const handleUpdateDeliveryStatus = async (id, newStatus) => {
+    const dbStatus = reverseTranslateStatus(newStatus);
+
     // Atualização Otimista
     setDeliveries(prev => prev.map(d => d.id === id ? { 
       ...d, 
@@ -4095,10 +5520,10 @@ function App() {
     } : d));
 
     const { error } = await supabase
-      .from('entregas')
+      .from('orders')
       .update({ 
-        status: newStatus,
-        atualizado_em: new Date().toISOString()
+        status: dbStatus,
+        updated_at: new Date().toISOString()
       })
       .eq('id', id);
 
@@ -4139,12 +5564,14 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'Dashboard': return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
-      case 'Produtos': return <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} />;
-      case 'Destaques': return <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} />;
+      case 'Produtos': return <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />;
+      case 'Estoque': return <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />;
+      case 'Destaques': return <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} />;
       case 'Usuários': return <UsersScreen globalSearchTerm={globalSearchTerm} session={session} />;
+      case 'Logs': return <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />;
       case 'Entregas': return <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />;
-      case 'Fidelidade': return <LoyaltyScreen globalSearchTerm={globalSearchTerm} />;
-      case 'Checklist': return <ChecklistScreen />;
+      case 'Fidelidade': return <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} />;
+      case 'Checklist': return <ChecklistScreen session={session} />;
       default: return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
     }
   };
@@ -4176,10 +5603,12 @@ function App() {
         <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700">
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} />
+          <SidebarItem icon={Boxes} label="Estoque" active={activeTab === 'Estoque'} onClick={() => setActiveTab('Estoque')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} />
           <SidebarItem icon={ClipboardList} label="Checklist" active={activeTab === 'Checklist'} onClick={() => setActiveTab('Checklist')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} />
+          <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} />
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} />
         </nav>
 
