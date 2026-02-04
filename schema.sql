@@ -101,3 +101,39 @@ create policy "Public Access Products" on storage.objects for select using ( buc
 create policy "Auth Upload Products" on storage.objects for insert with check ( bucket_id = 'products' and auth.role() = 'authenticated' );
 create policy "Public Access Banners" on storage.objects for select using ( bucket_id = 'banners' );
 create policy "Auth Upload Banners" on storage.objects for insert with check ( bucket_id = 'banners' and auth.role() = 'authenticated' );
+
+-- Tabela de Logs de Auditoria
+create table if not exists audit_logs (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users(id),
+  user_email text,
+  action_type text not null,
+  entity_name text not null,
+  details jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table audit_logs enable row level security;
+
+create policy "Authenticated users can insert logs" on audit_logs for insert to authenticated with check (true);
+create policy "Authenticated users can view logs" on audit_logs for select to authenticated using (true);
+
+-- Tabela de Configuração de Fidelidade
+create table if not exists loyalty_config (
+  id uuid default uuid_generate_v4() primary key,
+  program_type text not null default 'cashback',
+  settings jsonb not null default '{}'::jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table loyalty_config enable row level security;
+
+create policy "Authenticated users can insert loyalty config" on loyalty_config for insert to authenticated with check (true);
+create policy "Authenticated users can view loyalty config" on loyalty_config for select to authenticated using (true);
+
+-- Atualização de Fidelidade (Adicionar manualmente se já criou as tabelas)
+alter table profiles add column if not exists loyalty_balance numeric default 0;
+
+create policy "Admins can update all profiles" on profiles for update using (
+  (select role from profiles where id = auth.uid()) = 'admin'
+);

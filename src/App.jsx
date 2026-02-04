@@ -1,3 +1,4 @@
+  
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import logoSmall from './assets/logoso.png';
@@ -37,6 +38,7 @@ import {
   Download,
   Upload,
   AlertCircle,
+  AlertTriangle,
   Megaphone,
   ClipboardList,
   Settings2,
@@ -4375,6 +4377,7 @@ const HelpTooltip = ({ title, text, importantTitle, importantText }) => {
 
 const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
   const [fidelityType, setFidelityType] = useState('cashback'); // 'cashback' | 'points'
+  const [initialFidelityType, setInitialFidelityType] = useState('cashback');
   const [activeTab, setActiveTab] = useState('config'); // 'config' | 'limits' | 'incentives'
 
   const [config, setConfig] = useState({
@@ -4421,20 +4424,163 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
   });
 
   const [showToast, setShowToast] = useState(false);
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false);
 
-  const handleSave = () => {
-    setShowToast(true);
-    if (logAction) {
-        logAction('LOYALTY_CHANGE', 'Configuração de Fidelidade', {
-            type: fidelityType,
-            updatedAt: new Date().toISOString()
-        });
+  const fetchLoyaltyConfig = async () => {
+    try {
+      console.log('Buscando configuração de fidelidade...');
+      const { data, error } = await supabase
+        .from('loyalty_config')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const latestConfig = data[0];
+        console.log('Configuração carregada:', latestConfig);
+        
+        if (latestConfig.program_type) {
+          setFidelityType(latestConfig.program_type);
+          setInitialFidelityType(latestConfig.program_type);
+        }
+        if (latestConfig.settings) {
+          setConfig(prev => ({ ...prev, ...latestConfig.settings }));
+        }
+      } else {
+        console.log('Nenhuma configuração encontrada. Usando padrões.');
+      }
+    } catch (error) {
+      console.error('Erro ao buscar configuração de fidelidade:', error);
     }
-    setTimeout(() => setShowToast(false), 3000);
+  };
+
+  useEffect(() => {
+    fetchLoyaltyConfig();
+  }, []);
+
+  const executeSave = async () => {
+    try {
+        const { error } = await supabase
+            .from('loyalty_config')
+            .insert([{
+                program_type: fidelityType,
+                settings: config
+            }]);
+
+        if (error) {
+            console.error('Erro ao salvar no banco:', error);
+            alert('Erro ao salvar as configurações. Verifique se a tabela loyalty_config foi criada.');
+            return;
+        }
+
+        setInitialFidelityType(fidelityType);
+        setShowToast(true);
+        
+        if (logAction) {
+            logAction('LOYALTY_CHANGE', 'Configuração de Fidelidade', {
+                type: fidelityType,
+                previousType: initialFidelityType,
+                updatedAt: new Date().toISOString()
+            });
+        }
+        setTimeout(() => setShowToast(false), 3000);
+    } catch (err) {
+        console.error('Erro inesperado:', err);
+    }
+  };
+
+  const handleConfirmReset = async () => {
+      console.log('Usuário confirmou reset. Iniciando zeramento...');
+      // Resetar saldos dos clientes
+      try {
+          const { error: resetError } = await supabase
+              .from('profiles')
+              .update({ loyalty_balance: 0 })
+              .neq('role', 'admin'); 
+
+          if (resetError) {
+              console.error('Erro ao zerar saldos:', resetError);
+              alert('ERRO AO ZERAR SALDOS: ' + resetError.message);
+              return;
+          }
+          console.log('Saldos zerados com sucesso.');
+          setShowResetConfirmation(false);
+          executeSave();
+      } catch (err) {
+          console.error('Erro inesperado ao zerar saldos:', err);
+          alert('Erro crítico ao tentar zerar saldos: ' + err.message);
+      }
+  };
+
+  const handleSave = async () => {
+    console.log('=== DEBUG SAVE ===');
+    console.log('Current Type:', fidelityType);
+    console.log('Initial Type:', initialFidelityType);
+    
+    const hasTypeChanged = fidelityType !== initialFidelityType;
+    console.log('Has Type Changed:', hasTypeChanged);
+
+    if (hasTypeChanged) {
+        setShowResetConfirmation(true);
+        return;
+    }
+
+    executeSave();
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Modal de Confirmação Crítica */}
+      {showResetConfirmation && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-up border border-red-100">
+            <div className="bg-red-50 p-6 flex flex-col items-center text-center border-b border-red-100">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4 text-red-600 shadow-sm">
+                <AlertTriangle size={32} strokeWidth={2.5} />
+              </div>
+              <h3 className="text-xl font-bold text-red-900 mb-2">Atenção Crítica - Mudança de Programa</h3>
+              <p className="text-red-700 font-medium">
+                Você está alterando de <span className="font-bold underline">{initialFidelityType?.toUpperCase()}</span> para <span className="font-bold underline">{fidelityType?.toUpperCase()}</span>
+              </p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50/50 border border-red-100 rounded-xl p-4 flex gap-3">
+                <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                <p className="text-sm text-red-800">
+                  Esta ação irá <span className="font-bold">ZERAR O SALDO DE TODOS OS CLIENTES</span> imediatamente para evitar inconsistências no banco de dados.
+                </p>
+              </div>
+              
+              <p className="text-slate-600 text-center text-sm">
+                Esta ação é irreversível e os saldos atuais serão perdidos.<br/>
+                Deseja realmente continuar?
+              </p>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={() => {
+                    setShowResetConfirmation(false);
+                    setFidelityType(initialFidelityType);
+                  }}
+                  className="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+                >
+                  Cancelar Mudança
+                </button>
+                <button 
+                  onClick={handleConfirmReset}
+                  className="flex-1 py-3 px-4 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 shadow-lg shadow-red-600/20 transition-all active:scale-95"
+                >
+                  Sim, Zerar Saldos
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
