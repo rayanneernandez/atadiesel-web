@@ -1,4 +1,3 @@
-  
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import logoSmall from './assets/logoso.png';
@@ -4424,6 +4423,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
   });
 
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('Configurações salvas com sucesso.');
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
 
   const fetchLoyaltyConfig = async () => {
@@ -4460,7 +4460,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
     fetchLoyaltyConfig();
   }, []);
 
-  const executeSave = async () => {
+  const executeSave = async (customMessage = null) => {
     try {
         const { error } = await supabase
             .from('loyalty_config')
@@ -4476,6 +4476,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
         }
 
         setInitialFidelityType(fidelityType);
+        setToastMessage(customMessage || 'Configurações salvas com sucesso.');
         setShowToast(true);
         
         if (logAction) {
@@ -4507,7 +4508,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
           }
           console.log('Saldos zerados com sucesso.');
           setShowResetConfirmation(false);
-          executeSave();
+          executeSave('Programa alterado e saldos zerados com sucesso!');
       } catch (err) {
           console.error('Erro inesperado ao zerar saldos:', err);
           alert('Erro crítico ao tentar zerar saldos: ' + err.message);
@@ -4527,7 +4528,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
         return;
     }
 
-    executeSave();
+    executeSave('Configurações atualizadas com sucesso.');
   };
 
   return (
@@ -5387,7 +5388,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
           </div>
           <div>
             <h4 className="font-bold text-slate-800">Sucesso!</h4>
-            <p className="text-sm text-slate-600">Configurações salvas com sucesso.</p>
+            <p className="text-sm text-slate-600">{toastMessage}</p>
           </div>
           <button 
             onClick={() => setShowToast(false)} 
