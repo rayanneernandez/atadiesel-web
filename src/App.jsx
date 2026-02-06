@@ -5708,6 +5708,16 @@ function App() {
 
   const deliveryRequests = deliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Em Trânsito');
 
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setSession(null);
+      setIsAuthenticated(false);
+    } catch (error) {
+      console.error('Erro ao sair:', error);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'Dashboard': return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
@@ -5760,7 +5770,10 @@ function App() {
         </nav>
 
         <div className="p-4 border-t border-slate-800/50">
-           <button className={`flex items-center gap-3 text-slate-400 hover:text-red-400 hover:bg-white/5 px-4 py-3 w-full transition-colors rounded-xl ${!isSidebarOpen && 'justify-center'}`}>
+           <button 
+             onClick={handleLogout}
+             className={`flex items-center gap-3 text-slate-400 hover:text-red-400 hover:bg-white/5 px-4 py-3 w-full transition-colors rounded-xl ${!isSidebarOpen && 'justify-center'}`}
+           >
               <LogOut size={20} />
               <span className={`${isSidebarOpen ? 'block' : 'hidden'} font-medium`}>Sair</span>
            </button>
