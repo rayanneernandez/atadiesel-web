@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import logoSmall from './assets/logoso.png';
 import logoFull from './assets/logo.png';
@@ -45,9 +46,12 @@ import {
   Smartphone,
   UserCog,
   UserPlus,
+  ShieldPlus,
   Boxes,
   History,
-  List
+  List,
+  Lock,
+  Archive,
 } from 'lucide-react';
 import LoginScreen from './login';
 import jsPDF from 'jspdf';
@@ -83,10 +87,10 @@ const HighlightText = ({ text, highlight }) => {
     </>
   );
 };
-
+  
 // --- SUB-TELAS ---
 
-const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) => {
+const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], totalClients = 0 }) => {
   const [dateRange, setDateRange] = useState({
     start: new Date().toISOString().slice(0, 10),
     end: new Date().toISOString().slice(0, 10)
@@ -507,8 +511,8 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [] }) =
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <StatCard 
         icon={Users} 
-        label={<HighlightText text="Clientes Ativos" highlight={globalSearchTerm} />}
-        value={<HighlightText text={activeClients.toString()} highlight={globalSearchTerm} />}
+        label={<HighlightText text="Total de Clientes" highlight={globalSearchTerm} />}
+        value={<HighlightText text={totalClients.toString()} highlight={globalSearchTerm} />}
         trend="+12.5%" 
         trendUp={true}
         color="blue" 
@@ -681,8 +685,13 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
   const [isEditing, setIsEditing] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
+  const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
   const [originalProduct, setOriginalProduct] = useState(null);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  
+  // Archive Modal State
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
+  const [productToArchive, setProductToArchive] = useState(null);
 
   const showToastMessage = (message, type = 'success') => {
     setToast({ show: true, message, type });
@@ -708,6 +717,13 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
   }, [products]);
 
   const filteredProducts = products.filter(product => {
+    // Filtro de Arquivados baseado na aba
+    if (activeTab === 'active') {
+        if (product.archived) return false;
+    } else {
+        if (!product.archived) return false;
+    }
+
     const term = globalSearchTerm?.trim().toLowerCase() || '';
     const matchesSearch =
       !term ||
@@ -918,6 +934,33 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
     }
   };
 
+  const handleToggleArchiveProduct = (product) => {
+    setProductToArchive(product);
+    setIsArchiveModalOpen(true);
+  };
+
+  const confirmArchiveProduct = async () => {
+    if (!productToArchive) return;
+    
+    const newStatus = !productToArchive.archived;
+    const action = newStatus ? 'arquivar' : 'desarquivar';
+    
+    const { error } = await supabase
+        .from('products')
+        .update({ archived: newStatus })
+        .eq('id', productToArchive.id);
+        
+    if (error) {
+        console.error(`Erro ao ${action} produto:`, error);
+        showToastMessage(`Erro ao ${action} produto.`, 'error');
+    } else {
+        showToastMessage(`Produto ${newStatus ? 'arquivado' : 'desarquivado'} com sucesso!`, 'success');
+        onRefresh();
+    }
+    setIsArchiveModalOpen(false);
+    setProductToArchive(null);
+  };
+
   const handleNewProduct = () => {
     setIsEditing(false);
     setNewProduct({
@@ -1121,6 +1164,47 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
         </div>
       )}
 
+      {/* Modal de Confirmação de Arquivamento */}
+      {isArchiveModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsArchiveModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+             <div className="flex flex-col items-center text-center">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 ${productToArchive?.archived ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'}`}>
+                   <Archive size={24} />
+                </div>
+                <h3 className="font-bold text-lg text-slate-800 mb-2">
+                    {productToArchive?.archived ? 'Desarquivar Produto' : 'Arquivar Produto'}
+                </h3>
+                <p className="text-slate-500 text-sm mb-6">
+                   {productToArchive?.archived 
+                     ? 'O produto voltará a aparecer na lista principal e estará disponível para vendas.'
+                     : 'O produto será movido para a lista de arquivados e não aparecerá nas vendas.'}
+                </p>
+                <div className="flex gap-3 w-full">
+                   <button 
+                      onClick={() => setIsArchiveModalOpen(false)}
+                      className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50 transition-colors"
+                   >
+                      Cancelar
+                   </button>
+                   <button 
+                      onClick={confirmArchiveProduct}
+                      className={`flex-1 px-4 py-2 text-white rounded-xl font-bold transition-colors shadow-lg ${productToArchive?.archived ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/30'}`}
+                   >
+                      Confirmar
+                   </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gerenciar Produtos</h1>
         <div className="flex gap-2">
@@ -1140,21 +1224,45 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
               </label>
             </div>
             <button 
-                onClick={handleNewProduct}
-                className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium"
-            >
-                <Plus size={18} /> Novo Produto
-            </button>
-            <button 
                 onClick={handleExportProducts} 
                 className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/30 text-sm font-medium"
             >
                 <Download size={18} /> Exportar
             </button>
+            <button 
+                onClick={handleNewProduct}
+                className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium"
+            >
+                <Plus size={18} /> Novo Produto
+            </button>
         </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-100">
-        <div className="p-4 border-b border-slate-100 flex justify-end gap-4">
+        <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center">
+          <div className="flex gap-2 w-full md:w-auto overflow-x-auto">
+             <button
+               onClick={() => setActiveTab('active')}
+               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                 activeTab === 'active' 
+                   ? 'bg-primary text-white shadow-md shadow-blue-500/20' 
+                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+               }`}
+             >
+               Produtos Ativos
+             </button>
+             <button
+               onClick={() => setActiveTab('archived')}
+               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                 activeTab === 'archived' 
+                   ? 'bg-slate-800 text-white shadow-md shadow-slate-500/20' 
+                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+               }`}
+             >
+               Arquivados
+             </button>
+          </div>
+
+          <div className="flex gap-4 w-full md:w-auto justify-end">
           <div className="relative">
              <button 
                 type="button"
@@ -1202,6 +1310,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
              )}
           </div>
         </div>
+      </div>
         <div className="overflow-x-auto rounded-b-xl">
           <table className="w-full text-sm text-left text-slate-500">
           <thead className="text-xs text-slate-700 uppercase bg-slate-50">
@@ -1232,6 +1341,13 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
                     </span>
                 </td>
                 <td className="px-6 py-4 flex gap-2">
+                  <button 
+                      onClick={() => handleToggleArchiveProduct(product)} 
+                      className="text-slate-400 hover:text-slate-700"
+                      title={product.archived ? "Desarquivar" : "Arquivar"}
+                  >
+                      {product.archived ? <Upload size={18} /> : <Archive size={18} />}
+                  </button>
                   <button onClick={() => handleEditProduct(product)} className="text-blue-600 hover:text-blue-900"><Edit size={18} /></button>
                   <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:text-red-900"><Trash2 size={18} /></button>
                 </td>
@@ -1261,8 +1377,29 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
         title: h.title,
         description: h.subtitle,
         expiration: h.expires_at,
-        image: h.image_url
+        image: h.image_url,
+        archived: h.archived || false
       })));
+    }
+  };
+
+  const handleToggleArchiveHighlight = async (highlight) => {
+    const newStatus = !highlight.archived;
+    const action = newStatus ? 'arquivar' : 'desarquivar';
+    
+    if (window.confirm(`Tem certeza que deseja ${action} este destaque?`)) {
+        const { error } = await supabase
+            .from('highlights')
+            .update({ archived: newStatus })
+            .eq('id', highlight.id);
+        
+        if (error) {
+            console.error(`Erro ao ${action} destaque:`, error);
+            showToastMessage(`Erro ao ${action} destaque.`, 'error');
+        } else {
+            showToastMessage(`Destaque ${newStatus ? 'arquivado' : 'desarquivado'} com sucesso!`, 'success');
+            fetchHighlights();
+        }
     }
   };
 
@@ -1458,6 +1595,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   );
 
   const activeHighlights = filteredHighlights.filter(h => {
+    if (h.archived) return false;
     if (!h.expiration) return true;
     const expDate = new Date(h.expiration);
     const today = new Date();
@@ -1475,6 +1613,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   });
 
   const inactiveHighlights = filteredHighlights.filter(h => {
+    if (h.archived) return false;
     if (!h.expiration) return false;
     const expDate = new Date(h.expiration);
     const today = new Date();
@@ -1490,7 +1629,12 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
     return localExpDate < today;
   });
 
-  const displayHighlights = activeTab === 'active' ? activeHighlights : inactiveHighlights;
+  const archivedHighlights = filteredHighlights.filter(h => h.archived);
+
+  const displayHighlights = 
+    activeTab === 'active' ? activeHighlights : 
+    activeTab === 'inactive' ? inactiveHighlights : 
+    archivedHighlights;
 
   return (
     <div className="space-y-6">
@@ -1712,6 +1856,16 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
         >
           Destaques Inativos
         </button>
+        <button
+          onClick={() => setActiveTab('archived')}
+          className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+            activeTab === 'archived' 
+              ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          Arquivados
+        </button>
       </div>
 
       {displayHighlights.length === 0 ? (
@@ -1720,12 +1874,16 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
             <Megaphone size={48} className="text-slate-300" />
           </div>
           <h3 className="text-lg font-bold text-slate-700 mb-1">
-            {activeTab === 'active' ? 'Nenhum destaque ativo' : 'Nenhum destaque inativo'}
+            {activeTab === 'active' ? 'Nenhum destaque ativo' : 
+             activeTab === 'inactive' ? 'Nenhum destaque inativo' : 
+             'Nenhum destaque arquivado'}
           </h3>
           <p className="text-slate-500 max-w-sm mx-auto">
             {activeTab === 'active' 
               ? 'Crie novos destaques para promover produtos e ofertas na sua loja.' 
-              : 'Destaques expirados aparecerão aqui automaticamente.'}
+              : activeTab === 'inactive' 
+                ? 'Destaques expirados aparecerão aqui automaticamente.'
+                : 'Destaques arquivados aparecerão aqui.'}
           </p>
           {activeTab === 'active' && (
              <button 
@@ -1759,6 +1917,14 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                      </div>
                    )}
                    <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+                      <button 
+                        onClick={() => handleToggleArchiveHighlight(highlight)}
+                        className="text-sm font-medium text-slate-500 hover:text-slate-700 hover:underline flex items-center gap-1"
+                        title={highlight.archived ? "Desarquivar" : "Arquivar"}
+                      >
+                        {highlight.archived ? <Upload size={14} /> : <Archive size={14} />} 
+                        {highlight.archived ? 'Desarquivar' : 'Arquivar'}
+                      </button>
                       <button 
                         onClick={() => openModal(highlight)}
                         className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
@@ -3014,12 +3180,12 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       
       const formatted = data.map(u => ({
         id: u.id,
-        name: u.name || 'Sem Nome',
+        name: u.name || 'Sem Nome',  
         email: u.email,
         role: u.role || 'user',
+        permissions: u.permissions || {},
         receives_email: u.receives_email || false,
         app_access: u.app_access || false,
-        // Status: Só é 'Ativo' se for o usuário logado atual (simplificação visual)
         status: (session?.user?.email === u.email) ? 'Ativo' : 'Inativo', 
         visits: 0, 
         totalSpent: 0,
@@ -3031,32 +3197,123 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
     }
   };
 
-  const handleToggleChecklistAccess = async (userId, currentValue) => {
-    // Optimistic update
-    setUsers(prev => prev.map(u => 
-      u.id === userId ? { ...u, app_access: !currentValue, receives_email: !currentValue } : u
-    ));
-
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ app_access: !currentValue, receives_email: !currentValue })
-        .eq('id', userId);
-
-      if (error) throw error;
-    } catch (error) {
-      console.error('Erro ao atualizar permissão:', error);
-      alert('Erro ao atualizar permissão: ' + error.message);
-      fetchUsers(); // Revert
-    }
-  };
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isChangeRoleModalOpen, setIsChangeRoleModalOpen] = useState(false);
+  const [isCreateRoleModalOpen, setIsCreateRoleModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [newRoleSelection, setNewRoleSelection] = useState('user');
+
+  // Configuração de Cargos
+  const [rolesList, setRolesList] = useState([]);
+
+  useEffect(() => {
+    const fetchRoles = async () => {
+        const { data, error } = await supabase.from('roles').select('*');
+        if (!error && data) {
+            setRolesList(data.map(r => ({
+                ...r,
+                desc: r.description // Mantém compatibilidade com o campo desc usado na UI
+            })));
+        }
+    };
+    fetchRoles();
+  }, []);
+
+  const [newRoleDefinition, setNewRoleDefinition] = useState({
+    name: '',
+    description: '',
+    permissions: {}
+  });
+
+  // --- PERMISSÕES ---
+  const [isPermissionsModalOpen, setIsPermissionsModalOpen] = useState(false);
+  const [editingPermissions, setEditingPermissions] = useState({});
+  const ALL_MODULES = [
+    { id: 'Dashboard', label: 'Visão Geral' },
+    { id: 'Produtos', label: 'Produtos' },
+    { id: 'Estoque', label: 'Estoque' },
+    { id: 'Destaques', label: 'Destaques' },
+    { id: 'Fidelidade', label: 'Fidelidade' },
+    { id: 'Checklist', label: 'Checklist' },
+    { id: 'Usuários', label: 'Usuários' },
+    { id: 'Logs', label: 'Logs' },
+    { id: 'Entregas', label: 'Entregas' }
+  ];
+
+  const handleCreateRole = async () => {
+    if (!newRoleDefinition.name) return alert("Nome do cargo é obrigatório");
+    
+    const roleId = newRoleDefinition.name.toLowerCase().replace(/\s+/g, '_');
+    if (rolesList.find(r => r.id === roleId)) return alert("Cargo já existe");
+
+    const newRole = {
+        id: roleId,
+        label: newRoleDefinition.name,
+        description: newRoleDefinition.description || 'Cargo personalizado',
+        permissions: newRoleDefinition.permissions
+    };
+
+    try {
+        const { error } = await supabase.from('roles').insert([newRole]);
+        if (error) throw error;
+
+        setRolesList(prev => [...prev, { ...newRole, desc: newRole.description }]);
+        setIsCreateRoleModalOpen(false);
+        setNewRoleDefinition({ name: '', description: '', permissions: {} });
+        alert(`Cargo ${newRoleDefinition.name} criado com sucesso!`);
+    } catch (error) {
+        console.error("Erro ao criar cargo:", error);
+        alert("Erro ao salvar cargo no banco de dados. Verifique se a tabela 'roles' existe.");
+    }
+  };
+
+  const handleToggleNewRolePermission = (moduleId) => {
+    setNewRoleDefinition(prev => ({
+        ...prev,
+        permissions: {
+            ...prev.permissions,
+            [moduleId]: !prev.permissions[moduleId]
+        }
+    }));
+  };
+
+  const handleOpenPermissionsModal = (user) => {
+    setSelectedUser(user);
+    setEditingPermissions(user.permissions || {});
+    setIsPermissionsModalOpen(true);
+    setActiveMenuId(null);
+  };
+
+  const handleTogglePermission = (moduleId) => {
+    setEditingPermissions(prev => ({
+      ...prev,
+      [moduleId]: !prev[moduleId]
+    }));
+  };
+
+  const handleSavePermissions = async () => {
+    if (!selectedUser) return;
+    try {
+        const { error } = await supabase
+            .from('profiles')
+            .update({ permissions: editingPermissions })
+            .eq('id', selectedUser.id);
+
+        if (error) throw error;
+
+        alert(`Permissões de ${selectedUser.name} atualizadas!`);
+        
+        setUsers(prev => prev.map(u => 
+            u.id === selectedUser.id ? { ...u, permissions: editingPermissions } : u
+        ));
+        setIsPermissionsModalOpen(false);
+    } catch (error) {
+        console.error("Erro ao salvar permissões:", error);
+        alert("Erro ao salvar permissões: " + error.message);
+    }
+  };
 
   const [newUser, setNewUser] = useState({
     name: '',
@@ -3167,18 +3424,26 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
     if (!selectedUser) return;
 
     try {
+      const selectedRoleConfig = rolesList.find(r => r.id === newRoleSelection);
+      const updates = { role: newRoleSelection };
+
+      // Se o cargo tem permissões predefinidas, aplica elas
+      if (selectedRoleConfig && selectedRoleConfig.permissions) {
+        updates.permissions = selectedRoleConfig.permissions;
+      }
+
       const { error } = await supabase
         .from('profiles')
-        .update({ role: newRoleSelection })
+        .update(updates)
         .eq('id', selectedUser.id);
 
       if (error) throw error;
 
-      alert(`Cargo de ${selectedUser.name} alterado para ${newRoleSelection} com sucesso!`);
+      alert(`Cargo de ${selectedUser.name} alterado para ${selectedRoleConfig?.label || newRoleSelection}! Permissões atualizadas.`);
       
       // Update local state
       setUsers(prev => prev.map(u => 
-        u.id === selectedUser.id ? { ...u, role: newRoleSelection } : u
+        u.id === selectedUser.id ? { ...u, ...updates } : u
       ));
       
       setIsChangeRoleModalOpen(false);
@@ -3221,6 +3486,12 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       case 'user':
       case 'client':
         return 'bg-blue-100 text-blue-700';
+      case 'marketing':
+        return 'bg-pink-100 text-pink-700';
+      case 'vendas':
+        return 'bg-emerald-100 text-emerald-700';
+      case 'logistica':
+        return 'bg-amber-100 text-amber-700';
       default:
         return 'bg-slate-100 text-slate-700';
     }
@@ -3228,6 +3499,104 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
   return (
     <div className="space-y-6">
+      {/* Modal de Criação de Cargo */}
+      {isCreateRoleModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsCreateRoleModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                   <ShieldPlus size={20} className="text-primary" />
+                   Criar Novo Cargo
+                </h3>
+                <button onClick={() => setIsCreateRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                   <X size={20} />
+                </button>
+             </div>
+             
+             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm mb-4">
+                   Defina o nome do cargo e as permissões padrão. Ao atribuir este cargo a um usuário, ele herdará automaticamente essas permissões.
+                </div>
+
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Nome do Cargo</label>
+                   <input 
+                      type="text" 
+                      value={newRoleDefinition.name}
+                      onChange={(e) => setNewRoleDefinition({...newRoleDefinition, name: e.target.value})}
+                      placeholder="Ex: Supervisor de Logística"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
+                   />
+                </div>
+
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Descrição</label>
+                   <input 
+                      type="text" 
+                      value={newRoleDefinition.description}
+                      onChange={(e) => setNewRoleDefinition({...newRoleDefinition, description: e.target.value})}
+                      placeholder="Ex: Responsável pela frota"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
+                   />
+                </div>
+
+                <div>
+                   <label className="block text-sm font-bold text-slate-700 mb-3">Permissões do Cargo</label>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {ALL_MODULES.map((module) => {
+                        const isAllowed = !!newRoleDefinition.permissions[module.id];
+                        return (
+                          <label 
+                            key={module.id}
+                            className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                              isAllowed
+                                ? 'border-primary bg-blue-50/50' 
+                                : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                             <span className={`font-bold text-sm ${isAllowed ? 'text-primary' : 'text-slate-700'}`}>
+                               {module.label}
+                             </span>
+                             <div className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${isAllowed ? 'bg-primary' : 'bg-slate-300'}`}>
+                               <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isAllowed ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                             </div>
+                             <input 
+                                type="checkbox" 
+                                checked={isAllowed}
+                                onChange={() => handleToggleNewRolePermission(module.id)}
+                                className="hidden"
+                             />
+                          </label>
+                        );
+                      })}
+                   </div>
+                </div>
+             </div>
+
+             <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                <button 
+                   onClick={() => setIsCreateRoleModalOpen(false)}
+                   className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                   Cancelar
+                </button>
+                <button 
+                   onClick={handleCreateRole}
+                   className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20"
+                >
+                   Criar Cargo
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Criação de Administrador */}
       {isModalOpen && (
         <div 
@@ -3396,10 +3765,89 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         </div>
       )}
 
+      {/* Modal de Permissões */}
+      {isPermissionsModalOpen && selectedUser && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsPermissionsModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                   <Lock size={20} className="text-primary" />
+                   Gerenciar Permissões
+                </h3>
+                <button onClick={() => setIsPermissionsModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                   <X size={20} />
+                </button>
+             </div>
+             
+             <div className="p-6 space-y-4">
+                <div className="text-center mb-4">
+                   <h2 className="text-lg font-bold text-slate-900">{selectedUser.name}</h2>
+                   <p className="text-sm text-slate-500">Selecione os módulos que este usuário pode acessar.</p>
+                   {selectedUser.role === 'admin' && (
+                     <p className="text-xs text-amber-600 mt-2 font-bold bg-amber-50 inline-block px-2 py-1 rounded">
+                       Administradores têm acesso total por padrão.
+                     </p>
+                   )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto p-1">
+                   {ALL_MODULES.map((module) => {
+                     const isAllowed = !!editingPermissions[module.id];
+                     return (
+                       <label 
+                         key={module.id}
+                         className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                           isAllowed
+                             ? 'border-primary bg-blue-50/50' 
+                             : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                         }`}
+                       >
+                          <span className={`font-bold text-sm ${isAllowed ? 'text-primary' : 'text-slate-700'}`}>
+                            {module.label}
+                          </span>
+                          <div className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${isAllowed ? 'bg-primary' : 'bg-slate-300'}`}>
+                            <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isAllowed ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                          </div>
+                          <input 
+                             type="checkbox" 
+                             checked={isAllowed}
+                             onChange={() => handleTogglePermission(module.id)}
+                             className="hidden"
+                          />
+                       </label>
+                     );
+                   })}
+                  </div>
+               </div>
+
+             <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                <button 
+                   onClick={() => setIsPermissionsModalOpen(false)}
+                   className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                   Cancelar
+                </button>
+                <button 
+                   onClick={handleSavePermissions}
+                   className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20"
+                >
+                   Salvar Permissões
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Alteração de Cargo */}
       {isChangeRoleModalOpen && selectedUser && (
         <div 
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
           onClick={() => setIsChangeRoleModalOpen(false)}
         >
           <div 
@@ -3425,13 +3873,8 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                    <p className="text-sm text-slate-500">Selecione o novo cargo para este usuário</p>
                 </div>
 
-                <div className="space-y-2">
-                   {[
-                     { id: 'admin', label: 'Administrador', desc: 'Acesso total ao sistema' },
-                     { id: 'client', label: 'Cliente', desc: 'Acesso apenas ao app' },
-                     { id: 'entregador', label: 'Entregador', desc: 'Acesso a entregas' },
-                     { id: 'funcionario', label: 'Funcionário', desc: 'Acesso restrito' }
-                   ].map((role) => (
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                   {rolesList.map((role) => (
                      <label 
                        key={role.id}
                        className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
@@ -3481,6 +3924,12 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gestão de Usuários</h1>
           <div className="flex gap-2">
             <button 
+              onClick={() => setIsCreateRoleModalOpen(true)}
+              className="bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-sm"
+            >
+                <ShieldPlus size={20} className="text-primary" /> Criar Cargo
+            </button>
+            <button 
               onClick={() => setIsModalOpen(true)}
               className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
             >
@@ -3491,11 +3940,11 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
       <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
         {[
-          { id: 'all', label: 'Todos os Usuários' },
-          { id: 'admin', label: 'Admin' },
-          { id: 'cliente', label: 'Cliente' },
-          { id: 'entregador', label: 'Entregador' },
-          { id: 'funcionario', label: 'Funcionário' }
+          { id: 'all', label: 'Todos' },
+          ...rolesList.filter(role => 
+            users.some(u => (u.role || '').toLowerCase() === role.id.toLowerCase()) &&
+            (role.id === 'admin' || (role.permissions && Object.keys(role.permissions).length > 0))
+          ).map(r => ({ id: r.id, label: r.label }))
         ].map((tab) => (
           <button
             key={tab.id}
@@ -3519,13 +3968,6 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                      <th className="px-6 py-4 font-semibold">Nome</th>
                      <th className="px-6 py-4 font-semibold">Email</th>
                      <th className="px-6 py-4 font-semibold">Cargo</th>
-                     <th className="px-6 py-4 font-semibold">Status</th>
-                     <th className="px-6 py-4 font-semibold text-center">
-                        <div className="flex flex-col items-center gap-1">
-                           <ClipboardList size={16} />
-                           <span className="text-[10px] uppercase">Acesso Checklist</span>
-                        </div>
-                     </th>
                      <th className="px-6 py-4 font-semibold text-right">Ações</th>
                   </tr>
                </thead>
@@ -3545,24 +3987,6 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                         <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
                            {user.role}
                         </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`flex items-center gap-1.5 ${user.status === 'Ativo' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                           <div className={`w-1.5 h-1.5 rounded-full ${user.status === 'Ativo' ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
-                           {user.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <button 
-                           onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleChecklistAccess(user.id, user.app_access);
-                           }}
-                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${user.app_access ? 'bg-primary' : 'bg-slate-300'}`}
-                           title={user.app_access ? "Clique para revogar acesso ao checklist" : "Clique para conceder acesso ao checklist"}
-                        >
-                           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${user.app_access ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
                       </td>
                       <td className="px-6 py-4 text-right relative">
                          <div className="relative inline-block text-left">
@@ -3591,6 +4015,13 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                                      >
                                         <Eye size={16} className="text-slate-400" /> 
                                         Ver Detalhes
+                                     </button>
+                                     <button
+                                       onClick={() => handleOpenPermissionsModal(user)}
+                                       className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
+                                     >
+                                        <Lock size={16} className="text-slate-400" /> 
+                                        Permissões
                                      </button>
                                      <button
                                        onClick={() => handleOpenChangeRoleModal(user)}
@@ -3909,7 +4340,7 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
     <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
         {/* Modal de Ajuste */}
         {isEditModalOpen && selectedProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h3 className="font-bold text-lg text-slate-800">Ajustar Estoque</h3>
@@ -4062,6 +4493,9 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
       return priorityA - priorityB;
     });
 
+  const activeDeliveries = filteredDeliveries.filter(d => d.status !== 'Entregue' && d.status !== 'Cancelado');
+  const completedDeliveries = filteredDeliveries.filter(d => d.status === 'Entregue' || d.status === 'Cancelado');
+
   const handleOpenDetails = (delivery) => {
     setSelectedDelivery(delivery);
     setIsDetailsModalOpen(true);
@@ -4079,17 +4513,19 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
   };
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Controle de Entregas</h1>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredDeliveries.map((delivery) => (
-           <div key={delivery.id} className={`bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 ${
-             delivery.status === 'Entregue' ? 'border-l-green-500' : 
-             delivery.status === 'Em Trânsito' ? 'border-l-amber-500' : 
-             delivery.status === 'Em Preparação' ? 'border-l-indigo-500' : 
-             'border-l-blue-500'
-           }`}>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 font-parkinsans mb-6">Controle de Entregas</h1>
+        
+        {activeDeliveries.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {activeDeliveries.map((delivery) => (
+              <div key={delivery.id} className={`bg-white p-6 rounded-xl shadow-sm border border-slate-100 border-l-4 ${
+                delivery.status === 'Entregue' ? 'border-l-green-500' : 
+                delivery.status === 'Em Trânsito' ? 'border-l-amber-500' : 
+                delivery.status === 'Em Preparação' ? 'border-l-indigo-500' : 
+                'border-l-blue-500'
+              }`}>
               <div className="flex justify-between items-start mb-2">
                  <div>
                     <h3 className="font-bold text-slate-900">
@@ -4150,8 +4586,22 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                     </div>
                  )}
                  {delivery.status === 'Em Trânsito' && (
-                    <div className="w-full py-2 bg-slate-100 text-slate-500 text-xs font-medium rounded-lg text-center italic border border-slate-200">
-                        Aguardando confirmação do cliente...
+                    <div className="flex flex-col gap-2 w-full">
+                        <div className="w-full py-2 bg-slate-100 text-slate-500 text-xs font-medium rounded-lg text-center italic border border-slate-200">
+                            Aguardando confirmação do cliente...
+                        </div>
+                        <button 
+                           onClick={() => {
+                             const code = window.prompt('Insira o código de verificação para concluir manualmente:');
+                             if (code) {
+                               // Aqui poderia validar o código se houvesse lógica de backend para isso
+                               onUpdateStatus(delivery.id, 'Entregue');
+                             }
+                           }}
+                           className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm flex items-center justify-center gap-2"
+                       >
+                           <CheckCircle size={16} /> Confirmar Entrega
+                       </button>
                     </div>
                  )}
                  {delivery.status === 'Cancelado' && (
@@ -4162,12 +4612,77 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
               </div>
            </div>
         ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-100 mb-6">
+            <p className="text-slate-500">Nenhuma entrega em andamento.</p>
+          </div>
+        )}
       </div>
 
+      {completedDeliveries.length > 0 && (
+        <div className="space-y-4">
+           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <CheckCircle className="text-emerald-600" size={20} />
+              Histórico de Entregas
+           </h2>
+           <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                 <table className="w-full text-sm text-left text-slate-500">
+                    <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+                       <tr>
+                          <th className="px-6 py-3">Pedido</th>
+                          <th className="px-6 py-3">Data</th>
+                          <th className="px-6 py-3">Cliente</th>
+                          <th className="px-6 py-3">Valor</th>
+                          <th className="px-6 py-3">Status</th>
+                          <th className="px-6 py-3 text-right">Ações</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                       {completedDeliveries.map((delivery) => (
+                          <tr key={delivery.id} className="bg-white hover:bg-slate-50 transition-colors">
+                             <td className="px-6 py-4 font-bold text-slate-900">
+                                #{delivery.id}
+                             </td>
+                             <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                   <span className="font-medium text-slate-900">{delivery.date}</span>
+                                   <span className="text-xs text-slate-400">{delivery.time}</span>
+                                </div>
+                             </td>
+                             <td className="px-6 py-4">
+                                <HighlightText text={delivery.client} highlight={globalSearchTerm} />
+                             </td>
+                             <td className="px-6 py-4 font-medium text-emerald-600">
+                                R$ {delivery.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                             </td>
+                             <td className="px-6 py-4">
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(delivery.status)}`}>
+                                   {delivery.status}
+                                </span>
+                             </td>
+                             <td className="px-6 py-4 text-right">
+                                <button 
+                                   onClick={() => handleOpenDetails(delivery)}
+                                   className="text-primary hover:text-blue-700 font-medium text-sm bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
+                                >
+                                   <Eye size={14} /> Detalhes
+                                </button>
+                             </td>
+                          </tr>
+                       ))}
+                    </tbody>
+                 </table>
+              </div>
+           </div>
+        </div>
+      )}
+
       {/* Modal de Detalhes */}
-      {isDetailsModalOpen && selectedDelivery && (
+      {isDetailsModalOpen && selectedDelivery && createPortal(
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fade-in"
           onClick={() => setIsDetailsModalOpen(false)}
         >
           <div 
@@ -4228,7 +4743,12 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                     {selectedDelivery.driver && (
                       <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
                          <span className="text-slate-500 text-sm">Entregador</span>
-                         <span className="font-medium text-slate-900">{selectedDelivery.driver.name}</span>
+                         <div className="text-right">
+                             <span className="font-medium text-slate-900 block">{selectedDelivery.driver.name}</span>
+                             <span className="text-xs text-primary font-medium flex items-center justify-end gap-1">
+                                {selectedDelivery.driver.phone}
+                             </span>
+                         </div>
                       </div>
                     )}
                  </div>
@@ -4279,7 +4799,8 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -4287,7 +4808,9 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
 
 // --- COMPONENTES AUXILIARES ---
 
-const SidebarItem = ({ icon: Icon, label, active, onClick, isOpen }) => (
+const SidebarItem = ({ icon: Icon, label, active, onClick, isOpen, visible = true }) => {
+  if (!visible) return null;
+  return (
   <button 
     onClick={onClick}
     title={!isOpen ? label : ''}
@@ -4311,7 +4834,8 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, isOpen }) => (
       </div>
     )}
   </button>
-);
+  );
+};
 
 const StatCard = ({ icon: Icon, label, value, trend, trendUp, color }) => {
   const colorMap = {
@@ -5382,7 +5906,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
 
       {/* Toast */}
        {showToast && (
-        <div className="fixed top-8 right-8 bg-white border-l-4 border-emerald-500 shadow-2xl rounded-lg p-4 flex items-center gap-4 z-50 animate-in fade-in slide-in-from-top-4 duration-300 max-w-md">
+        <div className="fixed top-8 right-8 bg-white border-l-4 border-emerald-500 shadow-2xl rounded-lg p-4 flex items-center gap-4 z-[10000] animate-in fade-in slide-in-from-top-4 duration-300 max-w-md">
           <div className="bg-emerald-100 p-2 rounded-full text-emerald-600">
             <CheckCircle size={24} />
           </div>
@@ -5413,29 +5937,108 @@ function App() {
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
   const [deliveries, setDeliveries] = useState([]); // Inicializa vazio, depois carrega do Supabase
   const [products, setProducts] = useState([]);
+  const [totalClients, setTotalClients] = useState(0);
+  const [userProfile, setUserProfile] = useState(null);
+
+  // Fetch user profile (permissions) on session change
+  useEffect(() => {
+    const fetchProfile = async () => {
+        if (session?.user) {
+            const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+            setUserProfile(data);
+        } else {
+            setUserProfile(null);
+        }
+    };
+    fetchProfile();
+  }, [session]);
+
+  const hasPermission = (moduleId) => {
+    if (!userProfile) return false;
+    if (userProfile.role === 'admin' || userProfile.role === 'Administrador') return true;
+    
+    // Se existir objeto de permissões, respeita ele.
+    if (userProfile.permissions && typeof userProfile.permissions === 'object') {
+        return !!userProfile.permissions[moduleId];
+    }
+    
+    // Fallback: se não tem permissions definido, permite (para não quebrar usuários antigos)
+    return true;
+  };
 
   // Autenticação Supabase
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setIsAuthenticated(!!session);
-    });
+    // 1. Verificar sessão existente ao carregar (Recupera do sessionStorage)
+    const initSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setSession(session);
+        setIsAuthenticated(true);
+      }
+    };
+    initSession();
 
+    // 2. Escutar mudanças de estado
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setIsAuthenticated(!!session);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        setSession(session);
+        setIsAuthenticated(true);
+      } else if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setIsAuthenticated(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Monitoramento de Inatividade (Auto-Logout)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const INACTIVITY_LIMIT = 30 * 60 * 1000; // 30 minutos
+    let timeoutId;
+
+    const logout = async () => {
+      console.log('Sessão expirada por inatividade.');
+      try {
+        await supabase.auth.signOut();
+        setSession(null);
+        setIsAuthenticated(false);
+      } catch (error) {
+        console.error('Erro ao sair por inatividade:', error);
+      }
+    };
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(logout, INACTIVITY_LIMIT);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach(event => document.addEventListener(event, resetTimer));
+    
+    resetTimer();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach(event => document.removeEventListener(event, resetTimer));
+    };
+  }, [isAuthenticated]);
 
   // Helper de Tradução de Status (Inglês -> Português)
   const translateStatus = (status) => {
     if (!status) return 'Pendente';
     const map = {
       'pending': 'Pendente',
+      'paid': 'Pendente',
+      'payment_confirmed': 'Pendente',
       'processing': 'Em Preparação',
       'out_for_delivery': 'Em Trânsito',
       'delivered': 'Entregue',
@@ -5483,15 +6086,15 @@ function App() {
         .select('*')
         .in('order_id', orderIds);
 
-      // Buscar perfis (clientes)
-      // Tenta todos os possíveis campos de ID (priorizando user_id)
+      // Buscar perfis (clientes e entregadores)
       const rawUserIds = ordersData.map(o => o.user_id || o.customer_id || o.client_id || o.profile_id);
-      const userIds = [...new Set(rawUserIds.filter(Boolean))];
+      const driverIds = ordersData.map(o => o.driver_id);
+      const allIds = [...new Set([...rawUserIds, ...driverIds].filter(Boolean))];
       
       const { data: profilesData } = await supabase
         .from('profiles')
         .select('*')
-        .in('id', userIds);
+        .in('id', allIds);
 
       // Buscar produtos para garantir o nome correto (title)
       const { data: productsData } = await supabase
@@ -5559,7 +6162,14 @@ function App() {
           value: d.total || 0,
           time: new Date(d.created_at).toLocaleTimeString('pt-BR', { timeZone: 'UTC', hour: '2-digit', minute:'2-digit' }),
           statusTimestamp: new Date(d.updated_at || d.created_at).getTime(),
-          driver: null,
+          driver: (() => {
+            if (!d.driver_id) return null;
+            const driverProfile = profilesData?.find(p => p.id === d.driver_id);
+            return driverProfile ? {
+                name: driverProfile.name || 'Entregador',
+                phone: driverProfile.phone || driverProfile.mobile || driverProfile.whatsapp || 'Sem contato'
+            } : null;
+          })(),
           fullAddress: d.address || d.address_text || 'Endereço não informado'
        };
       });
@@ -5605,6 +6215,7 @@ function App() {
           category: p.category,
           sku: p.sku,
           image: p.image_url,
+          archived: p.archived || false,
           // Mantemos os valores originais para referência se necessário
           rawPriceCents: priceCents,
           rawOldPriceCents: oldPriceCents
@@ -5613,10 +6224,28 @@ function App() {
     }
   };
 
+  const fetchTotalClients = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'client');
+      
+      if (error) {
+        console.error('Erro ao buscar total de clientes:', error);
+      } else {
+        setTotalClients(count || 0);
+      }
+    } catch (error) {
+      console.error('Erro inesperado ao buscar clientes:', error);
+    }
+  };
+
   useEffect(() => {
     if (session) {
       fetchDeliveries();
       fetchProducts();
+      fetchTotalClients();
       
       const channel = supabase
         .channel('entregas_changes')
@@ -5719,17 +6348,31 @@ function App() {
   };
 
   const renderContent = () => {
+    const renderIfAllowed = (moduleId, component) => {
+        if (hasPermission(moduleId)) return component;
+        return (
+            <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 animate-fade-in">
+                <div className="bg-slate-100 p-6 rounded-full mb-4">
+                  <Lock size={48} className="text-slate-400" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-700">Acesso Restrito</h2>
+                <p className="text-slate-500 mt-2">Você não tem permissão para acessar o módulo <strong>{moduleId}</strong>.</p>
+                <p className="text-xs text-slate-400 mt-1">Contate o administrador para solicitar acesso.</p>
+            </div>
+        );
+    };
+
     switch (activeTab) {
-      case 'Dashboard': return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
-      case 'Produtos': return <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />;
-      case 'Estoque': return <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />;
-      case 'Destaques': return <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} />;
-      case 'Usuários': return <UsersScreen globalSearchTerm={globalSearchTerm} session={session} />;
-      case 'Logs': return <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />;
-      case 'Entregas': return <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />;
-      case 'Fidelidade': return <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} />;
-      case 'Checklist': return <ChecklistScreen session={session} />;
-      default: return <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} />;
+      case 'Dashboard': return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} />);
+      case 'Produtos': return renderIfAllowed('Produtos', <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />);
+      case 'Estoque': return renderIfAllowed('Estoque', <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />);
+      case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} />);
+      case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} />);
+      case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
+      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
+      case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} />);
+      case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} />);
+      default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} />);
     }
   };
 
@@ -5758,15 +6401,15 @@ function App() {
         </div>
 
         <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700">
-          <SidebarItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={Boxes} label="Estoque" active={activeTab === 'Estoque'} onClick={() => setActiveTab('Estoque')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={ClipboardList} label="Checklist" active={activeTab === 'Checklist'} onClick={() => setActiveTab('Checklist')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} />
-          <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} />
+          <SidebarItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} isOpen={isSidebarOpen} visible={hasPermission('Dashboard')} />
+          <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} visible={hasPermission('Produtos')} />
+          <SidebarItem icon={Boxes} label="Estoque" active={activeTab === 'Estoque'} onClick={() => setActiveTab('Estoque')} isOpen={isSidebarOpen} visible={hasPermission('Estoque')} />
+          <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} visible={hasPermission('Destaques')} />
+          <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} visible={hasPermission('Fidelidade')} />
+          <SidebarItem icon={ClipboardList} label="Checklist" active={activeTab === 'Checklist'} onClick={() => setActiveTab('Checklist')} isOpen={isSidebarOpen} visible={hasPermission('Checklist')} />
+          <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} visible={hasPermission('Usuários')} />
+          <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} visible={hasPermission('Logs')} />
+          <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
         </nav>
 
         <div className="p-4 border-t border-slate-800/50">

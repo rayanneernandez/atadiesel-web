@@ -13,5 +13,13 @@ if (!supabaseUrl || !supabaseKey) {
 // Fallback para evitar crash (tela branca), mas as requisições falharão até corrigir o .env
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co', 
-  supabaseKey || 'placeholder'
+  supabaseKey || 'placeholder',
+  {
+    auth: {
+      storage: sessionStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true
+    }
+  }
 )
