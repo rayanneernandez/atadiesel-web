@@ -22,6 +22,7 @@ import {
   Trash2,
   Filter as FilterIcon,
   ArrowUpRight,
+  ArrowRight,
   ArrowDownRight,
   Calendar,
   FileText,
@@ -52,6 +53,7 @@ import {
   List,
   Lock,
   Archive,
+  RefreshCw,
 } from 'lucide-react';
 import LoginScreen from './login';
 import jsPDF from 'jspdf';
@@ -71,6 +73,16 @@ import {
 } from 'recharts';
 
 // --- UTILS ---
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+  });
+};
+
 const HighlightText = ({ text, highlight }) => {
   if (!highlight || !text) return <>{text}</>;
   
@@ -87,7 +99,52 @@ const HighlightText = ({ text, highlight }) => {
     </>
   );
 };
+
+const Toast = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const styles = {
+    success: 'bg-white border-l-4 border-emerald-500 text-slate-700',
+    error: 'bg-white border-l-4 border-red-500 text-slate-700',
+    info: 'bg-white border-l-4 border-blue-500 text-slate-700',
+    warning: 'bg-white border-l-4 border-amber-500 text-slate-700',
+  };
+
+  const icons = {
+    success: <CheckCircle className="text-emerald-500" size={20} />,
+    error: <AlertCircle className="text-red-500" size={20} />,
+    info: <Info className="text-blue-500" size={20} />,
+    warning: <AlertTriangle className="text-amber-500" size={20} />,
+  };
+
+  return (
+    <div className={`flex items-center gap-3 p-4 rounded-xl shadow-xl animate-slide-in-right ${styles[type] || styles.info} min-w-[300px] pointer-events-auto bg-white border border-slate-100/50 backdrop-blur-sm`}>
+      {icons[type] || icons.info}
+      <span className="flex-1 font-medium text-sm text-slate-800">{message}</span>
+      <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-1 transition-colors"><X size={16} /></button>
+    </div>
+  );
+};
   
+const ToastContainer = ({ toasts, removeToast }) => {
+  return createPortal(
+    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+      {toasts.map(toast => (
+        <Toast 
+          key={toast.id} 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={() => removeToast(toast.id)} 
+        />
+      ))}
+    </div>,
+    document.body
+  );
+};
+
 // --- SUB-TELAS ---
 
 const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], totalClients = 0 }) => {
@@ -680,23 +737,17 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
   );
 };
 
-const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
+const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, showToast }) => {
   const [isCreateProductModalOpen, setIsCreateProductModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
   const [originalProduct, setOriginalProduct] = useState(null);
-  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   
   // Archive Modal State
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [productToArchive, setProductToArchive] = useState(null);
-
-  const showToastMessage = (message, type = 'success') => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
-  };
   
   // products agora vem das props
 
@@ -782,7 +833,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
   const handleSaveProduct = async () => {
     try {
       if (!newProduct.name || !newProduct.price) {
-        showToastMessage("Nome e Preço são obrigatórios!", 'error');
+        showToast("Nome e Preço são obrigatórios!", 'error');
         return;
       }
 
@@ -845,7 +896,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
             }
         }
 
-        showToastMessage("Produto atualizado com sucesso!", 'success');
+        showToast("Produto atualizado com sucesso!", 'success');
       } else {
         const { error } = await supabase.from('products').insert([productData]);
         if (error) throw error;
@@ -854,7 +905,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
              logAction('PRODUCT_CHANGE', newProduct.name, { action: 'Criação', details: 'Novo produto cadastrado' });
         }
         
-        showToastMessage("Produto cadastrado com sucesso!", 'success');
+        showToast("Produto cadastrado com sucesso!", 'success');
       }
 
       onRefresh(); // Chama atualização no pai
@@ -874,7 +925,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
 
     } catch (error) {
       console.error("Erro ao salvar produto:", error);
-      showToastMessage(`Erro ao salvar: ${error.message || JSON.stringify(error)}`, 'error');
+      showToast(`Erro ao salvar: ${error.message || JSON.stringify(error)}`, 'error');
     }
   };
 
@@ -909,7 +960,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
         }));
 
         // setProducts(prev => [...prev, ...newProducts]); // Comentado pois state é global
-        showToastMessage(`${newProducts.length} produtos importados! (Salvar no banco pendente)`, 'success');
+        showToast(`${newProducts.length} produtos importados! (Salvar no banco pendente)`, 'success');
       };
       reader.readAsBinaryString(file);
     }
@@ -927,7 +978,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
       const { error } = await supabase.from('products').delete().eq('id', id);
       if (error) {
         console.error("Erro ao excluir:", error);
-        showToastMessage("Erro ao excluir produto.", 'error');
+        showToast("Erro ao excluir produto.", 'error');
       } else {
         onRefresh();
       }
@@ -952,9 +1003,9 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
         
     if (error) {
         console.error(`Erro ao ${action} produto:`, error);
-        showToastMessage(`Erro ao ${action} produto.`, 'error');
+        showToast(`Erro ao ${action} produto.`, 'error');
     } else {
-        showToastMessage(`Produto ${newStatus ? 'arquivado' : 'desarquivado'} com sucesso!`, 'success');
+        showToast(`Produto ${newStatus ? 'arquivado' : 'desarquivado'} com sucesso!`, 'success');
         onRefresh();
     }
     setIsArchiveModalOpen(false);
@@ -978,31 +1029,6 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toast.show && (
-        <div className={`fixed top-4 right-4 z-[60] animate-slide-in-right px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border ${
-          toast.type === 'success' 
-            ? 'bg-white border-emerald-100 text-slate-800' 
-            : 'bg-white border-red-100 text-slate-800'
-        }`}>
-          <div className={`p-2 rounded-full ${toast.type === 'success' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-            {toast.type === 'success' ? <CheckCircle size={24} /> : <AlertCircle size={24} />}
-          </div>
-          <div>
-            <h4 className={`font-bold text-sm ${toast.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
-              {toast.type === 'success' ? 'Sucesso!' : 'Atenção!'}
-            </h4>
-            <p className="text-sm text-slate-600">{toast.message}</p>
-          </div>
-          <button 
-            onClick={() => setToast(prev => ({ ...prev, show: false }))}
-            className="ml-4 p-1 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
-          >
-            <X size={18} />
-          </button>
-        </div>
-      )}
-
       {/* Modal de Cadastro de Produto */}
       {isCreateProductModalOpen && (
         <div 
@@ -1204,6 +1230,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction }) =>
           </div>
         </div>
       )}
+
 
       <div className="flex justify-between items-center flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gerenciar Produtos</h1>
@@ -1947,30 +1974,122 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   );
 };
 
-const ChecklistScreen = ({ session }) => {
-  const [mainTab, setMainTab] = useState('respostas'); // 'respostas' | 'criacoes'
-  const [responseTab, setResponseTab] = useState('daily'); // 'daily' | 'monthly'
-  const [creationTab, setCreationTab] = useState('daily'); // 'daily' | 'monthly'
+const ChecklistScreen = ({ session, showToast }) => {
+  const [mainTab, setMainTab] = useState('respostas');
+  const [responseTab, setResponseTab] = useState('daily');
+  const [creationTab, setCreationTab] = useState('daily');
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState([]);
   const [isDeleteTemplateModalOpen, setIsDeleteTemplateModalOpen] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState(null);
 
-  // Assignment Logic State
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignTemplate, setAssignTemplate] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
   const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [assignedTemplateIds, setAssignedTemplateIds] = useState(new Set());
   const [userSearchTerm, setUserSearchTerm] = useState('');
 
-  const [assignMode, setAssignMode] = useState('users'); // 'users' | 'roles'
+  const fetchAssignedStatus = async () => {
+    try {
+        const { data, error } = await supabase
+            .from('checklist_assignments')
+            .select('template_id');
+        if (error) throw error;
+        const ids = new Set(data?.map(item => item.template_id) || []);
+        setAssignedTemplateIds(ids);
+    } catch (error) {
+        console.error("Error fetching assignments:", error);
+    }
+  };
+
+  const [viewResponseModalOpen, setViewResponseModalOpen] = useState(false);
+  const [selectedResponse, setSelectedResponse] = useState(null);
+  const [viewResponseTemplate, setViewResponseTemplate] = useState(null);
+
+  const handleViewResponse = (response) => {
+    let template = savedTemplates.find(t => t.id === response.template_id);
+    
+    if (!template) {
+        showToast("Modelo original não encontrado. Exibindo dados disponíveis.", 'warning');
+        template = {
+            name: 'Checklist (Modelo Não Encontrado)',
+            sections: []
+        };
+    }
+    
+    setSelectedResponse(response);
+    setViewResponseTemplate(template);
+    setViewResponseModalOpen(true);
+  };
+
+  useEffect(() => {
+    fetchAssignedStatus();
+  }, []);
+
+  const [assignMode, setAssignMode] = useState('users');
   const [selectedRoles, setSelectedRoles] = useState([]);
+
+  const [dailyResponses, setDailyResponses] = useState([]);
+  const [monthlyResponses, setMonthlyResponses] = useState([]);
+  const [isLoadingResponses, setIsLoadingResponses] = useState(false);
+  const [errorResponses, setErrorResponses] = useState('');
 
   useEffect(() => {
     if (session?.user) {
       fetchTemplates();
     }
   }, [session]);
+
+  const fetchResponses = async () => {
+    const user = session?.user;
+    if (!user) return;
+    setIsLoadingResponses(true);
+    setErrorResponses('');
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, app_access')
+        .eq('id', user.id)
+        .single();
+      const isAdmin = profile?.role === 'admin' || profile?.role === 'administrador';
+      const hasFullAccess = profile?.app_access === true;
+
+      const { data: templates } = await supabase
+        .from('checklist_templates')
+        .select('id')
+        .eq('type', responseTab);
+      const templateIds = (templates || []).map(t => t.id);
+
+      let query = supabase
+        .from('checklist_responses')
+        .select('*')
+        .in('template_id', templateIds)
+        .order('created_at', { ascending: false });
+
+      if (!(isAdmin || hasFullAccess)) {
+        query = query.eq('filled_by', user.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      if (responseTab === 'daily') {
+        setDailyResponses(data || []);
+      } else {
+        setMonthlyResponses(data || []);
+      }
+    } catch (e) {
+      setErrorResponses(e.message || 'Erro ao buscar respostas');
+    } finally {
+      setIsLoadingResponses(false);
+    }
+  };
+
+  useEffect(() => {
+    if (session?.user && mainTab === 'respostas') {
+      fetchResponses();
+    }
+  }, [session, mainTab, responseTab]);
 
   const fetchUsersForAssignment = async () => {
     const { data } = await supabase
@@ -2006,6 +2125,7 @@ const ChecklistScreen = ({ session }) => {
 
   const openAssignModal = async (template) => {
     setAssignTemplate(template);
+    setSelectedUserIds([]); // Limpa seleção anterior para evitar confusão visual
     setIsAssignModalOpen(true);
     
     // Fetch users if not already loaded
@@ -2049,8 +2169,10 @@ const ChecklistScreen = ({ session }) => {
       // 2. Insert new ones
       if (selectedUserIds.length > 0) {
         const toInsert = selectedUserIds.map(uid => ({
+          id: generateUUID(),
           template_id: assignTemplate.id,
-          user_id: uid
+          user_id: uid,
+          created_at: new Date().toISOString()
         }));
         
         const { error: insertError } = await supabase
@@ -2060,11 +2182,12 @@ const ChecklistScreen = ({ session }) => {
         if (insertError) throw insertError;
       }
       
-      alert('Checklist atribuído com sucesso!');
+      showToast('Checklist atribuído com sucesso!', 'success');
+      fetchAssignedStatus(); // Refresh badges
       setIsAssignModalOpen(false);
     } catch (error) {
-      console.error("Erro ao salvar atribuições:", error);
-      alert("Erro ao salvar atribuições. Verifique se você criou a tabela 'checklist_assignments' no banco de dados.");
+      console.error("Erro ao salvar atribuições (saveAssignments):", error);
+      showToast(`Erro ao salvar atribuições: ${error.message || JSON.stringify(error)}`, 'error');
     }
   };
 
@@ -2171,24 +2294,24 @@ const ChecklistScreen = ({ session }) => {
         setCurrentTemplate({
           id: null,
           name: 'Novo Checklist Diário',
-          pdfTitle: 'CHECKLIST DIÁRIO',
+          pdfTitle: 'Novo Checklist Diário',
           pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
           headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
           type: 'daily',
           sections: [
-            { title: 'Nova Seção 1', questions: ['Pergunta 1'] }
+            { title: 'Nova Seção 1', questions: [{ text: 'Pergunta 1', type: 'options', options: ['Sim', 'Não'] }] }
           ]
         });
       } else if (mode === 'new-monthly') {
         setCurrentTemplate({
           id: null,
           name: 'Novo Checklist Mensal',
-          pdfTitle: 'CHECKLIST MENSAL/ADEQUAÇÃO',
+          pdfTitle: 'Novo Checklist Mensal',
           pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
           headerText: 'Local: __________   Data: __/__/____   Placa: __________',
           type: 'monthly',
           sections: [
-            { title: 'Nova Seção Mensal', questions: ['Pergunta 1'] }
+            { title: 'Nova Seção Mensal', questions: [{ text: 'Pergunta 1', type: 'options', options: ['Sim', 'Não'] }] }
           ]
         });
       }
@@ -2200,7 +2323,7 @@ const ChecklistScreen = ({ session }) => {
       
     } catch (error) {
       console.error('Erro crítico ao abrir modal de template:', error);
-      alert('Ocorreu um erro ao abrir o modelo. Por favor, tente novamente ou recarregue a página.');
+      showToast('Ocorreu um erro ao abrir o modelo. Por favor, tente novamente.', 'error');
     }
   };
 
@@ -2214,9 +2337,7 @@ const ChecklistScreen = ({ session }) => {
     setCurrentTemplate(prev => ({ 
         ...prev, 
         name,
-        // Optional: keep pdfTitle in sync if user hasn't customized it manually? 
-        // For simplicity, let's keep them separate but maybe init same.
-        // Or just let user edit them separately.
+        pdfTitle: name // Sync template name with PDF title
     }));
   };
 
@@ -2289,18 +2410,29 @@ const ChecklistScreen = ({ session }) => {
 
   const handleSaveTemplate = async () => {
     if (!currentTemplate.name) {
-      alert("Por favor, dê um nome ao modelo.");
+      showToast("Por favor, dê um nome ao modelo.", 'warning');
       return;
     }
 
     try {
+      // Normalize all sections and questions to objects before saving
+      // This ensures 'type' is always preserved
+      const normalizedSections = currentTemplate.sections.map(section => ({
+        ...section,
+        questions: section.questions.map(q => {
+          if (typeof q === 'object') return q;
+          return { text: q, type: 'options', options: ['Sim', 'Não'] };
+        })
+      }));
+
       const templateData = {
         name: currentTemplate.name,
         pdf_title: currentTemplate.pdfTitle,
         pdf_subtitle: currentTemplate.pdfSubtitle,
         header_text: currentTemplate.headerText,
         type: currentTemplate.type || 'daily',
-        sections: currentTemplate.sections // Supabase handles JSONB automatically if column type is jsonb
+        is_active: true,
+        sections: normalizedSections
       };
 
       let error;
@@ -2313,20 +2445,25 @@ const ChecklistScreen = ({ session }) => {
         error = updateError;
       } else {
         // Insert new
+        const newId = generateUUID();
         const { error: insertError } = await supabase
           .from('checklist_templates')
-          .insert([templateData]);
+          .insert([{ 
+            ...templateData, 
+            id: newId,
+            created_at: new Date().toISOString()
+          }]);
         error = insertError;
       }
 
       if (error) throw error;
 
-      alert("Modelo salvo com sucesso!");
-      fetchTemplates(); // Refresh list
+      showToast("Modelo salvo com sucesso!", 'success');
       setIsTemplateModalOpen(false);
+      fetchTemplates();
     } catch (error) {
       console.error('Erro ao salvar modelo:', error);
-      alert("Erro ao salvar modelo: " + error.message);
+      showToast("Erro ao salvar modelo: " + (error.message || "Erro desconhecido"), 'error');
     }
   };
 
@@ -2351,11 +2488,11 @@ const ChecklistScreen = ({ session }) => {
       setTemplateToDelete(null);
     } catch (error) {
       console.error('Erro ao excluir modelo:', error);
-      alert("Erro ao excluir: " + error.message);
+      showToast("Erro ao excluir: " + error.message, 'error');
     }
   };
 
-  const generatePDF = (templateOverride = null, isPreview = false, returnBlob = false) => {
+  const generatePDF = (templateOverride = null, isPreview = false, returnBlob = false, responseOverride = null) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -2367,7 +2504,7 @@ const ChecklistScreen = ({ session }) => {
     }
 
     if (!templateToPrint) {
-        alert("Nenhum modelo selecionado para gerar o PDF.");
+        showToast("Nenhum modelo selecionado para gerar o PDF.", 'error');
         return;
     }
 
@@ -2401,9 +2538,17 @@ const ChecklistScreen = ({ session }) => {
     doc.setFontSize(10);
     doc.text((templateToPrint.pdfSubtitle || templateToPrint.pdf_subtitle || "FORMULÁRIO DE REGISTRO"), pageWidth / 2, 22, { align: 'center' });
     
-    // Cabeçalho Simples
+    // Cabeçalho
     doc.rect(10, 25, 190, 15);
-    doc.text(templateToPrint.headerText || templateToPrint.header_text || "Nome: _______________________  ID: ______  Data: __/__/____", 12, 35);
+    if (responseOverride) {
+        doc.setFontSize(10);
+        const date = new Date(responseOverride.created_at).toLocaleString('pt-BR');
+        const driver = responseOverride.driver_name || 'N/D';
+        const plate = responseOverride.vehicle_plate || 'N/D';
+        doc.text(`Nome: ${driver}   Placa: ${plate}   Data: ${date}`, 12, 35);
+    } else {
+        doc.text(templateToPrint.headerText || templateToPrint.header_text || "Nome: _______________________  ID: ______  Data: __/__/____", 12, 35);
+    }
 
     let yPos = 50;
 
@@ -2437,15 +2582,27 @@ const ChecklistScreen = ({ session }) => {
             // Question Text
             doc.text(text, 12, yPos);
             
+            // Get Answer
+            let answer = null;
+            if (responseOverride) {
+                 const ansObj = responseOverride.answers || responseOverride.content || responseOverride.data || {};
+                 answer = ansObj[text]; 
+            }
+
             if (type === 'text') {
-                // Free text line
-                doc.setLineWidth(0.1);
-                doc.line(12, yPos + 5, 200, yPos + 5);
+                if (answer) {
+                     doc.setFont(undefined, 'bold');
+                     doc.text(String(answer), 12, yPos + 5);
+                     doc.setFont(undefined, 'normal');
+                } else {
+                     doc.setLineWidth(0.1);
+                     doc.line(12, yPos + 5, 200, yPos + 5);
+                }
                 yPos += 12;
             } else {
-                // Options (Checkboxes) - Standardized below text
+                // Options (Checkboxes)
                 yPos += 8; 
-                let optX = 15; // Indent slightly
+                let optX = 15;
 
                 options.forEach(opt => {
                     const optWidth = doc.getTextWidth(opt) + 12;
@@ -2456,6 +2613,11 @@ const ChecklistScreen = ({ session }) => {
                     }
                     
                     doc.rect(optX, yPos - 4, 4, 4);
+                    
+                    if (answer === opt) {
+                         doc.text('X', optX + 1, yPos - 1);
+                    }
+                    
                     doc.text(opt, optX + 6, yPos - 1);
                     optX += optWidth + 8;
                 });
@@ -2534,22 +2696,79 @@ const ChecklistScreen = ({ session }) => {
           </div>
 
           <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 p-8 min-h-[400px]">
-             {responseTab === 'daily' ? (
+             {isLoadingResponses ? (
                <div className="text-center">
-                  <div className="bg-blue-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
-                    <ClipboardList size={48} className="text-blue-400" />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta diária encontrada</h3>
-                  <p className="text-slate-500 mb-6">As respostas enviadas pelos motoristas aparecerão aqui.</p>
-                  <button className="text-primary hover:underline font-medium">Simular nova resposta</button>
+                 <div className="bg-slate-100 p-6 rounded-full inline-flex mb-4 animate-pulse">
+                   <ClipboardList size={48} className="text-slate-400" />
+                 </div>
+                 <h3 className="text-xl font-bold text-slate-800 mb-2">Carregando respostas...</h3>
+               </div>
+             ) : errorResponses ? (
+               <div className="text-center">
+                 <h3 className="text-xl font-bold text-red-600 mb-2">Erro</h3>
+                 <p className="text-slate-500">{errorResponses}</p>
+               </div>
+             ) : responseTab === 'daily' ? (
+               dailyResponses && dailyResponses.length > 0 ? (
+                 <div className="space-y-3">
+                   {dailyResponses.map((r) => (
+                     <div key={r.id} className="border border-slate-200 rounded-xl p-4 bg-white flex justify-between">
+                       <div>
+                         <div className="text-sm font-bold text-slate-900">Checklist Diário</div>
+                         <div className="text-xs text-slate-500">Motorista: {r.driver_name || 'N/D'}</div>
+                         <div className="text-xs text-slate-500">Placa: {r.vehicle_plate || 'N/D'}</div>
+                         <div className="text-xs text-slate-500">Enviado em {new Date(r.created_at).toLocaleString('pt-BR')}</div>
+                       </div>
+                       <div className="flex flex-col items-end gap-2">
+                         <div className="text-xs text-slate-500">Template: {r.template_id}</div>
+                         <button
+                           onClick={() => handleViewResponse(r)}
+                           className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1"
+                         >
+                           <Eye size={14} /> Ver Resposta
+                         </button>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               ) : (
+                 <div className="text-center">
+                   <div className="bg-blue-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
+                     <ClipboardList size={48} className="text-blue-400" />
+                   </div>
+                   <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta diária encontrada</h3>
+                   <p className="text-slate-500 mb-6">As respostas enviadas pelos motoristas aparecerão aqui.</p>
+                 </div>
+               )
+             ) : monthlyResponses && monthlyResponses.length > 0 ? (
+               <div className="space-y-3">
+                 {monthlyResponses.map((r) => (
+                   <div key={r.id} className="border border-slate-200 rounded-xl p-4 bg-white flex justify-between">
+                     <div>
+                       <div className="text-sm font-bold text-slate-900">Checklist Mensal</div>
+                       <div className="text-xs text-slate-500">Motorista: {r.driver_name || 'N/D'}</div>
+                       <div className="text-xs text-slate-500">Placa: {r.vehicle_plate || 'N/D'}</div>
+                       <div className="text-xs text-slate-500">Enviado em {new Date(r.created_at).toLocaleString('pt-BR')}</div>
+                     </div>
+                     <div className="flex flex-col items-end gap-2">
+                       <div className="text-xs text-slate-500">Template: {r.template_id}</div>
+                       <button
+                           onClick={() => handleViewResponse(r)}
+                           className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1"
+                         >
+                           <Eye size={14} /> Ver Resposta
+                         </button>
+                     </div>
+                   </div>
+                 ))}
                </div>
              ) : (
-                <div className="text-center">
-                  <div className="bg-purple-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
-                    <ClipboardList size={48} className="text-purple-400" />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta mensal encontrada</h3>
-                  <p className="text-slate-500">As respostas mensais aparecerão aqui.</p>
+               <div className="text-center">
+                 <div className="bg-purple-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
+                   <ClipboardList size={48} className="text-purple-400" />
+                 </div>
+                 <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta mensal encontrada</h3>
+                 <p className="text-slate-500">As respostas mensais aparecerão aqui.</p>
                </div>
              )}
           </div>
@@ -2629,7 +2848,14 @@ const ChecklistScreen = ({ session }) => {
                         <div>
                           <div className="flex items-start justify-between gap-2 mb-2 pr-6">
                             <div>
-                              <h2 className="text-base font-bold text-slate-900 line-clamp-1">{template.name}</h2>
+                              <div className="flex items-center gap-2">
+                                <h2 className="text-base font-bold text-slate-900 line-clamp-1">{template.name}</h2>
+                                {assignedTemplateIds.has(template.id) && (
+                                    <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                                        ATRIBUÍDO
+                                    </span>
+                                )}
+                              </div>
                               <p className="text-xs text-slate-500 mt-1 line-clamp-2">Modelo personalizado</p>
                             </div>
                           </div>
@@ -2651,6 +2877,13 @@ const ChecklistScreen = ({ session }) => {
                             title="Atribuir a Funcionários"
                           >
                             <UserPlus size={14} /> Atribuir
+                          </button>
+                          <button
+                            onClick={() => generatePDF(template, true)}
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                            title="Visualizar PDF"
+                          >
+                            <Eye size={14} /> Ver
                           </button>
                           <button
                             onClick={() => generatePDF(template)}
@@ -2944,7 +3177,14 @@ const ChecklistScreen = ({ session }) => {
                         <div>
                           <div className="flex items-start justify-between gap-2 mb-2 pr-6">
                             <div>
-                              <h2 className="text-base font-bold text-slate-900 line-clamp-1">{template.name}</h2>
+                              <div className="flex items-center gap-2">
+                                <h2 className="text-base font-bold text-slate-900 line-clamp-1">{template.name}</h2>
+                                {assignedTemplateIds.has(template.id) && (
+                                    <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                                        ATRIBUÍDO
+                                    </span>
+                                )}
+                              </div>
                               <p className="text-xs text-slate-500 mt-1 line-clamp-2">Modelo mensal personalizado</p>
                             </div>
                           </div>
@@ -2966,6 +3206,13 @@ const ChecklistScreen = ({ session }) => {
                             title="Atribuir a Funcionários"
                           >
                             <UserPlus size={14} /> Atribuir
+                          </button>
+                          <button
+                            onClick={() => generatePDF(template, true)}
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1"
+                            title="Visualizar PDF"
+                          >
+                            <Eye size={14} /> Ver
                           </button>
                           <button
                             onClick={() => generatePDF(template)}
@@ -3155,13 +3402,112 @@ const ChecklistScreen = ({ session }) => {
           </div>
         </div>
       )}
+
+      {/* Modal de Visualização de Resposta */}
+      {viewResponseModalOpen && selectedResponse && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setViewResponseModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-up max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                 <ClipboardList size={20} className="text-primary" />
+                 Detalhes da Resposta
+              </h3>
+              <button onClick={() => setViewResponseModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                 <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+               <div className="grid grid-cols-2 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Motorista</label>
+                   <div className="font-medium text-slate-800">{selectedResponse.driver_name || 'N/D'}</div>
+                 </div>
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Veículo</label>
+                   <div className="font-medium text-slate-800">{selectedResponse.vehicle_plate || 'N/D'}</div>
+                 </div>
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Data</label>
+                   <div className="font-medium text-slate-800">{new Date(selectedResponse.created_at).toLocaleString('pt-BR')}</div>
+                 </div>
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Modelo</label>
+                   <div className="font-medium text-slate-800">{viewResponseTemplate?.name || 'Desconhecido'}</div>
+                 </div>
+               </div>
+
+               <div className="space-y-6">
+                 {viewResponseTemplate?.sections && (Array.isArray(viewResponseTemplate.sections) ? viewResponseTemplate.sections : JSON.parse(viewResponseTemplate.sections || '[]')).map((section, sIdx) => (
+                   <div key={sIdx} className="border border-slate-200 rounded-xl overflow-hidden">
+                     <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 font-semibold text-slate-700">
+                       {section.title}
+                     </div>
+                     <div className="p-4 space-y-4">
+                       {section.questions.map((q, qIdx) => {
+                         const qText = typeof q === 'object' ? q.text : q;
+                         const answer = (selectedResponse.answers || selectedResponse.content || selectedResponse.data || {})[qText];
+                         
+                         return (
+                           <div key={qIdx} className="flex flex-col gap-1">
+                             <div className="text-sm font-medium text-slate-700">{qText}</div>
+                             <div className="text-sm text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                               {answer ? (
+                                 <span className="font-semibold text-blue-600">{answer}</span>
+                               ) : (
+                                 <span className="text-slate-400 italic">Sem resposta</span>
+                               )}
+                             </div>
+                           </div>
+                         );
+                       })}
+                     </div>
+                   </div>
+                 ))}
+               </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button 
+                onClick={() => setViewResponseModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+              >
+                Fechar
+              </button>
+              <button 
+                onClick={() => generatePDF(viewResponseTemplate, true, false, selectedResponse)}
+                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center gap-2"
+              >
+                <Download size={18} />
+                Baixar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const UsersScreen = ({ globalSearchTerm, session }) => {
+const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   const [users, setUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [roleFilter, setRoleFilter] = useState('all');
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = (message, type = 'info') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+  };
+
+  const removeToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
 
   // Buscar usuários reais do banco
   useEffect(() => {
@@ -3169,6 +3515,8 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
   }, [session]);
 
   const fetchUsers = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
       // Buscar todos os usuários na tabela profiles
       const { data, error } = await supabase
@@ -3194,6 +3542,9 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       setUsers(formatted);
     } catch (error) {
       console.error("Erro ao buscar usuários:", error);
+      setError(error.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -3243,10 +3594,10 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
   ];
 
   const handleCreateRole = async () => {
-    if (!newRoleDefinition.name) return alert("Nome do cargo é obrigatório");
+    if (!newRoleDefinition.name) return showToast("Nome do cargo é obrigatório", "warning");
     
     const roleId = newRoleDefinition.name.toLowerCase().replace(/\s+/g, '_');
-    if (rolesList.find(r => r.id === roleId)) return alert("Cargo já existe");
+    if (rolesList.find(r => r.id === roleId)) return showToast("Cargo já existe", "warning");
 
     const newRole = {
         id: roleId,
@@ -3262,10 +3613,18 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         setRolesList(prev => [...prev, { ...newRole, desc: newRole.description }]);
         setIsCreateRoleModalOpen(false);
         setNewRoleDefinition({ name: '', description: '', permissions: {} });
-        alert(`Cargo ${newRoleDefinition.name} criado com sucesso!`);
+        showToast(`Cargo ${newRoleDefinition.name} criado com sucesso!`, "success");
+        
+        if (logAction) {
+            logAction('USER_CHANGE', newRoleDefinition.name || 'Novo Cargo', {
+            action: 'create_role',
+            description: newRoleDefinition.description,
+            permissions: newRoleDefinition.permissions
+        });
+        }
     } catch (error) {
         console.error("Erro ao criar cargo:", error);
-        alert("Erro ao salvar cargo no banco de dados. Verifique se a tabela 'roles' existe.");
+        showToast("Erro ao salvar cargo no banco de dados.", "error");
     }
   };
 
@@ -3303,7 +3662,15 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
         if (error) throw error;
 
-        alert(`Permissões de ${selectedUser.name} atualizadas!`);
+        showToast(`Permissões de ${selectedUser.name} atualizadas!`, "success");
+        
+        if (logAction) {
+            logAction('USER_CHANGE', selectedUser.name || selectedUser.email || 'Usuário', {
+            action: 'update_permissions',
+            target_email: selectedUser.email,
+            permissions: editingPermissions
+        });
+        }
         
         setUsers(prev => prev.map(u => 
             u.id === selectedUser.id ? { ...u, permissions: editingPermissions } : u
@@ -3311,7 +3678,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         setIsPermissionsModalOpen(false);
     } catch (error) {
         console.error("Erro ao salvar permissões:", error);
-        alert("Erro ao salvar permissões: " + error.message);
+        showToast("Erro ao salvar permissões: " + error.message, "error");
     }
   };
 
@@ -3324,7 +3691,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
   const handleSaveUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
-      alert("Por favor, preencha todos os campos.");
+      showToast("Por favor, preencha todos os campos.", "warning");
       return;
     }
 
@@ -3355,14 +3722,23 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
       if (dbError) throw dbError;
 
-      alert("Administrador cadastrado com sucesso!");
+      showToast("Administrador cadastrado com sucesso!", "success");
+
+      if (logAction) {
+          logAction('USER_CHANGE', newUser.name || newUser.email || 'Novo Usuário', {
+        action: 'create_user',
+        email: newUser.email,
+        role: 'admin'
+      });
+      }
+
       fetchUsers();
       setIsModalOpen(false);
       setNewUser({ name: '', email: '', password: '', role: 'Administrador' });
 
     } catch (error) {
       console.error("Erro ao criar usuário:", error);
-      alert("Erro ao criar administrador: " + (error.message || error.error_description || JSON.stringify(error)));
+      showToast("Erro ao criar administrador: " + (error.message || "Erro desconhecido"), "error");
     }
   };
 
@@ -3439,7 +3815,16 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
       if (error) throw error;
 
-      alert(`Cargo de ${selectedUser.name} alterado para ${selectedRoleConfig?.label || newRoleSelection}! Permissões atualizadas.`);
+      showToast(`Cargo de ${selectedUser.name} alterado para ${selectedRoleConfig?.label || newRoleSelection}!`, "success");
+      
+      if (logAction) {
+          logAction('USER_CHANGE', selectedUser.name || selectedUser.email || 'Usuário', {
+            action: 'update_role',
+            target_email: selectedUser.email,
+            old_role: selectedUser.role,
+            new_role: newRoleSelection
+          });
+      }
       
       // Update local state
       setUsers(prev => prev.map(u => 
@@ -3449,7 +3834,48 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
       setIsChangeRoleModalOpen(false);
     } catch (error) {
       console.error("Erro ao alterar cargo:", error);
-      alert("Erro ao alterar cargo: " + error.message);
+      showToast("Erro ao alterar cargo: " + error.message, "error");
+    }
+  };
+
+  const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
+
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    try {
+        // Tenta excluir usando RPC (Stored Procedure) se disponível
+        const { error } = await supabase.rpc('delete_user_by_id', { user_id: selectedUser.id });
+
+        if (error) {
+            // Fallback: Tenta deletar apenas do profile se RPC falhar (não ideal, mas limpa a lista)
+            console.warn("RPC falhou, tentando deletar profile:", error);
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', selectedUser.id);
+            
+            if (profileError) throw profileError;
+        }
+
+        showToast(`Usuário ${selectedUser.name} excluído com sucesso!`, "success");
+        
+        if (logAction) {
+            logAction('USER_CHANGE', selectedUser.name || selectedUser.email || 'Usuário', {
+                action: 'delete_user',
+                deleted_email: selectedUser.email,
+                deleted_role: selectedUser.role
+            });
+        }
+        
+        // Remove da lista local
+        setUsers(prev => prev.filter(u => u.id !== selectedUser.id));
+        setIsDeleteUserModalOpen(false);
+        setActiveMenuId(null);
+
+    } catch (error) {
+        console.error("Erro ao excluir usuário:", error);
+        showToast("Erro ao excluir usuário: " + error.message, "error");
     }
   };
 
@@ -3497,8 +3923,43 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="p-12 text-center text-slate-500">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+        <p>Carregando usuários...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-12 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">
+        <p className="font-bold mb-2">Erro ao carregar usuários</p>
+        <p className="text-sm mb-4">{error}</p>
+        <button 
+          onClick={fetchUsers}
+          className="px-4 py-2 bg-white border border-red-200 rounded-lg text-red-600 hover:bg-red-50 font-bold text-sm"
+        >
+          Tentar Novamente
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="flex gap-2">
+            <button 
+                onClick={fetchUsers}
+                className="p-2 text-slate-500 hover:text-primary hover:bg-blue-50 rounded-lg transition-colors"
+                title="Recarregar lista"
+            >
+                <RefreshCw size={20} />
+            </button>
+        </div>
+      </div>
       {/* Modal de Criação de Cargo */}
       {isCreateRoleModalOpen && (
         <div 
@@ -3920,6 +4381,102 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
         </div>
       )}
 
+      {/* Modal de Exclusão de Usuário */}
+      {isDeleteUserModalOpen && selectedUser && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsDeleteUserModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-red-50">
+                <h3 className="font-bold text-lg text-red-800 flex items-center gap-2">
+                   <AlertTriangle size={20} className="text-red-600" />
+                   Excluir Usuário
+                </h3>
+                <button onClick={() => setIsDeleteUserModalOpen(false)} className="text-red-400 hover:text-red-600 hover:bg-red-100/50 p-1 rounded-full transition-colors">
+                   <X size={20} />
+                </button>
+             </div>
+             
+             <div className="p-6 space-y-4">
+                <p className="text-slate-600">
+                  Tem certeza que deseja excluir o usuário <strong>{selectedUser.name}</strong>?
+                </p>
+                <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">
+                  <p className="font-bold mb-1">Atenção:</p>
+                  <p>Esta ação é irreversível. O usuário perderá o acesso imediatamente.</p>
+                </div>
+             </div>
+
+             <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                <button 
+                   onClick={() => setIsDeleteUserModalOpen(false)}
+                   className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                   Cancelar
+                </button>
+                <button 
+                   onClick={handleDeleteUser}
+                   className="flex-1 bg-red-600 text-white font-bold py-2.5 rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20"
+                >
+                   Excluir
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Exclusão de Usuário */}
+      {isDeleteUserModalOpen && selectedUser && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsDeleteUserModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-red-50">
+                <h3 className="font-bold text-lg text-red-800 flex items-center gap-2">
+                   <AlertTriangle size={20} className="text-red-600" />
+                   Excluir Usuário
+                </h3>
+                <button onClick={() => setIsDeleteUserModalOpen(false)} className="text-red-400 hover:text-red-600 hover:bg-red-100/50 p-1 rounded-full transition-colors">
+                   <X size={20} />
+                </button>
+             </div>
+             
+             <div className="p-6 space-y-4">
+                <p className="text-slate-600">
+                  Tem certeza que deseja excluir o usuário <strong>{selectedUser.name}</strong>?
+                </p>
+                <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">
+                  <p className="font-bold mb-1">Atenção:</p>
+                  <p>Esta ação é irreversível. O usuário perderá o acesso imediatamente.</p>
+                </div>
+             </div>
+
+             <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                <button 
+                   onClick={() => setIsDeleteUserModalOpen(false)}
+                   className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                   Cancelar
+                </button>
+                <button 
+                   onClick={handleDeleteUser}
+                   className="flex-1 bg-red-600 text-white font-bold py-2.5 rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20"
+                >
+                   Excluir
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center flex-wrap gap-4">
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gestão de Usuários</h1>
           <div className="flex gap-2">
@@ -3938,26 +4495,46 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
           </div>
       </div>
 
-      <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
-        {[
-          { id: 'all', label: 'Todos' },
-          ...rolesList.filter(role => 
-            users.some(u => (u.role || '').toLowerCase() === role.id.toLowerCase()) &&
-            (role.id === 'admin' || (role.permissions && Object.keys(role.permissions).length > 0))
-          ).map(r => ({ id: r.id, label: r.label }))
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setRoleFilter(tab.id)}
-            className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
-              roleFilter === tab.id 
-                ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2 scrollbar-thin scrollbar-thumb-slate-200">
+        {(() => {
+          // Extrair roles únicos dos usuários carregados
+          const userRoles = [...new Set(users.map(u => u.role))].filter(Boolean);
+          
+          // Mesclar com rolesList do banco para garantir que todos apareçam
+          // Se o role já existir em rolesList, usa a label dele. Se não, capitaliza o ID.
+          const allTabs = [
+            { id: 'all', label: 'Todos' },
+            ...rolesList.map(r => ({ id: r.id, label: r.label })),
+            ...userRoles
+              .filter(roleId => !rolesList.some(r => r.id === roleId)) // Apenas os que não estão na lista
+              .map(roleId => ({ 
+                id: roleId, 
+                label: roleId === 'admin' ? 'Administrador' : 
+                       roleId === 'user' ? 'Funcionário' : 
+                       roleId === 'client' ? 'Cliente' : 
+                       roleId.charAt(0).toUpperCase() + roleId.slice(1) 
+              }))
+          ];
+
+          // Remover duplicatas por ID (caso haja overlap estranho)
+          const uniqueTabs = allTabs.filter((tab, index, self) => 
+            index === self.findIndex((t) => t.id === tab.id)
+          );
+
+          return uniqueTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setRoleFilter(tab.id)}
+              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                roleFilter === tab.id 
+                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ));
+        })()}
       </div>
 
       <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 overflow-visible border-t-0">
@@ -4030,6 +4607,17 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
                                         <UserCog size={16} className="text-slate-400" /> 
                                         Alterar Cargo
                                      </button>
+                                     <button
+                                       onClick={() => {
+                                           setSelectedUser(user);
+                                           setIsDeleteUserModalOpen(true);
+                                           setActiveMenuId(null);
+                                       }}
+                                       className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors border-t border-slate-50"
+                                     >
+                                        <Trash2 size={16} className="text-red-400" /> 
+                                        Excluir Usuário
+                                     </button>
                                   </div>
                                </div>
                              </>
@@ -4054,7 +4642,7 @@ const UsersScreen = ({ globalSearchTerm, session }) => {
 
 const LogsScreen = ({ globalSearchTerm, session }) => {
   const [logs, setLogs] = useState([]);
-  const [activeTab, setActiveTab] = useState('products'); // products | stock | loyalty | highlights
+  const [activeTab, setActiveTab] = useState('products'); // products | stock | loyalty | highlights | users
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -4068,6 +4656,7 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
     if (activeTab === 'stock') types = ['STOCK_CHANGE'];
     if (activeTab === 'loyalty') types = ['LOYALTY_CHANGE'];
     if (activeTab === 'highlights') types = ['HIGHLIGHT_CHANGE'];
+    if (activeTab === 'users') types = ['USER_CHANGE'];
     
     try {
         const { data, error } = await supabase
@@ -4149,6 +4738,12 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'highlights' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
             >
                 Destaques
+            </button>
+            <button 
+                onClick={() => setActiveTab('users')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'users' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+                Usuários
             </button>
         </div>
 
@@ -4266,6 +4861,48 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                                                 {log.details.validUntil && (
                                                     <div className="text-xs text-slate-500">
                                                         Validade: <span className="font-medium text-slate-700">{log.details.validUntil}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Users Tab */}
+                                        {activeTab === 'users' && log.details && (
+                                            <div className="space-y-1">
+                                                <div className="font-medium text-slate-800">
+                                                    {log.details.action === 'create_user' && 'Novo Usuário Cadastrado'}
+                                                    {log.details.action === 'create_role' && 'Novo Cargo Criado'}
+                                                    {log.details.action === 'update_role' && 'Alteração de Cargo'}
+                                                    {log.details.action === 'update_permissions' && 'Alteração de Permissões'}
+                                                </div>
+                                                
+                                                {log.details.action === 'create_user' && (
+                                                    <div className="text-xs text-slate-500">
+                                                        Email: {log.details.email} <br/>
+                                                        Cargo Inicial: {log.details.role}
+                                                    </div>
+                                                )}
+
+                                                {log.details.action === 'update_role' && (
+                                                    <div className="flex items-center gap-2 text-xs">
+                                                        <span className="text-slate-500">{log.details.old_role}</span>
+                                                        <ArrowRight size={12} className="text-slate-400" />
+                                                        <span className="text-primary font-bold">{log.details.new_role}</span>
+                                                    </div>
+                                                )}
+
+                                                {log.details.action === 'update_permissions' && (
+                                                    <div className="text-xs text-slate-500">
+                                                        Permissões atualizadas manualmente via painel.
+                                                    </div>
+                                                )}
+
+                                                {log.details.action === 'delete_user' && (
+                                                    <div className="text-xs bg-red-50 p-2 rounded border border-red-100">
+                                                        <span className="text-red-700 font-bold block mb-1">Usuário Excluído</span>
+                                                        <span className="text-slate-500">Email: {log.details.deleted_email}</span>
+                                                        <span className="text-slate-400 mx-1">|</span>
+                                                        <span className="text-slate-500">Cargo: {log.details.deleted_role}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -5939,6 +6576,16 @@ function App() {
   const [products, setProducts] = useState([]);
   const [totalClients, setTotalClients] = useState(0);
   const [userProfile, setUserProfile] = useState(null);
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = (message, type = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+  };
+
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
 
   // Fetch user profile (permissions) on session change
   useEffect(() => {
@@ -6271,15 +6918,21 @@ function App() {
   const logAction = async (actionType, entityName, details) => {
     if (!session?.user) return;
     try {
-        const { error } = await supabase.from('audit_logs').insert([{
+        const payload = {
+            id: self.crypto.randomUUID(),
             user_id: session.user.id,
             user_email: session.user.email,
             action_type: actionType,
-            entity_name: entityName,
-            details: details,
+            entity_name: entityName || 'Não identificado',
+            details: details || {},
             created_at: new Date().toISOString()
-        }]);
-        if (error) console.error("Erro ao registrar log:", error);
+        };
+
+        const { error } = await supabase.from('audit_logs').insert([payload]);
+        if (error) {
+            console.error("Erro detalhado ao registrar log:", JSON.stringify(error, null, 2));
+            console.error("Payload enviado:", payload);
+        }
     } catch (err) {
         console.error("Erro inesperado no log:", err);
     }
@@ -6364,14 +7017,14 @@ function App() {
 
     switch (activeTab) {
       case 'Dashboard': return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} />);
-      case 'Produtos': return renderIfAllowed('Produtos', <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />);
-      case 'Estoque': return renderIfAllowed('Estoque', <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} />);
-      case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} />);
-      case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} />);
+      case 'Produtos': return renderIfAllowed('Produtos', <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} />);
+      case 'Estoque': return renderIfAllowed('Estoque', <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} />);
+      case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} />);
+      case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
-      case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} />);
-      case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} />);
+      case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
+      case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
       default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} />);
     }
   };
@@ -6382,6 +7035,7 @@ function App() {
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans">
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
       
       {/* Sidebar Escura */}
       <aside 
@@ -6455,7 +7109,9 @@ function App() {
                 className="relative p-2 hover:bg-slate-100 rounded-full transition-colors"
               >
                 <Bell size={20} className="text-slate-600" />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white animate-pulse"></span>
+                {deliveryRequests.length > 0 && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white animate-pulse"></span>
+                )}
               </button>
 
               {showNotifications && (
