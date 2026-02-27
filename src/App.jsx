@@ -2035,6 +2035,75 @@ const ChecklistScreen = ({ session, showToast }) => {
   const [isLoadingResponses, setIsLoadingResponses] = useState(false);
   const [errorResponses, setErrorResponses] = useState('');
 
+  // --- FILL CHECKLIST STATE ---
+  const [isFillModalOpen, setIsFillModalOpen] = useState(false);
+  const [templateToFill, setTemplateToFill] = useState(null);
+  const [fillAnswers, setFillAnswers] = useState({});
+  const [fillDriverName, setFillDriverName] = useState('');
+  const [fillVehiclePlate, setFillVehiclePlate] = useState('');
+  const [fillOdometer, setFillOdometer] = useState('');
+
+  const openFillModal = (template) => {
+    setTemplateToFill(template);
+    setFillAnswers({});
+    setFillDriverName('');
+    setFillVehiclePlate('');
+    setFillOdometer('');
+    setIsFillModalOpen(true);
+  };
+
+  const handleUpdateAnswer = (questionText, value) => {
+    setFillAnswers(prev => ({
+      ...prev,
+      [questionText]: value
+    }));
+  };
+
+  const handleSaveResponse = async () => {
+    if (!templateToFill) return;
+    
+    // Validate required fields (optional, but good practice)
+    if (templateToFill.type === 'daily' && (!fillDriverName || !fillVehiclePlate)) {
+       // Optional: enforce driver name and plate for daily checklists if desired
+       // For now, let's keep it flexible but maybe warn?
+    }
+
+    try {
+      const user = session?.user;
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const responsePayload = {
+        template_id: templateToFill.id,
+        filled_by: user.id,
+        driver_name: fillDriverName,
+        vehicle_plate: fillVehiclePlate,
+        odometer: fillOdometer,
+        responses: fillAnswers, // Store answers as JSONB
+        created_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('checklist_responses')
+        .insert([responsePayload]);
+
+      if (error) throw error;
+
+      showToast('Checklist enviado com sucesso!', 'success');
+      setIsFillModalOpen(false);
+      
+      // Refresh responses if we are on the responses tab
+      if (mainTab === 'respostas') {
+        fetchResponses();
+      }
+    } catch (error) {
+      console.error('Erro ao salvar resposta:', error);
+      showToast('Erro ao enviar checklist: ' + error.message, 'error');
+    }
+  };
+
+
+
+
   useEffect(() => {
     if (session?.user) {
       fetchTemplates();
@@ -2124,25 +2193,27 @@ const ChecklistScreen = ({ session, showToast }) => {
 
 
   const openAssignModal = async (template) => {
-    setAssignTemplate(template);
-    setSelectedUserIds([]); // Limpa seleção anterior para evitar confusão visual
-    setIsAssignModalOpen(true);
-    
-    // Fetch users if not already loaded
-    if (allUsers.length === 0) await fetchUsersForAssignment();
-    
-    // Fetch existing assignments
     try {
-      const { data, error } = await supabase
-        .from('checklist_assignments')
-        .select('user_id')
-        .eq('template_id', template.id);
+        setAssignTemplate(template);
+        setSelectedUserIds([]); // Limpa seleção anterior para evitar confusão visual
+        setIsAssignModalOpen(true);
         
-      if (error) throw error;
-      setSelectedUserIds(data ? data.map(d => d.user_id) : []);
+        // Fetch users if not already loaded
+        if (allUsers.length === 0) {
+            await fetchUsersForAssignment();
+        }
+        
+        // Fetch existing assignments
+        const { data, error } = await supabase
+            .from('checklist_assignments')
+            .select('user_id')
+            .eq('template_id', template.id);
+            
+        if (error) throw error;
+        setSelectedUserIds(data ? data.map(d => d.user_id) : []);
     } catch (error) {
-      console.error("Erro ao buscar atribuições:", error);
-      // Se a tabela não existir, apenas ignora
+        console.error("Erro ao buscar atribuições:", error);
+        showToast("Erro ao carregar dados de atribuição: " + error.message, 'error');
     }
   };
 
@@ -2281,10 +2352,17 @@ const ChecklistScreen = ({ session, showToast }) => {
           sections = [];
         }
 
+        let pdfTitleToUse = templateToEdit.pdf_title || '';
+        // If the saved PDF title is generic, use the template name instead
+        const genericTitles = ['RESPONDA', 'NOVO CHECKLIST DIÁRIO', 'NOVO CHECKLIST MENSAL', 'CHECKLIST DIÁRIO', 'CHECKLIST MENSAL', 'FORMULÁRIO DE REGISTRO'];
+        if (pdfTitleToUse && genericTitles.includes(pdfTitleToUse.toUpperCase()) && templateToEdit.name) {
+             pdfTitleToUse = templateToEdit.name;
+        }
+
         setCurrentTemplate({
           id: templateToEdit.id,
           name: templateToEdit.name,
-          pdfTitle: templateToEdit.pdf_title || '',
+          pdfTitle: pdfTitleToUse,
           pdfSubtitle: templateToEdit.pdf_subtitle || '',
           headerText: templateToEdit.header_text || '',
           type: templateToEdit.type || 'daily',
@@ -2293,8 +2371,8 @@ const ChecklistScreen = ({ session, showToast }) => {
       } else if (mode === 'new-daily') {
         setCurrentTemplate({
           id: null,
-          name: 'Novo Checklist Diário',
-          pdfTitle: 'Novo Checklist Diário',
+          name: '',
+          pdfTitle: '',
           pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
           headerText: 'Nome: _______________________  ID: ______  Data: __/__/____',
           type: 'daily',
@@ -2305,8 +2383,8 @@ const ChecklistScreen = ({ session, showToast }) => {
       } else if (mode === 'new-monthly') {
         setCurrentTemplate({
           id: null,
-          name: 'Novo Checklist Mensal',
-          pdfTitle: 'Novo Checklist Mensal',
+          name: '',
+          pdfTitle: '',
           pdfSubtitle: 'FORMULÁRIO DE REGISTRO',
           headerText: 'Local: __________   Data: __/__/____   Placa: __________',
           type: 'monthly',
@@ -2509,9 +2587,18 @@ const ChecklistScreen = ({ session, showToast }) => {
     }
 
     // Set document properties
-    const safeName = (templateToPrint.pdfTitle || templateToPrint.name || 'Checklist').replace(/[^a-z0-9]/gi, '_');
+    // Determine title to use
+    let titleToUse = templateToPrint.pdfTitle || templateToPrint.pdf_title || templateToPrint.name;
+    
+    // Fix for user request: If title is generic (likely legacy default or initialization), prefer the template name
+    const genericTitles = ['RESPONDA', 'NOVO CHECKLIST DIÁRIO', 'NOVO CHECKLIST MENSAL', 'CHECKLIST DIÁRIO', 'CHECKLIST MENSAL', 'FORMULÁRIO DE REGISTRO'];
+    if (titleToUse && genericTitles.includes(titleToUse.toUpperCase()) && templateToPrint.name) {
+        titleToUse = templateToPrint.name;
+    }
+
+    const safeName = (titleToUse || 'Checklist').replace(/[^a-z0-9]/gi, '_');
     doc.setProperties({
-        title: templateToPrint.pdfTitle || templateToPrint.name,
+        title: titleToUse,
         subject: templateToPrint.pdfSubtitle || 'Checklist',
         author: 'Atadiesel',
         creator: 'Atadiesel App'
@@ -2533,7 +2620,7 @@ const ChecklistScreen = ({ session, showToast }) => {
     // Título
     doc.setFontSize(16);
     doc.setTextColor(0, 0, 0);
-    doc.text((templateToPrint.pdfTitle || templateToPrint.pdf_title || templateToPrint.name).toUpperCase(), pageWidth / 2, 15, { align: 'center' });
+    doc.text((titleToUse).toUpperCase(), pageWidth / 2, 15, { align: 'center' });
     
     doc.setFontSize(10);
     doc.text((templateToPrint.pdfSubtitle || templateToPrint.pdf_subtitle || "FORMULÁRIO DE REGISTRO"), pageWidth / 2, 22, { align: 'center' });
@@ -2552,7 +2639,7 @@ const ChecklistScreen = ({ session, showToast }) => {
 
     let yPos = 50;
 
-    const addSection = (title, items) => {
+    const addSection = (title, items, sectionIndex) => {
         if (yPos > 270) {
             doc.addPage();
             yPos = 20;
@@ -2566,7 +2653,7 @@ const ChecklistScreen = ({ session, showToast }) => {
         yPos += 12;
         
         doc.setFont(undefined, 'normal');
-        items.forEach(item => {
+        items.forEach((item, questionIndex) => {
             if (yPos > 275) {
                 doc.addPage();
                 yPos = 20;
@@ -2585,8 +2672,10 @@ const ChecklistScreen = ({ session, showToast }) => {
             // Get Answer
             let answer = null;
             if (responseOverride) {
-                 const ansObj = responseOverride.answers || responseOverride.content || responseOverride.data || {};
-                 answer = ansObj[text]; 
+                 const ansObj = responseOverride.responses || responseOverride.answers || responseOverride.content || responseOverride.data || {};
+                 // Check both text key and index key (q-S-Q)
+                 const indexKey = `q-${sectionIndex + 1}-${questionIndex + 1}`;
+                 answer = ansObj[text] || ansObj[indexKey]; 
             }
 
             if (type === 'text') {
@@ -2627,9 +2716,9 @@ const ChecklistScreen = ({ session, showToast }) => {
         yPos += 5;
     };
 
-    sectionsToPrint.forEach(section => {
+    sectionsToPrint.forEach((section, index) => {
         if (!section || !Array.isArray(section.questions)) return;
-        addSection(section.title || 'Seção', section.questions);
+        addSection(section.title || 'Seção', section.questions, index);
     });
 
     if (returnBlob) {
@@ -2870,6 +2959,13 @@ const ChecklistScreen = ({ session, showToast }) => {
                             className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
                           >
                             <Edit size={14} /> Editar
+                          </button>
+                          <button
+                            onClick={() => openFillModal(template)}
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-bold rounded-lg bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 hover:border-green-300 flex items-center justify-center gap-1 shadow-sm"
+                            title="Preencher Checklist"
+                          >
+                            <ClipboardList size={14} /> Responder
                           </button>
                           <button
                             onClick={() => openAssignModal(template)}
@@ -3201,6 +3297,13 @@ const ChecklistScreen = ({ session, showToast }) => {
                             <Edit size={14} /> Editar
                           </button>
                           <button
+                            onClick={() => openFillModal(template)}
+                            className="flex-1 min-w-[80px] px-2 py-2 text-xs font-bold rounded-lg bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 hover:border-green-300 flex items-center justify-center gap-1 shadow-sm"
+                            title="Preencher Checklist"
+                          >
+                            <ClipboardList size={14} /> Responder
+                          </button>
+                          <button
                             onClick={() => openAssignModal(template)}
                             className="flex-1 min-w-[80px] px-2 py-2 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center gap-1"
                             title="Atribuir a Funcionários"
@@ -3452,7 +3555,9 @@ const ChecklistScreen = ({ session, showToast }) => {
                      <div className="p-4 space-y-4">
                        {section.questions.map((q, qIdx) => {
                          const qText = typeof q === 'object' ? q.text : q;
-                         const answer = (selectedResponse.answers || selectedResponse.content || selectedResponse.data || {})[qText];
+                         const ansObj = selectedResponse.responses || selectedResponse.answers || selectedResponse.content || selectedResponse.data || {};
+                         const indexKey = `q-${sIdx + 1}-${qIdx + 1}`;
+                         const answer = ansObj[qText] || ansObj[indexKey];
                          
                          return (
                            <div key={qIdx} className="flex flex-col gap-1">
