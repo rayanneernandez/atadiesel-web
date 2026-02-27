@@ -2670,18 +2670,23 @@ const ChecklistScreen = ({ session, showToast }) => {
             doc.text(text, 12, yPos);
             
             // Get Answer
-            let answer = null;
+            let answer = undefined;
             if (responseOverride) {
                  const ansObj = responseOverride.responses || responseOverride.answers || responseOverride.content || responseOverride.data || {};
                  // Check both text key and index key (q-S-Q)
                  const indexKey = `q-${sectionIndex + 1}-${questionIndex + 1}`;
-                 answer = ansObj[text] || ansObj[indexKey]; 
+                 answer = ansObj[text];
+                 if (answer === undefined) answer = ansObj[indexKey];
             }
 
             if (type === 'text') {
-                if (answer) {
+                if (answer !== undefined && answer !== null) {
+                     let displayVal = answer;
+                     if (displayVal === true || displayVal === 'true') displayVal = 'Sim';
+                     if (displayVal === false || displayVal === 'false') displayVal = 'Não';
+                     
                      doc.setFont(undefined, 'bold');
-                     doc.text(String(answer), 12, yPos + 5);
+                     doc.text(String(displayVal), 12, yPos + 5);
                      doc.setFont(undefined, 'normal');
                 } else {
                      doc.setLineWidth(0.1);
@@ -2703,7 +2708,13 @@ const ChecklistScreen = ({ session, showToast }) => {
                     
                     doc.rect(optX, yPos - 4, 4, 4);
                     
-                    if (answer === opt) {
+                    let isSelected = false;
+                    if (answer === opt) isSelected = true;
+                    // Handle boolean mapping to Sim/Não
+                    if ((answer === true || answer === 'true') && opt === 'Sim') isSelected = true;
+                    if ((answer === false || answer === 'false') && opt === 'Não') isSelected = true;
+
+                    if (isSelected) {
                          doc.text('X', optX + 1, yPos - 1);
                     }
                     
@@ -3557,14 +3568,19 @@ const ChecklistScreen = ({ session, showToast }) => {
                          const qText = typeof q === 'object' ? q.text : q;
                          const ansObj = selectedResponse.responses || selectedResponse.answers || selectedResponse.content || selectedResponse.data || {};
                          const indexKey = `q-${sIdx + 1}-${qIdx + 1}`;
-                         const answer = ansObj[qText] || ansObj[indexKey];
+                         let answer = ansObj[qText];
+                         if (answer === undefined) answer = ansObj[indexKey];
+                         
+                         let displayAnswer = answer;
+                         if (answer === true || answer === 'true') displayAnswer = 'Sim';
+                         if (answer === false || answer === 'false') displayAnswer = 'Não';
                          
                          return (
                            <div key={qIdx} className="flex flex-col gap-1">
                              <div className="text-sm font-medium text-slate-700">{qText}</div>
                              <div className="text-sm text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
-                               {answer ? (
-                                 <span className="font-semibold text-blue-600">{answer}</span>
+                               {displayAnswer !== undefined && displayAnswer !== null && displayAnswer !== '' ? (
+                                 <span className="font-semibold text-blue-600">{String(displayAnswer)}</span>
                                ) : (
                                  <span className="text-slate-400 italic">Sem resposta</span>
                                )}
