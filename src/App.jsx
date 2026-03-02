@@ -867,8 +867,14 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
         stock: parseInt(newProduct.stock),
         category: newProduct.category,
         sku: newProduct.sku,
-        image_url: imageUrl
+        image_url: imageUrl,
+        updated_at: new Date().toISOString(), // Envia explicitamente para evitar erro de banco
+        is_active: true // Força o produto como ativo
       };
+
+      if (!isEditing) {
+          productData.created_at = new Date().toISOString(); // Garante created_at na criação
+      }
 
       if (isEditing) {
         const { error } = await supabase.from('products').update(productData).eq('id', newProduct.id);
@@ -2034,6 +2040,8 @@ const ChecklistScreen = ({ session, showToast }) => {
   const [monthlyResponses, setMonthlyResponses] = useState([]);
   const [isLoadingResponses, setIsLoadingResponses] = useState(false);
   const [errorResponses, setErrorResponses] = useState('');
+  const [checklistSearchTerm, setChecklistSearchTerm] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // --- FILL CHECKLIST STATE ---
   const [isFillModalOpen, setIsFillModalOpen] = useState(false);
@@ -2118,11 +2126,12 @@ const ChecklistScreen = ({ session, showToast }) => {
     try {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role, app_access')
+        .select('role, app_access, permissions')
         .eq('id', user.id)
         .single();
       const isAdmin = profile?.role === 'admin' || profile?.role === 'administrador';
       const hasFullAccess = profile?.app_access === true;
+      const canViewAll = isAdmin || hasFullAccess || (profile?.permissions && profile.permissions['Checklist']);
 
       const { data: templates } = await supabase
         .from('checklist_templates')
@@ -2136,7 +2145,7 @@ const ChecklistScreen = ({ session, showToast }) => {
         .in('template_id', templateIds)
         .order('created_at', { ascending: false });
 
-      if (!(isAdmin || hasFullAccess)) {
+      if (!canViewAll) {
         query = query.eq('filled_by', user.id);
       }
 
@@ -2157,6 +2166,9 @@ const ChecklistScreen = ({ session, showToast }) => {
   useEffect(() => {
     if (session?.user && mainTab === 'respostas') {
       fetchResponses();
+      if (allUsers.length === 0) {
+          fetchUsersForAssignment();
+      }
     }
   }, [session, mainTab, responseTab]);
 
@@ -2271,14 +2283,15 @@ const ChecklistScreen = ({ session, showToast }) => {
       // 1. Get User Profile to check role and app_access
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role, app_access')
+        .select('role, app_access, permissions')
         .eq('id', user.id)
         .single();
 
       const isAdmin = profile?.role === 'admin' || profile?.role === 'administrador';
       const hasFullAccess = profile?.app_access === true;
+      const hasChecklistPermission = profile?.permissions && profile.permissions['Checklist'];
 
-      if (isAdmin || hasFullAccess) {
+      if (isAdmin || hasFullAccess || hasChecklistPermission) {
         // Fetch ALL
         const { data, error } = await supabase
           .from('checklist_templates')
@@ -2772,30 +2785,65 @@ const ChecklistScreen = ({ session, showToast }) => {
       {mainTab === 'respostas' && (
         <div className="space-y-4">
            {/* Sub-abas de Respostas */}
-           <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
-            <button
-              onClick={() => setResponseTab('daily')}
-              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
-                responseTab === 'daily' 
-                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Checklist Diário
-            </button>
-            <button
-              onClick={() => setResponseTab('monthly')}
-              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
-                responseTab === 'monthly' 
-                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Checklist Mensal
-            </button>
+           <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-2 pt-2 justify-between items-center">
+            <div className="flex overflow-x-auto">
+              <button
+                onClick={() => setResponseTab('daily')}
+                className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                  responseTab === 'daily' 
+                    ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Checklist Diário
+              </button>
+              <button
+                onClick={() => setResponseTab('monthly')}
+                className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
+                  responseTab === 'monthly' 
+                    ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Checklist Mensal
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-2 pr-2 pb-1">
+               {isSearchOpen ? (
+                  <div className="relative animate-fade-in-right flex items-center">
+                      <Search size={14} className="absolute left-2.5 text-slate-400" />
+                      <input 
+                        autoFocus
+                        type="text" 
+                        className="pl-8 pr-8 py-1.5 text-xs border border-slate-300 rounded-lg outline-none focus:border-blue-500 w-48 transition-all"
+                        placeholder="Buscar motorista/placa..."
+                        value={checklistSearchTerm}
+                        onChange={e => setChecklistSearchTerm(e.target.value)}
+                      />
+                      <button 
+                        onClick={() => {setIsSearchOpen(false); setChecklistSearchTerm('');}} 
+                        className="absolute right-2 text-slate-400 hover:text-slate-600"
+                      >
+                          <X size={14} />
+                      </button>
+                  </div>
+               ) : (
+                  <button 
+                    onClick={() => setIsSearchOpen(true)} 
+                    className={`p-2 rounded-lg transition-colors ${checklistSearchTerm ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`} 
+                    title="Filtrar respostas"
+                  >
+                      <FilterIcon size={18} />
+                  </button>
+               )}
+            </div>
           </div>
 
           <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 p-8 min-h-[400px]">
+             
+
+
              {isLoadingResponses ? (
                <div className="text-center">
                  <div className="bg-slate-100 p-6 rounded-full inline-flex mb-4 animate-pulse">
@@ -2809,14 +2857,33 @@ const ChecklistScreen = ({ session, showToast }) => {
                  <p className="text-slate-500">{errorResponses}</p>
                </div>
              ) : responseTab === 'daily' ? (
-               dailyResponses && dailyResponses.length > 0 ? (
+               dailyResponses && dailyResponses.filter(r => {
+                  if (!checklistSearchTerm) return true;
+                  const term = checklistSearchTerm.toLowerCase();
+                  const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
+                  return (
+                      r.driver_name?.toLowerCase().includes(term) || 
+                      r.vehicle_plate?.toLowerCase().includes(term) ||
+                      userName.includes(term)
+                  );
+               }).length > 0 ? (
                  <div className="space-y-3">
-                   {dailyResponses.map((r) => (
+                   {dailyResponses.filter(r => {
+                      if (!checklistSearchTerm) return true;
+                      const term = checklistSearchTerm.toLowerCase();
+                      const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
+                      return (
+                          r.driver_name?.toLowerCase().includes(term) || 
+                          r.vehicle_plate?.toLowerCase().includes(term) ||
+                          userName.includes(term)
+                      );
+                   }).map((r) => (
                      <div key={r.id} className="border border-slate-200 rounded-xl p-4 bg-white flex justify-between">
                        <div>
                          <div className="text-sm font-bold text-slate-900">Checklist Diário</div>
                          <div className="text-xs text-slate-500">Motorista: {r.driver_name || 'N/D'}</div>
                          <div className="text-xs text-slate-500">Placa: {r.vehicle_plate || 'N/D'}</div>
+                         <div className="text-xs text-slate-500">Preenchido por: {allUsers.find(u => u.id === r.filled_by)?.name || 'N/D'}</div>
                          <div className="text-xs text-slate-500">Enviado em {new Date(r.created_at).toLocaleString('pt-BR')}</div>
                        </div>
                        <div className="flex flex-col items-end gap-2">
@@ -2840,14 +2907,33 @@ const ChecklistScreen = ({ session, showToast }) => {
                    <p className="text-slate-500 mb-6">As respostas enviadas pelos motoristas aparecerão aqui.</p>
                  </div>
                )
-             ) : monthlyResponses && monthlyResponses.length > 0 ? (
+             ) : monthlyResponses && monthlyResponses.filter(r => {
+                  if (!checklistSearchTerm) return true;
+                  const term = checklistSearchTerm.toLowerCase();
+                  const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
+                  return (
+                      r.driver_name?.toLowerCase().includes(term) || 
+                      r.vehicle_plate?.toLowerCase().includes(term) ||
+                      userName.includes(term)
+                  );
+               }).length > 0 ? (
                <div className="space-y-3">
-                 {monthlyResponses.map((r) => (
+                 {monthlyResponses.filter(r => {
+                    if (!checklistSearchTerm) return true;
+                    const term = checklistSearchTerm.toLowerCase();
+                    const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
+                    return (
+                        r.driver_name?.toLowerCase().includes(term) || 
+                        r.vehicle_plate?.toLowerCase().includes(term) ||
+                        userName.includes(term)
+                    );
+                 }).map((r) => (
                    <div key={r.id} className="border border-slate-200 rounded-xl p-4 bg-white flex justify-between">
                      <div>
                        <div className="text-sm font-bold text-slate-900">Checklist Mensal</div>
                        <div className="text-xs text-slate-500">Motorista: {r.driver_name || 'N/D'}</div>
                        <div className="text-xs text-slate-500">Placa: {r.vehicle_plate || 'N/D'}</div>
+                       <div className="text-xs text-slate-500">Preenchido por: {allUsers.find(u => u.id === r.filled_by)?.name || 'N/D'}</div>
                        <div className="text-xs text-slate-500">Enviado em {new Date(r.created_at).toLocaleString('pt-BR')}</div>
                      </div>
                      <div className="flex flex-col items-end gap-2">
@@ -3811,20 +3897,23 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   });
 
   const handleSaveUser = async () => {
-    if (!newUser.name || !newUser.email || !newUser.password) {
+    const email = newUser.email.trim();
+    const password = newUser.password.trim();
+    const name = newUser.name.trim();
+
+    if (!name || !email || !password) {
       showToast("Por favor, preencha todos os campos.", "warning");
       return;
     }
 
     try {
-      // 1. Criar usuário no Auth (Para permitir login)
-      // Nota: Isso pode enviar um email de confirmação dependendo da configuração do Supabase
+      // 1. Tenta criar via Auth padrão (API Pública)
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: newUser.email,
-        password: newUser.password,
+        email: email,
+        password: password,
         options: {
           data: {
-            full_name: newUser.name,
+            full_name: name,
             role: newUser.role
           }
         }
@@ -3832,12 +3921,11 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
       if (authError) throw authError;
 
-      // 2. Criar registro na tabela profiles com role 'admin'
-      // Usamos upsert para garantir que se o trigger já criou, apenas atualizamos a role
+      // 2. Se sucesso no Auth, garante registro na tabela profiles
       const { error: dbError } = await supabase.from('profiles').upsert([{
-        id: authData.user.id, // Garante vínculo correto com o Auth
-        name: newUser.name,
-        email: newUser.email,
+        id: authData.user.id,
+        name: name,
+        email: email,
         role: 'admin'
       }]);
 
@@ -3846,11 +3934,11 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       showToast("Administrador cadastrado com sucesso!", "success");
 
       if (logAction) {
-          logAction('USER_CHANGE', newUser.name || newUser.email || 'Novo Usuário', {
-        action: 'create_user',
-        email: newUser.email,
-        role: 'admin'
-      });
+          logAction('USER_CHANGE', name || email || 'Novo Usuário', {
+            action: 'create_user',
+            email: email,
+            role: 'admin'
+          });
       }
 
       fetchUsers();
@@ -3858,8 +3946,51 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       setNewUser({ name: '', email: '', password: '', role: 'Administrador' });
 
     } catch (error) {
-      console.error("Erro ao criar usuário:", error);
-      showToast("Erro ao criar administrador: " + (error.message || "Erro desconhecido"), "error");
+      console.error("Erro ao criar usuário via API padrão:", error);
+      
+      // FALLBACK: Tenta criar via RPC (Banco de Dados Direto)
+      // Útil para erros como: Rate Limit, Email Inválido (falso positivo), Bloqueios de API
+      try {
+          showToast("Método padrão falhou. Tentando criação direta via Banco de Dados...", "info");
+          
+          const { data: rpcData, error: rpcError } = await supabase.rpc('create_user_admin', {
+              email: email,
+              password: password,
+              full_name: name,
+              role_name: 'admin'
+          });
+
+          if (rpcError) {
+            // Verifica se o erro é porque a função não existe
+            if (rpcError.message?.includes("function") && rpcError.message?.includes("not found")) {
+                throw new Error("Função de criação direta não encontrada. Por favor, execute o script 'create_admin_user.sql' no Supabase.");
+            }
+            throw rpcError;
+          }
+
+          // Sucesso via RPC
+          showToast("Administrador criado com sucesso (Modo Direto)!", "success");
+          
+          if (logAction) {
+            logAction('USER_CHANGE', name, {
+                action: 'create_user_rpc',
+                email: email,
+                role: 'admin'
+            });
+          }
+          
+          fetchUsers();
+          setIsModalOpen(false);
+          setNewUser({ name: '', email: '', password: '', role: 'Administrador' });
+
+      } catch (finalError) {
+          console.error("Falha final na criação de usuário:", finalError);
+          let msg = finalError.message || "Erro desconhecido";
+          if (msg.includes("Email address") && msg.includes("invalid")) {
+              msg = "O formato do e-mail é inválido ou não aceito.";
+          }
+          showToast("Não foi possível criar o usuário: " + msg, "error");
+      }
     }
   };
 
@@ -6734,8 +6865,9 @@ function App() {
         return !!userProfile.permissions[moduleId];
     }
     
-    // Fallback: se não tem permissions definido, permite (para não quebrar usuários antigos)
-    return true;
+    // Fallback: se não tem permissions definido, nega por padrão (segurança restritiva)
+    // Usuários não-admin só devem ver o que lhes foi explicitamente atribuído.
+    return false;
   };
 
   // Autenticação Supabase
