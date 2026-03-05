@@ -24,23 +24,38 @@ const LoginScreen = ({ onLogin }) => {
 
       if (authError) throw authError;
 
-      // 2. Verificar se é Administrador (Consultando tabela profiles)
+      // 2. Verificar permissões (Consultando tabela profiles)
+      // Usamos o ID do usuário retornado pelo login para garantir integridade com RLS
+      const user = data.user;
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
-        .eq('email', email.trim())
+        .select('role, permissions, app_access')
+        .eq('id', user.id)
         .single();
 
       if (profileError) {
+         console.error('Erro detalhado ao buscar perfil (RLS/Conexão):', profileError);
          // Se não encontrar perfil, nega acesso
          await supabase.auth.signOut();
-         throw new Error('Perfil de usuário não encontrado.');
+         // Mensagem amigável para o usuário, mas erro real no console
+         throw new Error('Perfil de usuário não encontrado. Contate o suporte.');
       }
       
-      // Verifica se a role é exatamente 'admin'
-      if (profileData?.role !== 'admin') {
+      // Verifica se tem acesso (Admin, Acesso Total ou Permissões Específicas)
+      // Atualizado para permitir acesso a todos exceto clientes e entregadores (salvo com permissão explícita)
+      const role = profileData?.role?.toLowerCase() || '';
+      const isAdmin = role === 'admin' || role === 'administrador';
+      const hasAppAccess = profileData?.app_access === true;
+      const hasPermissions = profileData?.permissions && Object.keys(profileData.permissions).length > 0;
+
+      const restrictedRoles = ['client', 'cliente', 'driver', 'entregador'];
+      const isRestrictedRole = restrictedRoles.includes(role);
+      
+      console.log('Login Check:', { email, role, isRestrictedRole, isAdmin, hasAppAccess, hasPermissions });
+
+      if (isRestrictedRole && !isAdmin && !hasAppAccess && !hasPermissions) {
         await supabase.auth.signOut();
-        throw new Error('Acesso negado: Usuário não possui permissão de administrador.');
+        throw new Error('Acesso negado: Usuário não possui permissão de acesso ao painel.');
       }
 
       if (onLogin) onLogin();

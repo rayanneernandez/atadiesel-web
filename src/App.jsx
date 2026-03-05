@@ -145,13 +145,270 @@ const ToastContainer = ({ toasts, removeToast }) => {
   );
 };
 
+const ChecklistAnalytics = ({ responses, users, templates = [] }) => {
+
+  const totalResponses = responses.length;
+  
+  let totalQuestionsAnswered = 0;
+  let totalSim = 0;
+  let totalNao = 0;
+  
+  const questionCounts = {};
+  const userCounts = {};
+  const templateCounts = {};
+
+  // Build a map of Question ID -> Text per Template
+  const templateQuestionMap = React.useMemo(() => {
+    const map = {};
+    if (!templates) return map;
+    
+    templates.forEach(t => {
+        const qMap = {};
+        let sections = t.sections;
+        if (typeof sections === 'string') {
+            try { sections = JSON.parse(sections); } catch(e) { sections = []; }
+        }
+        if (!Array.isArray(sections)) sections = [];
+        
+        sections.forEach((section, sIndex) => {
+            if (section.questions && Array.isArray(section.questions)) {
+                section.questions.forEach((q, qIndex) => {
+                    // Assuming keys are 1-based: q-SectionIndex-QuestionIndex
+                    const key = `q-${sIndex + 1}-${qIndex + 1}`;
+                    const text = typeof q === 'object' ? q.text : q;
+                    qMap[key] = text;
+                });
+            }
+        });
+        map[t.id] = qMap;
+    });
+    return map;
+  }, [templates]);
+
+  responses.forEach(r => {
+    // User stats
+    const userId = r.filled_by;
+    if (userId) {
+        userCounts[userId] = (userCounts[userId] || 0) + 1;
+    }
+
+    // Template stats
+    const templateId = r.template_id;
+    if (templateId) {
+        templateCounts[templateId] = (templateCounts[templateId] || 0) + 1;
+    }
+
+    // Response stats
+    const content = r.responses || r.answers || r.content || r.data || {};
+    const templateIdKey = r.template_id;
+    const qMap = templateQuestionMap[templateIdKey] || {};
+
+    Object.entries(content).forEach(([key, value]) => {
+        // key is question text or ID
+        // value is answer
+        if (value !== null && value !== undefined && value !== '') {
+            totalQuestionsAnswered++;
+            
+            // Normalize value for Yes/No
+            const valStr = String(value).toLowerCase();
+            if (valStr === 'sim' || valStr === 'true') totalSim++;
+            if (valStr === 'não' || valStr === 'nao' || valStr === 'false') totalNao++;
+            
+            // Resolve Question Text
+            let questionText = qMap[key] || key;
+            
+            // Aggregate
+            questionCounts[questionText] = (questionCounts[questionText] || 0) + 1;
+        }
+    });
+  });
+
+  // Top Questions
+  const topQuestions = Object.entries(questionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  // Top Users
+  const topUsers = Object.entries(userCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([uid, count]) => {
+        const user = users.find(u => u.id === uid);
+        return { name: user ? user.name : 'Desconhecido', count, uid };
+    });
+
+  // Top Templates
+  const topTemplates = Object.entries(templateCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([tid, count]) => {
+        const template = templates.find(t => t.id === tid);
+        return { name: template ? template.name : 'Modelo Desconhecido', count, tid };
+    });
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="text-slate-500 text-sm font-medium mb-1">Checklists Respondidos</div>
+                <div className="text-3xl font-bold text-slate-800">{totalResponses}</div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="text-slate-500 text-sm font-medium mb-1">Modelos Disponíveis</div>
+                <div className="text-3xl font-bold text-purple-600">{templates.length}</div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="text-slate-500 text-sm font-medium mb-1">Perguntas Respondidas</div>
+                <div className="text-3xl font-bold text-blue-600">{totalQuestionsAnswered}</div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="text-slate-500 text-sm font-medium mb-1">Respostas "Sim"</div>
+                <div className="text-3xl font-bold text-emerald-600">{totalSim}</div>
+                <div className="text-xs text-emerald-500 mt-1">{totalQuestionsAnswered ? ((totalSim/totalQuestionsAnswered)*100).toFixed(1) : 0}% do total</div>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="text-slate-500 text-sm font-medium mb-1">Respostas "Não"</div>
+                <div className="text-3xl font-bold text-red-600">{totalNao}</div>
+                <div className="text-xs text-red-500 mt-1">{totalQuestionsAnswered ? ((totalNao/totalQuestionsAnswered)*100).toFixed(1) : 0}% do total</div>
+            </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-800 mb-4">Top 5 Modelos Mais Utilizados</h3>
+                <div className="space-y-3">
+                    {topTemplates.map((t, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                            <div className="flex items-center gap-3 overflow-hidden">
+                                <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-xs shrink-0">
+                                    {(t.name || 'M').charAt(0)}
+                                </div>
+                                <span className="text-sm text-slate-700 font-medium truncate" title={t.name}>{t.name}</span>
+                            </div>
+                            <span className="bg-white px-2 py-1 rounded border border-slate-200 text-xs font-bold text-slate-600 shrink-0">{t.count}</span>
+                        </div>
+                    ))}
+                    {topTemplates.length === 0 && <div className="text-slate-400 text-center py-4">Sem dados suficientes</div>}
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-800 mb-4">Top 5 Perguntas Mais Respondidas</h3>
+                <div className="space-y-3">
+                    {topQuestions.map(([q, count], i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                            <span className="text-sm text-slate-700 font-medium truncate flex-1 pr-4" title={q}>{q}</span>
+                            <span className="bg-white px-2 py-1 rounded border border-slate-200 text-xs font-bold text-slate-600">{count}</span>
+                        </div>
+                    ))}
+                    {topQuestions.length === 0 && <div className="text-slate-400 text-center py-4">Sem dados suficientes</div>}
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 className="font-bold text-slate-800 mb-4">Top Usuários (Mais Ativos)</h3>
+                 <div className="space-y-3">
+                    {topUsers.map((u, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                                    {(u.name || 'D').charAt(0)}
+                                </div>
+                                <span className="text-sm text-slate-700 font-medium">{u.name}</span>
+                            </div>
+                            <span className="bg-white px-2 py-1 rounded border border-slate-200 text-xs font-bold text-slate-600">{u.count} checklists</span>
+                        </div>
+                    ))}
+                    {topUsers.length === 0 && <div className="text-slate-400 text-center py-4">Sem dados suficientes</div>}
+                </div>
+            </div>
+        </div>
+    </div>
+  );
+};
+
 // --- SUB-TELAS ---
 
-const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], totalClients = 0 }) => {
+const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], totalClients = 0, userProfile }) => {
+  
+  // Verifica permissões
+  const hasOverviewPermission = !userProfile || 
+    userProfile.role === 'admin' || 
+    userProfile.role === 'administrador' || 
+    (!userProfile.permissions && !['client', 'cliente', 'driver', 'entregador'].includes(userProfile.role)) ||
+    (userProfile.permissions && userProfile.permissions['Dashboard']);
+
+  const hasChecklistDashboardPermission = !userProfile || 
+    userProfile.role === 'admin' || 
+    userProfile.role === 'administrador' || 
+    (!userProfile.permissions && !['client', 'cliente', 'driver', 'entregador'].includes(userProfile.role)) ||
+    (userProfile.permissions && userProfile.permissions['checklist_dashboard_view']);
+
+  const [activeTab, setActiveTab] = useState(hasOverviewPermission ? 'overview' : (hasChecklistDashboardPermission ? 'checklist' : 'overview')); // 'overview' | 'checklist'
   const [dateRange, setDateRange] = useState({
     start: new Date().toISOString().slice(0, 10),
     end: new Date().toISOString().slice(0, 10)
   });
+  
+  const [checklistData, setChecklistData] = useState([]);
+  const [usersList, setUsersList] = useState([]);
+  const [checklistTemplates, setChecklistTemplates] = useState([]);
+  const [loadingChecklist, setLoadingChecklist] = useState(false);
+  const [checklistFilter, setChecklistFilter] = useState('all');
+
+  // Filter Logic
+  const filteredChecklistData = React.useMemo(() => {
+    if (checklistFilter === 'all') return checklistData;
+    
+    // Create map of template types
+    const templateTypeMap = {};
+    checklistTemplates.forEach(t => {
+        templateTypeMap[t.id] = t.type;
+    });
+
+    return checklistData.filter(response => {
+        const type = templateTypeMap[response.template_id];
+        return type === checklistFilter;
+    });
+  }, [checklistData, checklistFilter, checklistTemplates]);
+
+  useEffect(() => {
+    if (hasChecklistDashboardPermission) {
+        fetchChecklistData();
+    }
+  }, [hasChecklistDashboardPermission]);
+
+  const fetchChecklistData = async () => {
+    setLoadingChecklist(true);
+    try {
+        const { data: responses, error: respError } = await supabase
+            .from('checklist_responses')
+            .select('*');
+        
+        if (respError) throw respError;
+        setChecklistData(responses || []);
+
+        // Fetch users if not already available (or just fetch all to be safe for names)
+        const { data: users, error: userError } = await supabase
+            .from('profiles')
+            .select('*');
+            
+        if (userError) throw userError;
+        setUsersList(users || []);
+
+        const { data: templates, error: templError } = await supabase
+            .from('checklist_templates')
+            .select('*');
+            
+        if (templError) throw templError;
+        setChecklistTemplates(templates || []);
+
+    } catch (error) {
+        console.error("Erro ao carregar dados do dashboard checklist:", error);
+    } finally {
+        setLoadingChecklist(false);
+    }
+  };
 
   // --- PROCESSAMENTO DE DADOS REAIS ---
   const { processedSales, processedCategories, processedTopProducts } = React.useMemo(() => {
@@ -526,44 +783,70 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
     )}
 
     {/* Cabeçalho do Dashboard */}
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight font-parkinsans">
-          <HighlightText text="Visão Geral" highlight={globalSearchTerm} />
-        </h1>
-        <p className="text-slate-500 mt-1">
-          <HighlightText text="Bem-vindo ao painel de controle da Atadiesel." highlight={globalSearchTerm} />
-        </p>
-      </div>
-      <div className="flex gap-3">
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm hover:shadow-md transition-all">
-             <Calendar size={18} className="text-slate-500" />
-             <span className="text-sm font-medium text-slate-600">Período:</span>
-             
-             <input 
-               type="date" 
-               value={dateRange.start}
-               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-               className="bg-transparent outline-none text-sm text-slate-600 font-medium cursor-pointer border-b border-transparent hover:border-slate-300 transition-colors"
-             />
-             <span className="text-slate-400 text-sm">até</span>
-             <input 
-               type="date" 
-               value={dateRange.end}
-               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-               className="bg-transparent outline-none text-sm text-slate-600 font-medium cursor-pointer border-b border-transparent hover:border-slate-300 transition-colors"
-             />
-          </div>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 tracking-tight font-parkinsans">
+            <HighlightText text="Visão Geral" highlight={globalSearchTerm} />
+          </h1>
+          <p className="text-slate-500 mt-1">
+            <HighlightText text="Bem-vindo ao painel de controle da Atadiesel." highlight={globalSearchTerm} />
+          </p>
+        </div>
+        
+        <div className="flex gap-3">
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm hover:shadow-md transition-all">
+               <Calendar size={18} className="text-slate-500" />
+               <span className="text-sm font-medium text-slate-600">Período:</span>
+               
+               <input 
+                 type="date" 
+                 value={dateRange.start}
+                 onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                 className="bg-transparent outline-none text-sm text-slate-600 font-medium cursor-pointer border-b border-transparent hover:border-slate-300 transition-colors"
+               />
+               <span className="text-slate-400 text-sm">até</span>
+               <input 
+                 type="date" 
+                 value={dateRange.end}
+                 onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                 className="bg-transparent outline-none text-sm text-slate-600 font-medium cursor-pointer border-b border-transparent hover:border-slate-300 transition-colors"
+               />
+            </div>
 
-          <button 
-            onClick={() => setIsReportModalOpen(true)}
-            className="bg-primary text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/30 active:scale-95"
-          >
-            <TrendingUp size={18} /> Relatórios
-          </button>
+            <button 
+              onClick={() => setIsReportModalOpen(true)}
+              className="bg-primary text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/30 active:scale-95"
+            >
+              <TrendingUp size={18} /> Relatórios
+            </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-6 border-b border-slate-200 mb-6">
+        {hasOverviewPermission && (
+        <button 
+            onClick={() => setActiveTab('overview')}
+            className={`pb-3 text-sm font-medium transition-all relative ${activeTab === 'overview' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+            Visão Geral
+            {activeTab === 'overview' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full" />}
+        </button>
+        )}
+        {hasChecklistDashboardPermission && (
+        <button 
+            onClick={() => setActiveTab('checklist')}
+            className={`pb-3 text-sm font-medium transition-all relative ${activeTab === 'checklist' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+            Dashboard de Checklist
+            {activeTab === 'checklist' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full" />}
+        </button>
+        )}
       </div>
     </div>
 
+    {activeTab === 'overview' && hasOverviewPermission && (
+    <div className="space-y-6 animate-fade-in">
     {/* Grid de Estatísticas Premium */}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <StatCard 
@@ -599,6 +882,8 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
         color="indigo" 
       />
     </div>
+
+
 
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       {/* Gráfico Principal (Area Chart) */}
@@ -733,6 +1018,48 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
         </table>
       </div>
     </div>
+    </div>
+    )}
+
+    {activeTab === 'checklist' && hasChecklistDashboardPermission && (
+      <div className="mt-8 animate-fade-in">
+         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-2">
+                <ClipboardList size={24} className="text-slate-700" />
+                <h2 className="text-xl font-bold text-slate-800">Dashboard de Checklist</h2>
+            </div>
+            
+            <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button 
+                    onClick={() => setChecklistFilter('all')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${checklistFilter === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Todos
+                </button>
+                <button 
+                    onClick={() => setChecklistFilter('daily')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${checklistFilter === 'daily' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Diário
+                </button>
+                <button 
+                    onClick={() => setChecklistFilter('monthly')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${checklistFilter === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Mensal
+                </button>
+            </div>
+         </div>
+
+         {loadingChecklist ? (
+             <div className="flex justify-center items-center py-10 bg-white rounded-xl border border-slate-100 shadow-sm">
+                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+             </div>
+         ) : (
+             <ChecklistAnalytics responses={filteredChecklistData} users={usersList} templates={checklistTemplates} />
+         )}
+      </div>
+    )}
   </div>
   );
 };
@@ -1982,8 +2309,8 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
 
 const ChecklistScreen = ({ session, showToast }) => {
   const [mainTab, setMainTab] = useState('respostas');
-  const [responseTab, setResponseTab] = useState('daily');
-  const [creationTab, setCreationTab] = useState('daily');
+  const [filterType, setFilterType] = useState('all');
+  const [creationTab, setCreationTab] = useState('all');
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState([]);
   const [isDeleteTemplateModalOpen, setIsDeleteTemplateModalOpen] = useState(false);
@@ -1995,6 +2322,8 @@ const ChecklistScreen = ({ session, showToast }) => {
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [assignedTemplateIds, setAssignedTemplateIds] = useState(new Set());
   const [userSearchTerm, setUserSearchTerm] = useState('');
+
+  // Dashboard logic removed as requested
 
   const fetchAssignedStatus = async () => {
     try {
@@ -2012,6 +2341,8 @@ const ChecklistScreen = ({ session, showToast }) => {
   const [viewResponseModalOpen, setViewResponseModalOpen] = useState(false);
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [viewResponseTemplate, setViewResponseTemplate] = useState(null);
+  const [viewOnlyResponses, setViewOnlyResponses] = useState(false);
+  const [userPermissions, setUserPermissions] = useState({});
 
   const handleViewResponse = (response) => {
     let template = savedTemplates.find(t => t.id === response.template_id);
@@ -2026,6 +2357,12 @@ const ChecklistScreen = ({ session, showToast }) => {
     
     setSelectedResponse(response);
     setViewResponseTemplate(template);
+    
+    // Check for specific view-only permission
+    // Logic: If user has 'checklist_view_only_responses', enable simplified view
+    const shouldViewOnlyResponses = userPermissions['checklist_view_only_responses'] === true;
+    setViewOnlyResponses(shouldViewOnlyResponses);
+    
     setViewResponseModalOpen(true);
   };
 
@@ -2036,12 +2373,17 @@ const ChecklistScreen = ({ session, showToast }) => {
   const [assignMode, setAssignMode] = useState('users');
   const [selectedRoles, setSelectedRoles] = useState([]);
 
-  const [dailyResponses, setDailyResponses] = useState([]);
-  const [monthlyResponses, setMonthlyResponses] = useState([]);
+  const [responses, setResponses] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [isLoadingResponses, setIsLoadingResponses] = useState(false);
   const [errorResponses, setErrorResponses] = useState('');
   const [checklistSearchTerm, setChecklistSearchTerm] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterType, checklistSearchTerm]);
 
   // --- FILL CHECKLIST STATE ---
   const [isFillModalOpen, setIsFillModalOpen] = useState(false);
@@ -2115,6 +2457,24 @@ const ChecklistScreen = ({ session, showToast }) => {
   useEffect(() => {
     if (session?.user) {
       fetchTemplates();
+      // Fetch permissions for current user
+      const fetchUserPerms = async () => {
+          const { data } = await supabase.from('profiles').select('permissions').eq('id', session.user.id).single();
+          if (data?.permissions) {
+              setUserPermissions(data.permissions);
+              
+              // Se tiver permissão apenas de visualização, força a aba correta
+              if (data.permissions['checklist_view_only_responses']) {
+                  setViewOnlyResponses(true);
+                  if (data.permissions['checklist_dashboard_view']) {
+                      setMainTab('dashboard');
+                  } else {
+                      setMainTab('respostas');
+                  }
+              }
+          }
+      };
+      fetchUserPerms();
     }
   }, [session]);
 
@@ -2131,18 +2491,21 @@ const ChecklistScreen = ({ session, showToast }) => {
         .single();
       const isAdmin = profile?.role === 'admin' || profile?.role === 'administrador';
       const hasFullAccess = profile?.app_access === true;
-      const canViewAll = isAdmin || hasFullAccess || (profile?.permissions && profile.permissions['Checklist']);
+      const canViewAll = isAdmin || hasFullAccess || (profile?.permissions && (profile.permissions['Checklist'] || profile.permissions['checklist_view_only_responses'] || profile.permissions['checklist_dashboard_view']));
 
+      // Fetch all templates to map types
       const { data: templates } = await supabase
         .from('checklist_templates')
-        .select('id')
-        .eq('type', responseTab);
-      const templateIds = (templates || []).map(t => t.id);
+        .select('id, type, name');
+      
+      const templateMap = {};
+      templates?.forEach(t => {
+        templateMap[t.id] = t;
+      });
 
       let query = supabase
         .from('checklist_responses')
         .select('*')
-        .in('template_id', templateIds)
         .order('created_at', { ascending: false });
 
       if (!canViewAll) {
@@ -2151,11 +2514,15 @@ const ChecklistScreen = ({ session, showToast }) => {
 
       const { data, error } = await query;
       if (error) throw error;
-      if (responseTab === 'daily') {
-        setDailyResponses(data || []);
-      } else {
-        setMonthlyResponses(data || []);
-      }
+      
+      // Enrich data with template info
+      const enrichedData = (data || []).map(r => ({
+          ...r,
+          template_type: templateMap[r.template_id]?.type || 'unknown',
+          template_name: templateMap[r.template_id]?.name || 'Checklist'
+      }));
+
+      setResponses(enrichedData);
     } catch (e) {
       setErrorResponses(e.message || 'Erro ao buscar respostas');
     } finally {
@@ -2170,7 +2537,7 @@ const ChecklistScreen = ({ session, showToast }) => {
           fetchUsersForAssignment();
       }
     }
-  }, [session, mainTab, responseTab]);
+  }, [session, mainTab]);
 
   const fetchUsersForAssignment = async () => {
     const { data } = await supabase
@@ -2290,8 +2657,9 @@ const ChecklistScreen = ({ session, showToast }) => {
       const isAdmin = profile?.role === 'admin' || profile?.role === 'administrador';
       const hasFullAccess = profile?.app_access === true;
       const hasChecklistPermission = profile?.permissions && profile.permissions['Checklist'];
+      const hasViewOnlyPermission = profile?.permissions && profile.permissions['checklist_view_only_responses'];
 
-      if (isAdmin || hasFullAccess || hasChecklistPermission) {
+      if (isAdmin || hasFullAccess || hasChecklistPermission || hasViewOnlyPermission) {
         // Fetch ALL
         const { data, error } = await supabase
           .from('checklist_templates')
@@ -2381,7 +2749,7 @@ const ChecklistScreen = ({ session, showToast }) => {
           type: templateToEdit.type || 'daily',
           sections
         });
-      } else if (mode === 'new-daily') {
+      } else if (mode === 'new' || mode === 'new-daily') {
         setCurrentTemplate({
           id: null,
           name: '',
@@ -2771,45 +3139,53 @@ const ChecklistScreen = ({ session, showToast }) => {
           >
             Respostas
           </button>
-          <button
-            onClick={() => setMainTab('criacoes')}
-            className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${
-              mainTab === 'criacoes' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Criações (Modelos)
-          </button>
+          {!viewOnlyResponses && (
+            <button
+              onClick={() => setMainTab('criacoes')}
+              className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                mainTab === 'criacoes' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Criações (Modelos)
+            </button>
+          )}
         </div>
       </div>
 
+      {/* Dashboard removed */}
+
       {mainTab === 'respostas' && (
         <div className="space-y-4">
-           {/* Sub-abas de Respostas */}
-           <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-2 pt-2 justify-between items-center">
-            <div className="flex overflow-x-auto">
-              <button
-                onClick={() => setResponseTab('daily')}
-                className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
-                  responseTab === 'daily' 
-                    ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                Checklist Diário
-              </button>
-              <button
-                onClick={() => setResponseTab('monthly')}
-                className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
-                  responseTab === 'monthly' 
-                    ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                Checklist Mensal
-              </button>
+           {/* Filters */}
+           <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-4 py-3 justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button 
+                    onClick={() => setFilterType('all')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${filterType === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Todos
+                </button>
+                <button 
+                    onClick={() => setFilterType('daily')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${filterType === 'daily' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Diário
+                </button>
+                <button 
+                    onClick={() => setFilterType('monthly')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${filterType === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Mensal
+                </button>
+              </div>
+              <div className="h-4 w-px bg-slate-200 mx-2"></div>
+              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                Exibindo: {responses.filter(r => (filterType === 'all' || r.template_type === filterType)).length} / {responses.length}
+              </span>
             </div>
             
-            <div className="flex items-center gap-2 pr-2 pb-1">
+            <div className="flex items-center gap-2 pr-2">
                {isSearchOpen ? (
                   <div className="relative animate-fade-in-right flex items-center">
                       <Search size={14} className="absolute left-2.5 text-slate-400" />
@@ -2856,106 +3232,91 @@ const ChecklistScreen = ({ session, showToast }) => {
                  <h3 className="text-xl font-bold text-red-600 mb-2">Erro</h3>
                  <p className="text-slate-500">{errorResponses}</p>
                </div>
-             ) : responseTab === 'daily' ? (
-               dailyResponses && dailyResponses.filter(r => {
-                  if (!checklistSearchTerm) return true;
-                  const term = checklistSearchTerm.toLowerCase();
-                  const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
-                  return (
-                      r.driver_name?.toLowerCase().includes(term) || 
-                      r.vehicle_plate?.toLowerCase().includes(term) ||
-                      userName.includes(term)
-                  );
-               }).length > 0 ? (
-                 <div className="space-y-3">
-                   {dailyResponses.filter(r => {
-                      if (!checklistSearchTerm) return true;
-                      const term = checklistSearchTerm.toLowerCase();
-                      const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
-                      return (
-                          r.driver_name?.toLowerCase().includes(term) || 
-                          r.vehicle_plate?.toLowerCase().includes(term) ||
-                          userName.includes(term)
-                      );
-                   }).map((r) => (
-                     <div key={r.id} className="border border-slate-200 rounded-xl p-4 bg-white flex justify-between">
-                       <div>
-                         <div className="text-sm font-bold text-slate-900">Checklist Diário</div>
-                         <div className="text-xs text-slate-500">Motorista: {r.driver_name || 'N/D'}</div>
-                         <div className="text-xs text-slate-500">Placa: {r.vehicle_plate || 'N/D'}</div>
-                         <div className="text-xs text-slate-500">Preenchido por: {allUsers.find(u => u.id === r.filled_by)?.name || 'N/D'}</div>
-                         <div className="text-xs text-slate-500">Enviado em {new Date(r.created_at).toLocaleString('pt-BR')}</div>
-                       </div>
-                       <div className="flex flex-col items-end gap-2">
-                         <div className="text-xs text-slate-500">Template: {r.template_id}</div>
-                         <button
-                           onClick={() => handleViewResponse(r)}
-                           className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1"
-                         >
-                           <Eye size={14} /> Ver Resposta
-                         </button>
-                       </div>
-                     </div>
-                   ))}
-                 </div>
-               ) : (
-                 <div className="text-center">
-                   <div className="bg-blue-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
-                     <ClipboardList size={48} className="text-blue-400" />
-                   </div>
-                   <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta diária encontrada</h3>
-                   <p className="text-slate-500 mb-6">As respostas enviadas pelos motoristas aparecerão aqui.</p>
-                 </div>
-               )
-             ) : monthlyResponses && monthlyResponses.filter(r => {
-                  if (!checklistSearchTerm) return true;
-                  const term = checklistSearchTerm.toLowerCase();
-                  const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
-                  return (
-                      r.driver_name?.toLowerCase().includes(term) || 
-                      r.vehicle_plate?.toLowerCase().includes(term) ||
-                      userName.includes(term)
-                  );
-               }).length > 0 ? (
-               <div className="space-y-3">
-                 {monthlyResponses.filter(r => {
+             ) : (
+               (() => {
+                 const filteredResponses = responses.filter(r => {
+                    // Filter by Type
+                    if (filterType !== 'all' && r.template_type !== filterType) return false;
+
+                    // Filter by Search Term
                     if (!checklistSearchTerm) return true;
                     const term = checklistSearchTerm.toLowerCase();
                     const userName = allUsers.find(u => u.id === r.filled_by)?.name?.toLowerCase() || '';
                     return (
-                        r.driver_name?.toLowerCase().includes(term) || 
-                        r.vehicle_plate?.toLowerCase().includes(term) ||
+                        (r.driver_name?.toLowerCase() || '').includes(term) || 
+                        (r.vehicle_plate?.toLowerCase() || '').includes(term) ||
                         userName.includes(term)
                     );
-                 }).map((r) => (
-                   <div key={r.id} className="border border-slate-200 rounded-xl p-4 bg-white flex justify-between">
-                     <div>
-                       <div className="text-sm font-bold text-slate-900">Checklist Mensal</div>
-                       <div className="text-xs text-slate-500">Motorista: {r.driver_name || 'N/D'}</div>
-                       <div className="text-xs text-slate-500">Placa: {r.vehicle_plate || 'N/D'}</div>
-                       <div className="text-xs text-slate-500">Preenchido por: {allUsers.find(u => u.id === r.filled_by)?.name || 'N/D'}</div>
-                       <div className="text-xs text-slate-500">Enviado em {new Date(r.created_at).toLocaleString('pt-BR')}</div>
+                 });
+
+                 if (filteredResponses.length === 0) {
+                   return (
+                     <div className="text-center py-12">
+                       <div className="bg-blue-50 p-6 rounded-full inline-flex mb-4">
+                         <ClipboardList size={48} className="text-blue-400" />
+                       </div>
+                       <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta encontrada</h3>
+                       <p className="text-slate-500">Não há checklists preenchidos com os filtros atuais.</p>
                      </div>
-                     <div className="flex flex-col items-end gap-2">
-                       <div className="text-xs text-slate-500">Template: {r.template_id}</div>
-                       <button
-                           onClick={() => handleViewResponse(r)}
-                           className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1"
-                         >
-                           <Eye size={14} /> Ver Resposta
-                         </button>
-                     </div>
+                   );
+                 }
+
+                 const totalPages = Math.ceil(filteredResponses.length / itemsPerPage);
+                 const startIndex = (currentPage - 1) * itemsPerPage;
+                 const currentResponses = filteredResponses.slice(startIndex, startIndex + itemsPerPage);
+
+                 return (
+                   <div className="space-y-3">
+                     {currentResponses.map((r) => (
+                       <div key={r.id} className="border border-slate-200 rounded-xl p-4 bg-white flex justify-between hover:shadow-sm transition-shadow">
+                         <div>
+                           <div className="flex items-center gap-2 mb-1">
+                               <span className={`text-xs font-bold px-2 py-0.5 rounded ${r.template_type === 'daily' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                   {r.template_type === 'daily' ? 'Diário' : r.template_type === 'monthly' ? 'Mensal' : 'Outro'}
+                               </span>
+                               <span className="text-sm font-bold text-slate-900">{r.template_name}</span>
+                           </div>
+                           <div className="text-xs text-slate-500">Motorista: {r.driver_name || 'N/D'}</div>
+                           <div className="text-xs text-slate-500">Placa: {r.vehicle_plate || 'N/D'}</div>
+                           <div className="text-xs text-slate-500">Preenchido por: {allUsers.find(u => u.id === r.filled_by)?.name || 'N/D'}</div>
+                           <div className="text-xs text-slate-500">Enviado em {new Date(r.created_at).toLocaleString('pt-BR')}</div>
+                         </div>
+                         <div className="flex flex-col items-end justify-center gap-2">
+                           <button
+                             onClick={() => handleViewResponse(r)}
+                             className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1"
+                           >
+                             <Eye size={14} /> Ver Resposta
+                           </button>
+                         </div>
+                       </div>
+                     ))}
+                     
+                     {/* Pagination Controls */}
+                     {totalPages > 1 && (
+                        <div className="flex justify-center items-center gap-4 mt-6 pt-4 border-t border-slate-100">
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${currentPage === 1 ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 hover:text-blue-600'}`}
+                            >
+                                Anterior
+                            </button>
+                            <span className="text-sm text-slate-600 font-medium">
+                                Página {currentPage} de {totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={currentPage === totalPages}
+                                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${currentPage === totalPages ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 hover:text-blue-600'}`}
+                            >
+                                Próxima
+                            </button>
+                        </div>
+                     )}
                    </div>
-                 ))}
-               </div>
-             ) : (
-               <div className="text-center">
-                 <div className="bg-purple-50 p-6 rounded-full inline-flex mb-4 animate-pulse">
-                   <ClipboardList size={48} className="text-purple-400" />
-                 </div>
-                 <h3 className="text-xl font-bold text-slate-800 mb-2">Nenhuma resposta mensal encontrada</h3>
-                 <p className="text-slate-500">As respostas mensais aparecerão aqui.</p>
-               </div>
+                 );
+               })()
              )}
           </div>
         </div>
@@ -2963,47 +3324,43 @@ const ChecklistScreen = ({ session, showToast }) => {
 
       {mainTab === 'criacoes' && (
         <div className="space-y-4">
-           {/* Sub-abas de Criações */}
-           <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
-            <button
-              onClick={() => setCreationTab('daily')}
-              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
-                creationTab === 'daily' 
-                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
+           {/* Filtro de Modelos (Abas) */}
+           <div className="flex border-b border-slate-200 bg-white rounded-t-xl px-4 py-3 justify-between items-center">
+             <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button 
+                    onClick={() => setCreationTab('all')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${creationTab === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Todos
+                </button>
+                <button 
+                    onClick={() => setCreationTab('daily')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${creationTab === 'daily' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Diário
+                </button>
+                <button 
+                    onClick={() => setCreationTab('monthly')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${creationTab === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Mensal
+                </button>
+            </div>
+            
+            <button 
+                onClick={() => openTemplateModal('new')}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm shadow-blue-500/20 flex items-center gap-2 transition-all"
             >
-              Checklist Diário
-            </button>
-            <button
-              onClick={() => setCreationTab('monthly')}
-              className={`px-6 py-3 font-medium text-sm transition-all border-b-2 whitespace-nowrap ${
-                creationTab === 'monthly' 
-                  ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Checklist Mensal
+                <Plus size={18} />
+                Novo Modelo
             </button>
           </div>
 
           <div className="bg-white rounded-b-xl shadow-sm border border-slate-100 p-6 relative">
-            {creationTab === 'daily' && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Card Criar Novo (Diário) */}
-                  <button 
-                    onClick={() => openTemplateModal('new-daily')}
-                    className="border-2 border-dashed border-slate-300 rounded-xl p-4 flex flex-col items-center justify-center gap-2 hover:border-primary hover:bg-blue-50/50 transition-all group min-h-[160px]"
-                  >
-                    <div className="bg-slate-100 p-3 rounded-full group-hover:bg-blue-100 transition-colors">
-                      <Plus size={24} className="text-slate-400 group-hover:text-primary" />
-                    </div>
-                    <span className="font-bold text-slate-600 group-hover:text-primary">Criar Novo Modelo</span>
-                  </button>
-
-                  {/* Render Saved Templates (Daily Only) */}
+                  {/* Render Saved Templates */}
                   {savedTemplates
-                    .filter(template => template.type !== 'monthly')
+                    .filter(template => creationTab === 'all' || template.type === creationTab || (creationTab === 'daily' && template.type !== 'monthly'))
                     .map(template => {
                     let sections = [];
                     try {
@@ -3089,7 +3446,6 @@ const ChecklistScreen = ({ session, showToast }) => {
                     );
                   })}
                 </div>
-            )}
 
             {isTemplateModalOpen && (
                   <div 
@@ -3101,15 +3457,28 @@ const ChecklistScreen = ({ session, showToast }) => {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-none">
-                        <div className="flex-1 mr-4">
-                           <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1 block">Nome do Modelo</label>
-                           <input 
-                              type="text" 
-                              value={currentTemplate.name}
-                              onChange={(e) => handleUpdateTemplateName(e.target.value)}
-                              className="text-lg font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-primary focus:outline-none w-full"
-                              placeholder="Nome do Checklist"
-                           />
+                        <div className="flex-1 mr-4 flex gap-4">
+                            <div className="flex-1">
+                                <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1 block">Nome do Modelo</label>
+                                <input 
+                                    type="text" 
+                                    value={currentTemplate.name}
+                                    onChange={(e) => handleUpdateTemplateName(e.target.value)}
+                                    className="text-lg font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-primary focus:outline-none w-full"
+                                    placeholder="Nome do Checklist"
+                                />
+                            </div>
+                            <div className="w-40">
+                                <label className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1 block">Tipo</label>
+                                <select
+                                    value={currentTemplate.type || 'daily'}
+                                    onChange={(e) => setCurrentTemplate(prev => ({ ...prev, type: e.target.value }))}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-800 focus:border-blue-500 focus:outline-none"
+                                >
+                                    <option value="daily">Diário</option>
+                                    <option value="monthly">Mensal</option>
+                                </select>
+                            </div>
                         </div>
                         <button onClick={closeTemplateModal} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
                           <X size={20} />
@@ -3324,8 +3693,9 @@ const ChecklistScreen = ({ session, showToast }) => {
                   </div>
                 )}
 
-            {creationTab !== 'daily' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Seção Mensal Removida (Unificada) */}
+            {false && (
+              <div className="hidden">
                 {/* Card Criar Novo (Mensal) */}
                 <button 
                   onClick={() => openTemplateModal('new-monthly')}
@@ -3633,6 +4003,8 @@ const ChecklistScreen = ({ session, showToast }) => {
                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Veículo</label>
                    <div className="font-medium text-slate-800">{selectedResponse.vehicle_plate || 'N/D'}</div>
                  </div>
+                 {!viewOnlyResponses && (
+                 <>
                  <div>
                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Data</label>
                    <div className="font-medium text-slate-800">{new Date(selectedResponse.created_at).toLocaleString('pt-BR')}</div>
@@ -3641,15 +4013,19 @@ const ChecklistScreen = ({ session, showToast }) => {
                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Modelo</label>
                    <div className="font-medium text-slate-800">{viewResponseTemplate?.name || 'Desconhecido'}</div>
                  </div>
+                 </>
+                 )}
                </div>
 
                <div className="space-y-6">
                  {viewResponseTemplate?.sections && (Array.isArray(viewResponseTemplate.sections) ? viewResponseTemplate.sections : JSON.parse(viewResponseTemplate.sections || '[]')).map((section, sIdx) => (
-                   <div key={sIdx} className="border border-slate-200 rounded-xl overflow-hidden">
+                   <div key={sIdx} className={`border border-slate-200 rounded-xl overflow-hidden ${viewOnlyResponses ? 'border-0' : ''}`}>
+                     {!viewOnlyResponses && (
                      <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 font-semibold text-slate-700">
                        {section.title}
                      </div>
-                     <div className="p-4 space-y-4">
+                     )}
+                     <div className={`${viewOnlyResponses ? 'p-0 space-y-2' : 'p-4 space-y-4'}`}>
                        {section.questions.map((q, qIdx) => {
                          const qText = typeof q === 'object' ? q.text : q;
                          const ansObj = selectedResponse.responses || selectedResponse.answers || selectedResponse.content || selectedResponse.data || {};
@@ -3661,10 +4037,13 @@ const ChecklistScreen = ({ session, showToast }) => {
                          if (answer === true || answer === 'true') displayAnswer = 'Sim';
                          if (answer === false || answer === 'false') displayAnswer = 'Não';
                          
+                         // If viewOnlyResponses is true, we might want to skip unanswered questions? 
+                         // For now, let's keep all but simplify styling
+                         
                          return (
-                           <div key={qIdx} className="flex flex-col gap-1">
-                             <div className="text-sm font-medium text-slate-700">{qText}</div>
-                             <div className="text-sm text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                           <div key={qIdx} className={`flex ${viewOnlyResponses ? 'flex-row items-center justify-between border-b border-slate-100 pb-2 last:border-0' : 'flex-col gap-1'}`}>
+                             <div className={`text-sm font-medium text-slate-700 ${viewOnlyResponses ? 'flex-1' : ''}`}>{qText}</div>
+                             <div className={`text-sm text-slate-600 ${viewOnlyResponses ? 'font-bold' : 'bg-slate-50 p-2 rounded border border-slate-100'}`}>
                                {displayAnswer !== undefined && displayAnswer !== null && displayAnswer !== '' ? (
                                  <span className="font-semibold text-blue-600">{String(displayAnswer)}</span>
                                ) : (
@@ -3795,6 +4174,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     { id: 'Destaques', label: 'Destaques' },
     { id: 'Fidelidade', label: 'Fidelidade' },
     { id: 'Checklist', label: 'Checklist' },
+    { id: 'checklist_view_only_responses', label: 'Checklist: Apenas Respostas' },
+    { id: 'checklist_dashboard_view', label: 'Checklist: Dashboard' },
     { id: 'Usuários', label: 'Usuários' },
     { id: 'Logs', label: 'Logs' },
     { id: 'Entregas', label: 'Entregas' }
@@ -4801,7 +5182,9 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                   </tr>
                </thead>
                <tbody className="text-sm text-slate-600 divide-y divide-slate-100">
-                  {filteredUsers.map((user) => (
+                  {filteredUsers.map((user, index) => {
+                    const isLastItems = filteredUsers.length > 2 && index >= filteredUsers.length - 2;
+                    return (
                     <tr key={user.id} className="hover:bg-slate-50 transition-colors relative">
                       <td className="px-6 py-4 font-medium text-slate-900">
                         <div className="flex items-center gap-3">
@@ -4833,11 +5216,11 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                            {activeMenuId === user.id && (
                              <>
                                <div 
-                                 className="fixed inset-0 z-10" 
+                                 className="fixed inset-0 z-40" 
                                  onClick={() => setActiveMenuId(null)}
                                ></div>
-                               <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-20 overflow-hidden animate-scale-up origin-top-right">
-                                  <div className="py-1">
+                               <div className={`absolute right-0 w-48 bg-white rounded-xl shadow-xl border border-slate-100 z-50 overflow-hidden animate-scale-up ${isLastItems ? 'bottom-full mb-2 origin-bottom-right' : 'mt-2 origin-top-right'}`}>
+                                 <div className="py-1">
                                      <button
                                        onClick={() => handleViewDetails(user)}
                                        className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors"
@@ -4877,7 +5260,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                          </div>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                </tbody>
             </table>
          </div>
@@ -5357,6 +5741,10 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
 const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus }) => {
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationError, setVerificationError] = useState('');
+  const [deliveryToVerify, setDeliveryToVerify] = useState(null);
 
   const statusPriority = {
     'Pendente': 1,
@@ -5401,8 +5789,91 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
     }
   };
 
+  const handleOpenVerification = (delivery) => {
+    setDeliveryToVerify(delivery);
+    setVerificationCode('');
+    setVerificationError('');
+    setIsVerificationModalOpen(true);
+  };
+
+  const handleConfirmVerification = () => {
+    if (verificationCode.trim()) {
+        // Aqui poderia validar o código se houvesse lógica de backend para isso
+        onUpdateStatus(deliveryToVerify.id, 'Entregue');
+        setIsVerificationModalOpen(false);
+        setDeliveryToVerify(null);
+        setVerificationCode('');
+        setVerificationError('');
+    } else {
+        setVerificationError('Por favor, insira o código de verificação.');
+    }
+  };
+
   return (
     <div className="space-y-8">
+      {/* Modal de Verificação de Código */}
+      {isVerificationModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up">
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 className="font-bold text-lg text-slate-800">Confirmar Entrega</h3>
+                    <button onClick={() => setIsVerificationModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="p-6 space-y-4">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
+                        <Info className="text-blue-500 shrink-0 mt-0.5" size={20} />
+                        <div>
+                            <p className="text-sm text-blue-800 font-medium">Confirmação de Segurança</p>
+                            <p className="text-xs text-blue-600 mt-1">
+                                Insira o código de verificação fornecido pelo cliente para confirmar a entrega do pedido <strong>#{deliveryToVerify?.id?.slice(0, 8)}</strong>.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-700">Código de Verificação</label>
+                        <input 
+                            type="text" 
+                            value={verificationCode} 
+                            onChange={(e) => {
+                                setVerificationCode(e.target.value);
+                                if (verificationError) setVerificationError('');
+                            }}
+                            className={`w-full bg-slate-50 border rounded-xl px-4 py-3 outline-none focus:ring-2 transition-all font-bold text-lg text-center tracking-widest uppercase ${
+                                verificationError 
+                                ? 'border-red-300 focus:ring-red-200 focus:border-red-500' 
+                                : 'border-slate-200 focus:ring-primary/20 focus:border-primary'
+                            }`}
+                            placeholder="CÓDIGO"
+                            autoFocus
+                        />
+                        {verificationError && (
+                            <p className="text-xs text-red-500 font-medium flex items-center gap-1 animate-fade-in">
+                                <AlertCircle size={12} /> {verificationError}
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+                    <button onClick={() => setIsVerificationModalOpen(false)} className="flex-1 py-3 px-4 rounded-xl text-slate-600 font-medium hover:bg-slate-200 transition-colors">
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleConfirmVerification}
+                        disabled={!verificationCode.trim()}
+                        className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        <CheckCircle size={20} /> Confirmar
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans mb-6">Controle de Entregas</h1>
         
@@ -5480,13 +5951,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                             Aguardando confirmação do cliente...
                         </div>
                         <button 
-                           onClick={() => {
-                             const code = window.prompt('Insira o código de verificação para concluir manualmente:');
-                             if (code) {
-                               // Aqui poderia validar o código se houvesse lógica de backend para isso
-                               onUpdateStatus(delivery.id, 'Entregue');
-                             }
-                           }}
+                           onClick={() => handleOpenVerification(delivery)}
                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm flex items-center justify-center gap-2"
                        >
                            <CheckCircle size={16} /> Confirmar Entrega
@@ -6858,15 +7323,32 @@ function App() {
 
   const hasPermission = (moduleId) => {
     if (!userProfile) return false;
-    if (userProfile.role === 'admin' || userProfile.role === 'Administrador') return true;
+    const role = userProfile.role?.toLowerCase() || '';
+
+    if (role === 'admin' || role === 'administrador') return true;
     
     // Se existir objeto de permissões, respeita ele.
     if (userProfile.permissions && typeof userProfile.permissions === 'object') {
+        // Exceção: Permissão de visualização apenas de respostas do Checklist libera acesso ao módulo Checklist
+        if (moduleId === 'Checklist' && userProfile.permissions['checklist_view_only_responses']) {
+            return true;
+        }
+        // Exceção: Permissão de visualização do Dashboard de Checklist libera acesso ao módulo Dashboard (Visão Geral)
+        if (moduleId === 'Dashboard' && userProfile.permissions['checklist_dashboard_view']) {
+            return true;
+        }
         return !!userProfile.permissions[moduleId];
     }
     
-    // Fallback: se não tem permissions definido, nega por padrão (segurança restritiva)
-    // Usuários não-admin só devem ver o que lhes foi explicitamente atribuído.
+    // Identifica roles restritas (clientes, entregadores)
+    const isRestrictedRole = role === 'client' || role === 'cliente' || role === 'driver' || role === 'entregador';
+
+    // Se não for restrito (ex: staff, vendedor), permite acesso
+    if (!isRestrictedRole) {
+        return true;
+    }
+
+    // Fallback para restritos sem permissão explícita
     return false;
   };
 
@@ -7126,14 +7608,43 @@ function App() {
 
   const fetchTotalClients = async () => {
     try {
+      console.log('Iniciando busca de total de clientes...');
+      
+      // Tenta buscar com in para pegar variações (client, cliente, user)
       const { count, error } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true })
-        .eq('role', 'client');
+        .in('role', ['client', 'cliente', 'user']);
       
       if (error) {
         console.error('Erro ao buscar total de clientes:', error);
+        
+        // Fallback: Tentar buscar sem filtro para ver se é problema de RLS ou filtro
+        const { count: countAll, error: errorAll } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true });
+          
+        if (errorAll) {
+           console.error('Erro CRÍTICO: Não foi possível ler profiles (RLS provável):', errorAll);
+        } else {
+           console.log('Total de profiles no banco (sem filtro):', countAll);
+        }
+        
       } else {
+        console.log('Total de clientes encontrado:', count);
+        
+        // Se retornou 0, vamos ver quantos profiles existem no total para debug
+        if (count === 0) {
+           const { count: countTotal } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+           console.log('DEBUG: Count retornou 0. Total de profiles na tabela:', countTotal);
+           
+           // Se existirem profiles mas nenhum 'client', talvez o role esteja diferente
+           if (countTotal > 0) {
+              const { data: sampleData } = await supabase.from('profiles').select('role').limit(5);
+              console.log('Amostra de roles:', sampleData);
+           }
+        }
+        
         setTotalClients(count || 0);
       }
     } catch (error) {
@@ -7269,7 +7780,7 @@ function App() {
     };
 
     switch (activeTab) {
-      case 'Dashboard': return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} />);
+      case 'Dashboard': return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} userProfile={userProfile} />);
       case 'Produtos': return renderIfAllowed('Produtos', <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} />);
       case 'Estoque': return renderIfAllowed('Estoque', <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} />);
       case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} />);
@@ -7278,7 +7789,7 @@ function App() {
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
-      default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} />);
+      default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} userProfile={userProfile} />);
     }
   };
 
