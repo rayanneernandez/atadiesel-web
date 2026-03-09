@@ -1075,6 +1075,10 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   // Archive Modal State
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [productToArchive, setProductToArchive] = useState(null);
+
+  // Delete Modal State
+  const [isDeleteProductModalOpen, setIsDeleteProductModalOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState(null);
   
   // products agora vem das props
 
@@ -1306,15 +1310,29 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
     setIsCreateProductModalOpen(true);
   };
 
-  const handleDeleteProduct = async (id) => {
-    if (window.confirm('Tem certeza que deseja excluir este produto?')) {
-      const { error } = await supabase.from('products').delete().eq('id', id);
+  const handleDeleteProduct = (product) => {
+    setProductToDelete(product);
+    setIsDeleteProductModalOpen(true);
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', productToDelete.id);
       if (error) {
         console.error("Erro ao excluir:", error);
         showToast("Erro ao excluir produto.", 'error');
       } else {
+        showToast("Produto excluído com sucesso!", 'success');
         onRefresh();
       }
+    } catch (error) {
+      console.error("Erro inesperado ao excluir:", error);
+      showToast("Erro inesperado ao excluir produto.", 'error');
+    } finally {
+      setIsDeleteProductModalOpen(false);
+      setProductToDelete(null);
     }
   };
 
@@ -1523,6 +1541,44 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
         </div>
       )}
 
+      {/* Modal de Confirmação de Exclusão */}
+      {isDeleteProductModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => setIsDeleteProductModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={32} className="text-red-500" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Excluir Produto?</h3>
+              <p className="text-slate-500 text-sm mb-6">
+                Tem certeza que deseja excluir o produto <span className="font-bold text-slate-700">{productToDelete?.name}</span> permanentemente? Esta ação não pode ser desfeita.
+              </p>
+              
+              <div className="flex gap-3 justify-center">
+                <button 
+                  onClick={() => setIsDeleteProductModalOpen(false)}
+                  className="px-5 py-2.5 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-semibold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDeleteProduct}
+                  className="px-5 py-2.5 bg-red-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors flex items-center gap-2"
+                >
+                  <Trash2 size={16} /> Sim, Excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Confirmação de Arquivamento */}
       {isArchiveModalOpen && (
         <div 
@@ -1689,9 +1745,13 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                 <td className="px-6 py-4"><HighlightText text={product.category} highlight={globalSearchTerm} /></td>
                 <td className="px-6 py-4">
                     <div className="flex flex-col">
-                        <span className="font-bold text-slate-900">R$ {product.price}</span>
-                        {product.promotionalPrice && (
-                            <span className="text-sm text-red-500 line-through">R$ {product.promotionalPrice}</span>
+                        {product.promotionalPrice ? (
+                            <>
+                                <span className="font-bold text-slate-900">R$ {product.promotionalPrice}</span>
+                                <span className="text-sm text-red-500 line-through">R$ {product.price}</span>
+                            </>
+                        ) : (
+                            <span className="font-bold text-slate-900">R$ {product.price}</span>
                         )}
                     </div>
                 </td>
@@ -1709,7 +1769,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                       {product.archived ? <Upload size={18} /> : <Archive size={18} />}
                   </button>
                   <button onClick={() => handleEditProduct(product)} className="text-blue-600 hover:text-blue-900"><Edit size={18} /></button>
-                  <button onClick={() => handleDeleteProduct(product.id)} className="text-red-600 hover:text-red-900"><Trash2 size={18} /></button>
+                  <button onClick={() => handleDeleteProduct(product)} className="text-red-600 hover:text-red-900"><Trash2 size={18} /></button>
                 </td>
               </tr>
             ))}
@@ -5008,54 +5068,6 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                    className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20"
                 >
                    Salvar Alteração
-                </button>
-             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Exclusão de Usuário */}
-      {isDeleteUserModalOpen && selectedUser && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
-          onClick={() => setIsDeleteUserModalOpen(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-red-50">
-                <h3 className="font-bold text-lg text-red-800 flex items-center gap-2">
-                   <AlertTriangle size={20} className="text-red-600" />
-                   Excluir Usuário
-                </h3>
-                <button onClick={() => setIsDeleteUserModalOpen(false)} className="text-red-400 hover:text-red-600 hover:bg-red-100/50 p-1 rounded-full transition-colors">
-                   <X size={20} />
-                </button>
-             </div>
-             
-             <div className="p-6 space-y-4">
-                <p className="text-slate-600">
-                  Tem certeza que deseja excluir o usuário <strong>{selectedUser.name}</strong>?
-                </p>
-                <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">
-                  <p className="font-bold mb-1">Atenção:</p>
-                  <p>Esta ação é irreversível. O usuário perderá o acesso imediatamente.</p>
-                </div>
-             </div>
-
-             <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
-                <button 
-                   onClick={() => setIsDeleteUserModalOpen(false)}
-                   className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
-                >
-                   Cancelar
-                </button>
-                <button 
-                   onClick={handleDeleteUser}
-                   className="flex-1 bg-red-600 text-white font-bold py-2.5 rounded-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20"
-                >
-                   Excluir
                 </button>
              </div>
           </div>
