@@ -543,7 +543,23 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
   const averageTicket = totalOrders > 0 ? monthlyRevenue / totalOrders : 0;
 
   // Formatação de Moeda
-  const formatCurrency = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const toNumber = (v) => {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (!s) return 0;
+      const cleaned = s.replace(/[^\d.,-]/g, '');
+      const hasComma = cleaned.includes(',');
+      const normalized = hasComma ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned;
+      const n = Number(normalized);
+      return Number.isFinite(n) ? n : 0;
+    }
+    return 0;
+  };
+
+  const formatCurrency = (val) => toNumber(val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatCurrencyNoWrap = (val) => formatCurrency(val).replace(/\s/g, '\u00A0');
   
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportConfig, setReportConfig] = useState({
@@ -583,73 +599,215 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
 
     let yPos = 40;
 
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const ensureSpace = (extraHeight = 30) => {
+      if (yPos + extraHeight > pageHeight - 14) {
+        doc.addPage();
+        yPos = 20;
+      }
+    };
+
+    const periodLabel = `${dateRange?.start || ''} até ${dateRange?.end || ''}`;
+
     if (reportConfig.overview) {
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
       doc.text('Visão Geral (KPIs)', 14, yPos);
       yPos += 5;
-      
-      const kpiData = [
-        ['Métrica', 'Valor', 'Tendência'],
-        ['Clientes Ativos', '1.250', '+12.5%'],
-        ['Total de Pedidos', '450', '+8.2%'],
-        ['Receita Mensal', 'R$ 125.000,00', '-2.4%'],
-        ['Ticket Médio', 'R$ 345,00', '+1.3%']
+
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Período selecionado: ${periodLabel}`, 14, yPos);
+      yPos += 5;
+
+      const outOfStock = (products || []).filter(p => Number(p.stock || 0) <= 0).length;
+      const lowStock = (products || []).filter(p => {
+        const s = Number(p.stock || 0);
+        return s > 0 && s <= 5;
+      }).length;
+
+      const deliveriesInProgressCount = (deliveries || []).filter(d => d.status !== 'Entregue' && d.status !== 'Cancelado').length;
+      const deliveriesCompletedCount = (deliveries || []).filter(d => d.status === 'Entregue' || d.status === 'Cancelado').length;
+
+      const kpiRows = [
+        ['Clientes (Total)', String(totalClients || 0), 'Clientes Ativos (com pedidos)', String(activeClients || 0)],
+        ['Total de Entregas', String(totalOrders || 0), 'Entregas em Andamento', String(deliveriesInProgressCount)],
+        ['Entregas Concluídas', String(deliveriesCompletedCount), 'Receita (Entregas)', formatCurrencyNoWrap(monthlyRevenue || 0)],
+        ['Ticket Médio', formatCurrencyNoWrap(averageTicket || 0), 'Produtos Cadastrados', String((products || []).length)],
+        ['Sem Estoque', String(outOfStock), 'Estoque Baixo (≤ 5)', String(lowStock)]
       ];
-      
+
+      ensureSpace(60);
       autoTable(doc, {
         startY: yPos,
-        head: [kpiData[0]],
-        body: kpiData.slice(1),
+        head: [['Métrica', 'Valor', 'Métrica', 'Valor']],
+        body: kpiRows,
         theme: 'grid',
         headStyles: { fillColor: [0, 71, 171] },
-        styles: { fontSize: 10 }
+        styles: { fontSize: 10 },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 40, halign: 'right' },
+          2: { cellWidth: 50 },
+          3: { cellWidth: 40, halign: 'right' }
+        }
       });
-      
-      yPos = doc.lastAutoTable.finalY + 15;
+
+      yPos = doc.lastAutoTable.finalY + 12;
+
+      // Top Produtos e Categorias (para deixar a visão geral completa)
+      const topProductsForReport = (processedTopProducts || []).slice(0, 10).map(p => [
+        p.name,
+        String(p.sales),
+        formatCurrencyNoWrap(p.price || 0),
+        p.growth || ''
+      ]);
+      const topCategoriesForReport = (processedCategories || []).slice(0, 10).map(c => [c.name, String(c.value)]);
+
+      if (topProductsForReport.length > 0) {
+        ensureSpace(60);
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Top Produtos (por quantidade)', 14, yPos);
+        yPos += 4;
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Produto', 'Qtd', 'Valor', 'Crescimento']],
+          body: topProductsForReport,
+          theme: 'striped',
+          headStyles: { fillColor: [0, 71, 171] },
+          styles: { fontSize: 9 },
+          columnStyles: {
+            0: { cellWidth: 80 },
+            1: { cellWidth: 18, halign: 'right' },
+            2: { cellWidth: 32, halign: 'right' },
+            3: { cellWidth: 40, halign: 'right' }
+          }
+        });
+        yPos = doc.lastAutoTable.finalY + 10;
+      }
+
+      if (topCategoriesForReport.length > 0) {
+        ensureSpace(50);
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.text('Top Categorias (por quantidade)', 14, yPos);
+        yPos += 4;
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Categoria', 'Qtd']],
+          body: topCategoriesForReport,
+          theme: 'striped',
+          headStyles: { fillColor: [0, 71, 171] },
+          styles: { fontSize: 9 }
+        });
+        yPos = doc.lastAutoTable.finalY + 12;
+      }
     }
 
     if (reportConfig.products) {
+      ensureSpace(40);
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text('Estoque e Vendas', 14, yPos);
+      doc.text('Produtos (Estoque Completo)', 14, yPos);
       yPos += 5;
-      
-      const productData = processedTopProducts.map(p => [p.name, p.sales, `R$ ${p.price}`, p.growth]);
-      
+
+      const productRows = (products || [])
+        .slice()
+        .sort((a, b) => {
+          const ca = (a.category || '').toString().toLowerCase();
+          const cb = (b.category || '').toString().toLowerCase();
+          if (ca !== cb) return ca.localeCompare(cb);
+          const na = (a.name || a.title || '').toString().toLowerCase();
+          const nb = (b.name || b.title || '').toString().toLowerCase();
+          return na.localeCompare(nb);
+        })
+        .map(p => {
+          const name = p.name || p.title || '-';
+          const category = p.category || '-';
+          const stock = (p.stock ?? 0);
+
+          const priceCents = p.price_cents ?? p.rawPriceCents;
+          const promoCents = p.old_price_cents ?? p.rawOldPriceCents;
+
+          const priceNum = (priceCents !== undefined && priceCents !== null)
+            ? (Number(priceCents) / 100)
+            : toNumber(p.price);
+
+          const promoNum = (promoCents !== undefined && promoCents !== null)
+            ? (Number(promoCents) / 100)
+            : toNumber(p.promotionalPrice);
+
+          const sku = p.sku || '-';
+
+          return [
+            String(name),
+            String(category),
+            String(stock),
+            formatCurrencyNoWrap(priceNum || 0),
+            promoNum ? formatCurrencyNoWrap(promoNum || 0) : '-',
+            String(sku)
+          ];
+        });
+
+      ensureSpace(60);
       autoTable(doc, {
         startY: yPos,
-        head: [['Produto', 'Vendas', 'Preço', 'Crescimento']],
-        body: productData,
+        head: [['Produto', 'Categoria', 'Estoque', 'Preço', 'Promoção', 'SKU']],
+        body: productRows,
         theme: 'striped',
         headStyles: { fillColor: [0, 71, 171] },
-        styles: { fontSize: 10 }
+        styles: { fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 60 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 15, halign: 'right' },
+          3: { cellWidth: 25, halign: 'right' },
+          4: { cellWidth: 25, halign: 'right' },
+          5: { cellWidth: 25 }
+        }
       });
-      
-      yPos = doc.lastAutoTable.finalY + 15;
+
+      yPos = doc.lastAutoTable.finalY + 12;
     }
 
     if (reportConfig.deliveries) {
+      ensureSpace(40);
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text('Relatório de Entregas', 14, yPos);
+      doc.text('Entregas (Lista Completa)', 14, yPos);
       yPos += 5;
-      
-      const filteredDeliveries = deliveries.filter(d => {
-        if (reportConfig.deliveriesCompleted && d.status === 'Entregue') return true;
+
+      const filteredDeliveries = (deliveries || []).filter(d => {
+        if (reportConfig.deliveriesCompleted && (d.status === 'Entregue' || d.status === 'Cancelado')) return true;
         if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação')) return true;
         return false;
       });
 
-      const deliveryRows = filteredDeliveries.map(d => [d.client, d.items, d.status, d.date, `R$ ${d.value}`]);
+      const deliveryRows = filteredDeliveries.map(d => {
+        const idShort = d.id ? String(d.id).slice(0, 8) : '-';
+        const client = d.client || '-';
+        const status = d.status || '-';
+        const date = d.date || '-';
+        const value = formatCurrencyNoWrap(d.value || 0);
+        return [idShort, client, status, date, value];
+      });
 
+      ensureSpace(60);
       autoTable(doc, {
         startY: yPos,
-        head: [['Cliente', 'Itens', 'Status', 'Data', 'Valor']],
+        head: [['ID', 'Cliente', 'Status', 'Data', 'Valor']],
         body: deliveryRows,
         theme: 'striped',
         headStyles: { fillColor: [0, 71, 171] },
-        styles: { fontSize: 10 }
+        styles: { fontSize: 9 },
+        columnStyles: {
+          0: { cellWidth: 20 },
+          1: { cellWidth: 60 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 37, halign: 'right' }
+        }
       });
     }
 
@@ -661,40 +819,78 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
     const today = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
 
     if (reportConfig.overview) {
+      const outOfStock = (products || []).filter(p => Number(p.stock || 0) <= 0).length;
+      const lowStock = (products || []).filter(p => {
+        const s = Number(p.stock || 0);
+        return s > 0 && s <= 5;
+      }).length;
+
+      const deliveriesInProgressCount = (deliveries || []).filter(d => d.status !== 'Entregue' && d.status !== 'Cancelado').length;
+      const deliveriesCompletedCount = (deliveries || []).filter(d => d.status === 'Entregue' || d.status === 'Cancelado').length;
+
       const kpiData = [
-        { Metrica: 'Clientes Ativos', Valor: '1.250', Tendencia: '+12.5%' },
-        { Metrica: 'Total de Pedidos', Valor: '450', Tendencia: '+8.2%' },
-        { Metrica: 'Receita Mensal', Valor: 125000, Tendencia: '-2.4%' },
-        { Metrica: 'Ticket Médio', Valor: 345, Tendencia: '+1.3%' }
+        { Metrica: 'Período', Valor: `${dateRange?.start || ''} até ${dateRange?.end || ''}` },
+        { Metrica: 'Clientes (Total)', Valor: totalClients || 0 },
+        { Metrica: 'Clientes Ativos (com pedidos)', Valor: activeClients || 0 },
+        { Metrica: 'Total de Entregas', Valor: totalOrders || 0 },
+        { Metrica: 'Entregas em Andamento', Valor: deliveriesInProgressCount },
+        { Metrica: 'Entregas Concluídas', Valor: deliveriesCompletedCount },
+        { Metrica: 'Receita (Entregas)', Valor: Number(monthlyRevenue || 0) },
+        { Metrica: 'Ticket Médio', Valor: Number(averageTicket || 0) },
+        { Metrica: 'Produtos Cadastrados', Valor: (products || []).length },
+        { Metrica: 'Sem Estoque', Valor: outOfStock },
+        { Metrica: 'Estoque Baixo (<= 5)', Valor: lowStock }
       ];
       const ws = XLSX.utils.json_to_sheet(kpiData);
       XLSX.utils.book_append_sheet(wb, ws, "Visão Geral");
     }
 
     if (reportConfig.products) {
-      const productData = processedTopProducts.map(p => ({
-        Produto: p.name,
-        Vendas: p.sales,
-        Preco: p.price,
-        Crescimento: p.growth
-      }));
+      const productData = (products || []).map(p => {
+        const name = p.name || p.title || '-';
+        const category = p.category || '-';
+        const stock = (p.stock ?? 0);
+
+        const priceCents = p.price_cents ?? p.rawPriceCents;
+        const promoCents = p.old_price_cents ?? p.rawOldPriceCents;
+
+        const priceNum = (priceCents !== undefined && priceCents !== null)
+          ? (Number(priceCents) / 100)
+          : toNumber(p.price);
+
+        const promoNum = (promoCents !== undefined && promoCents !== null)
+          ? (Number(promoCents) / 100)
+          : toNumber(p.promotionalPrice);
+
+        const round2 = (n) => Math.round(toNumber(n) * 100) / 100;
+
+        return {
+          Produto: name,
+          Categoria: category,
+          Estoque: stock,
+          Preco: round2(priceNum || 0),
+          Promocao: promoNum ? round2(promoNum || 0) : null,
+          SKU: p.sku || null
+        };
+      });
       const ws = XLSX.utils.json_to_sheet(productData);
       XLSX.utils.book_append_sheet(wb, ws, "Produtos");
     }
 
     if (reportConfig.deliveries) {
-      const filteredDeliveries = deliveries.filter(d => {
-        if (reportConfig.deliveriesCompleted && d.status === 'Entregue') return true;
+      const filteredDeliveries = (deliveries || []).filter(d => {
+        if (reportConfig.deliveriesCompleted && (d.status === 'Entregue' || d.status === 'Cancelado')) return true;
         if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação')) return true;
         return false;
       });
 
       const deliveryData = filteredDeliveries.map(d => ({
-        Cliente: d.client,
-        Itens: d.items,
-        Status: d.status,
-        Data: d.date,
-        Valor: d.value
+        ID: d.id || null,
+        Cliente: d.client || null,
+        Status: d.status || null,
+        Data: d.date || null,
+        Itens: d.items || null,
+        Valor: Math.round(toNumber(d.value || 0) * 100) / 100
       }));
       const ws = XLSX.utils.json_to_sheet(deliveryData);
       XLSX.utils.book_append_sheet(wb, ws, "Entregas");
