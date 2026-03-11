@@ -2453,7 +2453,50 @@ const ChecklistScreen = ({ session, showToast }) => {
   const [fillVehiclePlate, setFillVehiclePlate] = useState('');
   const [fillOdometer, setFillOdometer] = useState('');
 
-  const openFillModal = (template) => {
+  const getTodayRangeIso = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    return { startISO: start.toISOString(), endISO: end.toISOString() };
+  };
+
+  const openFillModal = async (template) => {
+    const user = session?.user;
+    if (!user) {
+      showToast('Usuário não autenticado', 'error');
+      return;
+    }
+
+    if (template?.archived) {
+      showToast('Este checklist está arquivado e não pode ser respondido. Desarquive para liberar.', 'warning');
+      return;
+    }
+
+    if (template?.type === 'daily') {
+      try {
+        const { startISO, endISO } = getTodayRangeIso();
+        const { data, error } = await supabase
+          .from('checklist_responses')
+          .select('id')
+          .eq('template_id', template.id)
+          .eq('filled_by', user.id)
+          .gte('created_at', startISO)
+          .lt('created_at', endISO)
+          .limit(1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          showToast('Você já respondeu este checklist diário hoje. Amanhã estará disponível novamente.', 'warning');
+          return;
+        }
+      } catch (error) {
+        console.error('Erro ao validar checklist diário:', error);
+        showToast('Erro ao validar checklist diário: ' + (error.message || 'Erro desconhecido'), 'error');
+        return;
+      }
+    }
+
     setTemplateToFill(template);
     setFillAnswers({});
     setFillDriverName('');
@@ -2471,16 +2514,30 @@ const ChecklistScreen = ({ session, showToast }) => {
 
   const handleSaveResponse = async () => {
     if (!templateToFill) return;
-    
-    // Validate required fields (optional, but good practice)
-    if (templateToFill.type === 'daily' && (!fillDriverName || !fillVehiclePlate)) {
-       // Optional: enforce driver name and plate for daily checklists if desired
-       // For now, let's keep it flexible but maybe warn?
-    }
 
     try {
       const user = session?.user;
       if (!user) throw new Error('Usuário não autenticado');
+
+      if (templateToFill.type === 'daily') {
+        const { startISO, endISO } = getTodayRangeIso();
+        const { data, error: existingError } = await supabase
+          .from('checklist_responses')
+          .select('id')
+          .eq('template_id', templateToFill.id)
+          .eq('filled_by', user.id)
+          .gte('created_at', startISO)
+          .lt('created_at', endISO)
+          .limit(1);
+
+        if (existingError) throw existingError;
+
+        if (data && data.length > 0) {
+          showToast('Você já respondeu este checklist diário hoje. Amanhã estará disponível novamente.', 'warning');
+          setIsFillModalOpen(false);
+          return;
+        }
+      }
 
       const responsePayload = {
         template_id: templateToFill.id,
@@ -2488,8 +2545,7 @@ const ChecklistScreen = ({ session, showToast }) => {
         driver_name: fillDriverName,
         vehicle_plate: fillVehiclePlate,
         odometer: fillOdometer,
-        responses: fillAnswers, // Store answers as JSONB
-        created_at: new Date().toISOString()
+        responses: fillAnswers
       };
 
       const { error } = await supabase
@@ -2500,14 +2556,13 @@ const ChecklistScreen = ({ session, showToast }) => {
 
       showToast('Checklist enviado com sucesso!', 'success');
       setIsFillModalOpen(false);
-      
-      // Refresh responses if we are on the responses tab
+
       if (mainTab === 'respostas') {
         fetchResponses();
       }
     } catch (error) {
       console.error('Erro ao salvar resposta:', error);
-      showToast('Erro ao enviar checklist: ' + error.message, 'error');
+      showToast('Erro ao enviar checklist: ' + (error.message || 'Erro desconhecido'), 'error');
     }
   };
 
@@ -3011,6 +3066,28 @@ const ChecklistScreen = ({ session, showToast }) => {
     }
   };
 
+  const handleToggleArchiveTemplate = async (template) => {
+    if (!template?.id) return;
+
+    const newStatus = !template.archived;
+    const action = newStatus ? 'arquivar' : 'desarquivar';
+
+    try {
+      const { error } = await supabase
+        .from('checklist_templates')
+        .update({ archived: newStatus })
+        .eq('id', template.id);
+
+      if (error) throw error;
+
+      setSavedTemplates(prev => prev.map(t => (t.id === template.id ? { ...t, archived: newStatus } : t)));
+      showToast(`Modelo ${newStatus ? 'arquivado' : 'desarquivado'} com sucesso!`, 'success');
+    } catch (error) {
+      console.error(`Erro ao ${action} modelo:`, error);
+      showToast(`Erro ao ${action} modelo: ` + (error.message || 'Erro desconhecido'), 'error');
+    }
+  };
+
   const generatePDF = (templateOverride = null, isPreview = false, returnBlob = false, responseOverride = null) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -3405,6 +3482,12 @@ const ChecklistScreen = ({ session, showToast }) => {
                 >
                     Mensal
                 </button>
+                <button 
+                    onClick={() => setCreationTab('archived')}
+                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${creationTab === 'archived' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Arquivados
+                </button>
             </div>
             
             <button 
@@ -3420,7 +3503,18 @@ const ChecklistScreen = ({ session, showToast }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Render Saved Templates */}
                   {savedTemplates
-                    .filter(template => creationTab === 'all' || template.type === creationTab || (creationTab === 'daily' && template.type !== 'monthly'))
+                    .filter(template => {
+                      const isArchived = template.archived === true;
+
+                      if (creationTab === 'archived') return isArchived;
+                      if (isArchived) return false;
+
+                      if (creationTab === 'all') return true;
+                      if (creationTab === 'daily') return template.type !== 'monthly';
+                      if (creationTab === 'monthly') return template.type === 'monthly';
+
+                      return true;
+                    })
                     .map(template => {
                     let sections = [];
                     try {
@@ -3441,18 +3535,34 @@ const ChecklistScreen = ({ session, showToast }) => {
                     
                     return (
                       <div key={template.id} className="border border-slate-200 rounded-xl p-4 bg-white hover:bg-slate-50 transition-shadow shadow-sm hover:shadow-md flex flex-col justify-between relative group/card">
-                        <button 
-                            onClick={() => handleDeleteTemplate(template.id)}
-                            className="absolute top-2 right-2 text-slate-300 hover:text-red-500 opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
-                            title="Excluir Modelo"
-                        >
-                            <Trash2 size={16} />
-                        </button>
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleToggleArchiveTemplate(template)}
+                            className="text-slate-300 hover:text-slate-700 transition-colors p-1"
+                            title={template.archived ? 'Desarquivar Modelo' : 'Arquivar Modelo'}
+                          >
+                            {template.archived ? <Upload size={16} /> : <Archive size={16} />}
+                          </button>
+                          {template.archived && (
+                            <button 
+                              onClick={() => handleDeleteTemplate(template.id)}
+                              className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                              title="Excluir Modelo"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
                         <div>
                           <div className="flex items-start justify-between gap-2 mb-2 pr-6">
                             <div>
                               <div className="flex items-center gap-2">
                                 <h2 className="text-base font-bold text-slate-900 line-clamp-1">{template.name}</h2>
+                                {template.archived && (
+                                  <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
+                                    ARQUIVADO
+                                  </span>
+                                )}
                                 {assignedTemplateIds.has(template.id) && (
                                     <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200">
                                         ATRIBUÍDO
