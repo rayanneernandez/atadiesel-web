@@ -32,6 +32,7 @@ import {
   Info,
   MoreHorizontal,
   Eye,
+  EyeOff,
   MapPin,
   Clock,
   CheckCircle,
@@ -4511,6 +4512,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   const [newRoleSelection, setNewRoleSelection] = useState('user');
   const [passwordDraft, setPasswordDraft] = useState('');
   const [passwordDraftConfirm, setPasswordDraftConfirm] = useState('');
+  const [showPasswordDraft, setShowPasswordDraft] = useState(false);
+  const [showPasswordDraftConfirm, setShowPasswordDraftConfirm] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // Configuração de Cargos
@@ -4804,6 +4807,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     setSelectedUser(user);
     setPasswordDraft('');
     setPasswordDraftConfirm('');
+    setShowPasswordDraft(false);
+    setShowPasswordDraftConfirm(false);
     setIsChangePasswordModalOpen(true);
     setActiveMenuId(null);
   };
@@ -5472,27 +5477,47 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
               <div className="space-y-2">
                 <label className="block text-sm font-bold text-slate-700">Nova senha</label>
-                <input
-                  type="password"
-                  value={passwordDraft}
-                  onChange={(e) => setPasswordDraft(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
-                  placeholder="Digite a nova senha"
-                  autoFocus
-                  disabled={isChangingPassword}
-                />
+                <div className="relative">
+                  <input
+                    type={showPasswordDraft ? 'text' : 'password'}
+                    value={passwordDraft}
+                    onChange={(e) => setPasswordDraft(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
+                    placeholder="Digite a nova senha"
+                    autoFocus
+                    disabled={isChangingPassword}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordDraft(v => !v)}
+                    className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-primary transition-colors"
+                    disabled={isChangingPassword}
+                  >
+                    {showPasswordDraft ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
                 <label className="block text-sm font-bold text-slate-700">Confirmar nova senha</label>
-                <input
-                  type="password"
-                  value={passwordDraftConfirm}
-                  onChange={(e) => setPasswordDraftConfirm(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
-                  placeholder="Confirme a nova senha"
-                  disabled={isChangingPassword}
-                />
+                <div className="relative">
+                  <input
+                    type={showPasswordDraftConfirm ? 'text' : 'password'}
+                    value={passwordDraftConfirm}
+                    onChange={(e) => setPasswordDraftConfirm(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
+                    placeholder="Confirme a nova senha"
+                    disabled={isChangingPassword}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordDraftConfirm(v => !v)}
+                    className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-primary transition-colors"
+                    disabled={isChangingPassword}
+                  >
+                    {showPasswordDraftConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
 
               <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-sm">
