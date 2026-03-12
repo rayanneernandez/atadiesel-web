@@ -52,6 +52,7 @@ import {
   History,
   List,
   Lock,
+  KeyRound,
   Archive,
   RefreshCw,
 } from 'lucide-react';
@@ -4504,9 +4505,13 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isChangeRoleModalOpen, setIsChangeRoleModalOpen] = useState(false);
   const [isCreateRoleModalOpen, setIsCreateRoleModalOpen] = useState(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [newRoleSelection, setNewRoleSelection] = useState('user');
+  const [passwordDraft, setPasswordDraft] = useState('');
+  const [passwordDraftConfirm, setPasswordDraftConfirm] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // Configuração de Cargos
   const [rolesList, setRolesList] = useState([]);
@@ -4793,6 +4798,58 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     setNewRoleSelection(user.role || 'client');
     setIsChangeRoleModalOpen(true);
     setActiveMenuId(null);
+  };
+
+  const handleOpenChangePasswordModal = (user) => {
+    setSelectedUser(user);
+    setPasswordDraft('');
+    setPasswordDraftConfirm('');
+    setIsChangePasswordModalOpen(true);
+    setActiveMenuId(null);
+  };
+
+  const handleChangePassword = async () => {
+    if (!selectedUser) return;
+
+    const pwd = (passwordDraft || '').trim();
+    const confirm = (passwordDraftConfirm || '').trim();
+
+    if (!pwd || !confirm) return showToast('Por favor, preencha os dois campos de senha.', 'warning');
+    if (pwd.length < 6) return showToast('A senha deve ter pelo menos 6 caracteres.', 'warning');
+    if (pwd !== confirm) return showToast('As senhas não conferem.', 'warning');
+
+    setIsChangingPassword(true);
+    try {
+      const { error } = await supabase.rpc('set_user_password', {
+        user_id: selectedUser.id,
+        new_password: pwd,
+      });
+
+      if (error) {
+        if (error.message?.includes('function') && error.message?.includes('not found')) {
+          throw new Error("Função de alteração de senha não encontrada. Execute o SQL de 'set_user_password' no Supabase.");
+        }
+        throw error;
+      }
+
+      showToast(`Senha de ${selectedUser.name} alterada com sucesso!`, 'success');
+
+      if (logAction) {
+        logAction('USER_CHANGE', selectedUser.name || selectedUser.email || 'Usuário', {
+          action: 'reset_password',
+          target_email: selectedUser.email,
+        });
+      }
+
+      setIsChangePasswordModalOpen(false);
+      setPasswordDraft('');
+      setPasswordDraftConfirm('');
+    } catch (error) {
+      console.error('Erro ao alterar senha:', error);
+      showToast('Erro ao alterar senha: ' + (error.message || 'Erro desconhecido'), 'error');
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleChangeRole = async () => {
@@ -5380,6 +5437,89 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
         </div>
       )}
 
+      {/* Modal de Alteração de Senha */}
+      {isChangePasswordModalOpen && selectedUser && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
+          onClick={() => !isChangingPassword && setIsChangePasswordModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                <KeyRound size={20} className="text-primary" />
+                Alterar Senha
+              </h3>
+              <button
+                onClick={() => !isChangingPassword && setIsChangePasswordModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors"
+                disabled={isChangingPassword}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="text-center">
+                <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-2xl border-4 border-white shadow-lg mx-auto mb-2">
+                  {selectedUser.name.charAt(0)}
+                </div>
+                <h2 className="text-lg font-bold text-slate-900">{selectedUser.name}</h2>
+                <p className="text-sm text-slate-500">{selectedUser.email}</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-bold text-slate-700">Nova senha</label>
+                <input
+                  type="password"
+                  value={passwordDraft}
+                  onChange={(e) => setPasswordDraft(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
+                  placeholder="Digite a nova senha"
+                  autoFocus
+                  disabled={isChangingPassword}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-bold text-slate-700">Confirmar nova senha</label>
+                <input
+                  type="password"
+                  value={passwordDraftConfirm}
+                  onChange={(e) => setPasswordDraftConfirm(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
+                  placeholder="Confirme a nova senha"
+                  disabled={isChangingPassword}
+                />
+              </div>
+
+              <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-sm">
+                Essa ação redefine a senha do usuário. Não compartilhe a senha por canais inseguros.
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+              <button
+                onClick={() => setIsChangePasswordModalOpen(false)}
+                className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-60"
+                disabled={isChangingPassword}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleChangePassword}
+                className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-60"
+                disabled={isChangingPassword}
+              >
+                {isChangingPassword ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Exclusão de Usuário */}
       {isDeleteUserModalOpen && selectedUser && (
         <div 
@@ -5559,6 +5699,13 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                                      >
                                         <UserCog size={16} className="text-slate-400" /> 
                                         Alterar Cargo
+                                     </button>
+                                     <button
+                                       onClick={() => handleOpenChangePasswordModal(user)}
+                                       className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
+                                     >
+                                        <KeyRound size={16} className="text-slate-400" /> 
+                                        Alterar Senha
                                      </button>
                                      <button
                                        onClick={() => {
@@ -5828,6 +5975,7 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                                                     {log.details.action === 'create_role' && 'Novo Cargo Criado'}
                                                     {log.details.action === 'update_role' && 'Alteração de Cargo'}
                                                     {log.details.action === 'update_permissions' && 'Alteração de Permissões'}
+                                                    {log.details.action === 'reset_password' && 'Senha Redefinida'}
                                                 </div>
                                                 
                                                 {log.details.action === 'create_user' && (
