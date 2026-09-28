@@ -58,6 +58,59 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import LoginScreen from './login';
+
+// --- CARGOS ---
+// No banco os cargos aparecem com variações (admin, client, cliente, driver...).
+// Na interface sempre mostramos o nome em português.
+const normalizeRoleKey = (role) => {
+  const r = (role || '').toString().trim().toLowerCase();
+  if (['admin', 'administrador'].includes(r)) return 'admin';
+  if (['client', 'cliente', 'user'].includes(r)) return 'cliente';
+  if (['driver', 'entregador'].includes(r)) return 'entregador';
+  if (['funcionario', 'funcionário', 'employee'].includes(r)) return 'funcionario';
+  return r;
+};
+
+const DEFAULT_ROLES = [
+  { key: 'admin', label: 'Administrador', dbValue: 'admin' },
+  { key: 'cliente', label: 'Cliente', dbValue: 'client' },
+  { key: 'entregador', label: 'Entregador', dbValue: 'entregador' },
+  { key: 'funcionario', label: 'Funcionário', dbValue: 'funcionário' },
+];
+
+const getRoleLabel = (role, rolesList = []) => {
+  const key = normalizeRoleKey(role);
+  const def = DEFAULT_ROLES.find(r => r.key === key);
+  if (def) return def.label;
+  const custom = rolesList.find(r => normalizeRoleKey(r.id) === key);
+  if (custom?.label) return custom.label;
+  return key ? key.charAt(0).toUpperCase() + key.slice(1) : '-';
+};
+
+// Lista única de cargos (padrão + criados na tabela roles), sem duplicatas
+const buildRoleOptions = (rolesList = []) => {
+  const options = DEFAULT_ROLES.map(r => ({
+    ...r,
+    permissions: rolesList.find(x => normalizeRoleKey(x.id) === r.key)?.permissions ?? null,
+  }));
+  rolesList.forEach(r => {
+    const key = normalizeRoleKey(r.id);
+    if (!options.some(o => o.key === key)) {
+      options.push({ key, label: r.label || getRoleLabel(r.id), dbValue: r.id, permissions: r.permissions ?? null });
+    }
+  });
+  return options;
+};
+
+// --- PEDIDOS ---
+// Mascara o UUID do pedido (ex: fefb9079-26aa-...) em um número curto e legível
+const formatOrderNumber = (order) => {
+  if (!order) return '';
+  if (order.orderNumber != null) return String(order.orderNumber).padStart(4, '0');
+  const id = String(order.id ?? order);
+  if (/^\d+$/.test(id)) return id.padStart(4, '0');
+  return id.replace(/-/g, '').slice(0, 6).toUpperCase();
+};
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -787,7 +840,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
       });
 
       const deliveryRows = filteredDeliveries.map(d => {
-        const idShort = d.id ? String(d.id).slice(0, 8) : '-';
+        const idShort = d.id ? `#${formatOrderNumber(d)}` : '-';
         const client = d.client || '-';
         const status = d.status || '-';
         const date = d.date || '-';
@@ -4648,8 +4701,10 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     name: '',
     email: '',
     password: '',
-    role: 'Administrador'
+    role: 'admin'
   });
+
+  const roleOptions = buildRoleOptions(rolesList);
 
   const handleSaveUser = async () => {
     const email = newUser.email.trim();
@@ -4661,6 +4716,10 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       return;
     }
 
+    const roleConfig = roleOptions.find(r => r.key === normalizeRoleKey(newUser.role)) || roleOptions[0];
+    const roleValue = roleConfig.dbValue;
+    const roleLabel = roleConfig.label;
+
     try {
       // 1. Tenta criar via Auth padrão (API Pública)
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -4669,7 +4728,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
         options: {
           data: {
             full_name: name,
-            role: newUser.role
+            role: roleValue
           }
         }
       });
@@ -4681,24 +4740,25 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
         id: authData.user.id,
         name: name,
         email: email,
-        role: 'admin'
+        role: roleValue,
+        ...(roleConfig.permissions ? { permissions: roleConfig.permissions } : {})
       }]);
 
       if (dbError) throw dbError;
 
-      showToast("Administrador cadastrado com sucesso!", "success");
+      showToast(`${roleLabel} cadastrado com sucesso!`, "success");
 
       if (logAction) {
           logAction('USER_CHANGE', name || email || 'Novo Usuário', {
             action: 'create_user',
             email: email,
-            role: 'admin'
+            role: roleValue
           });
       }
 
       fetchUsers();
       setIsModalOpen(false);
-      setNewUser({ name: '', email: '', password: '', role: 'Administrador' });
+      setNewUser({ name: '', email: '', password: '', role: 'admin' });
 
     } catch (error) {
       console.error("Erro ao criar usuário via API padrão:", error);
@@ -4712,7 +4772,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
               email: email,
               password: password,
               full_name: name,
-              role_name: 'admin'
+              role_name: roleValue
           });
 
           if (rpcError) {
@@ -4724,19 +4784,19 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
           }
 
           // Sucesso via RPC
-          showToast("Administrador criado com sucesso (Modo Direto)!", "success");
+          showToast(`${roleLabel} criado com sucesso (Modo Direto)!`, "success");
           
           if (logAction) {
             logAction('USER_CHANGE', name, {
                 action: 'create_user_rpc',
                 email: email,
-                role: 'admin'
+                role: roleValue
             });
           }
           
           fetchUsers();
           setIsModalOpen(false);
-          setNewUser({ name: '', email: '', password: '', role: 'Administrador' });
+          setNewUser({ name: '', email: '', password: '', role: 'admin' });
 
       } catch (finalError) {
           console.error("Falha final na criação de usuário:", finalError);
@@ -4798,7 +4858,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
   const handleOpenChangeRoleModal = (user) => {
     setSelectedUser(user);
-    setNewRoleSelection(user.role || 'client');
+    setNewRoleSelection(normalizeRoleKey(user.role) || 'cliente');
     setIsChangeRoleModalOpen(true);
     setActiveMenuId(null);
   };
@@ -4857,46 +4917,51 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     }
   };
 
-  const handleChangeRole = async () => {
-    if (!selectedUser) return;
+  const updateUserRole = async (user, roleKey) => {
+    const roleConfig = roleOptions.find(r => r.key === normalizeRoleKey(roleKey));
+    if (!user || !roleConfig) return false;
+    if (normalizeRoleKey(user.role) === roleConfig.key) return true;
+
+    const updates = { role: roleConfig.dbValue };
+    // Se o cargo tem permissões predefinidas, aplica elas
+    if (roleConfig.permissions) {
+      updates.permissions = roleConfig.permissions;
+    }
 
     try {
-      const selectedRoleConfig = rolesList.find(r => r.id === newRoleSelection);
-      const updates = { role: newRoleSelection };
-
-      // Se o cargo tem permissões predefinidas, aplica elas
-      if (selectedRoleConfig && selectedRoleConfig.permissions) {
-        updates.permissions = selectedRoleConfig.permissions;
-      }
-
       const { error } = await supabase
         .from('profiles')
         .update(updates)
-        .eq('id', selectedUser.id);
+        .eq('id', user.id);
 
       if (error) throw error;
 
-      showToast(`Cargo de ${selectedUser.name} alterado para ${selectedRoleConfig?.label || newRoleSelection}!`, "success");
-      
+      showToast(`Cargo de ${user.name} alterado para ${roleConfig.label}!`, "success");
+
       if (logAction) {
-          logAction('USER_CHANGE', selectedUser.name || selectedUser.email || 'Usuário', {
+          logAction('USER_CHANGE', user.name || user.email || 'Usuário', {
             action: 'update_role',
-            target_email: selectedUser.email,
-            old_role: selectedUser.role,
-            new_role: newRoleSelection
+            target_email: user.email,
+            old_role: user.role,
+            new_role: roleConfig.dbValue
           });
       }
-      
-      // Update local state
-      setUsers(prev => prev.map(u => 
-        u.id === selectedUser.id ? { ...u, ...updates } : u
+
+      setUsers(prev => prev.map(u =>
+        u.id === user.id ? { ...u, ...updates } : u
       ));
-      
-      setIsChangeRoleModalOpen(false);
+      return true;
     } catch (error) {
       console.error("Erro ao alterar cargo:", error);
       showToast("Erro ao alterar cargo: " + error.message, "error");
+      return false;
     }
+  };
+
+  const handleChangeRole = async () => {
+    if (!selectedUser) return;
+    const ok = await updateUserRole(selectedUser, newRoleSelection);
+    if (ok) setIsChangeRoleModalOpen(false);
   };
 
   const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
@@ -4948,31 +5013,22 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
     const matchesRole = (() => {
       if (roleFilter === 'all') return true;
-      const r = user.role?.toLowerCase();
-      if (roleFilter === 'admin') return r === 'admin' || r === 'administrador';
-      if (roleFilter === 'cliente') return r === 'cliente' || r === 'user' || r === 'client';
-      if (roleFilter === 'entregador') return r === 'entregador';
-      if (roleFilter === 'funcionario') return r === 'funcionario' || r === 'funcionário';
-      return r === roleFilter;
+      return normalizeRoleKey(user.role) === roleFilter;
     })();
 
     return matchesSearch && matchesRole;
   });
 
-  // Get unique roles for filter options
-  const uniqueRoles = ['all', ...new Set(users.map(u => u.role))].filter(Boolean);
-
   const getRoleBadgeColor = (role) => {
-    switch (role?.toLowerCase()) {
+    switch (normalizeRoleKey(role)) {
       case 'admin':
-      case 'administrador':
         return 'bg-purple-100 text-purple-700';
       case 'entregador':
         return 'bg-orange-100 text-orange-700';
       case 'cliente':
-      case 'user':
-      case 'client':
         return 'bg-blue-100 text-blue-700';
+      case 'funcionario':
+        return 'bg-emerald-100 text-emerald-700';
       case 'marketing':
         return 'bg-pink-100 text-pink-700';
       case 'vendas':
@@ -5119,7 +5175,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
         </div>
       )}
 
-      {/* Modal de Criação de Administrador */}
+      {/* Modal de Criação de Usuário */}
       {isModalOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
@@ -5130,8 +5186,9 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
             onClick={(e) => e.stopPropagation()}
           >
              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 className="font-bold text-lg text-slate-800">
-                   Novo Administrador
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                   <UserPlus size={20} className="text-primary" />
+                   Novo Usuário
                 </h3>
                 <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
                    <X size={20} />
@@ -5140,10 +5197,10 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
              
              <div className="p-6 space-y-4">
                 <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-2">
-                   <div className="mt-0.5" title="Use este formulário apenas para novos administradores do painel.">
-                     <Info size={16} className="cursor-help" />
+                   <div className="mt-0.5">
+                     <Info size={16} />
                    </div>
-                   <p>Este formulário é exclusivo para cadastro de novos administradores. Clientes devem se cadastrar pelo aplicativo.</p>
+                   <p>Cadastre um novo usuário e defina o cargo dele. As permissões padrão do cargo serão aplicadas automaticamente.</p>
                 </div>
 
                 <div>
@@ -5163,7 +5220,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                       type="email" 
                       value={newUser.email}
                       onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                      placeholder="Ex: ana@admin.com"
+                      placeholder="Ex: ana@atadiesel.com"
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400"
                    />
                 </div>
@@ -5181,9 +5238,15 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                 
                 <div>
                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Cargo</label>
-                   <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-slate-500 cursor-not-allowed">
-                      Administrador
-                   </div>
+                   <select
+                      value={normalizeRoleKey(newUser.role)}
+                      onChange={(e) => setNewUser({...newUser, role: e.target.value})}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 cursor-pointer"
+                   >
+                      {roleOptions.map(role => (
+                        <option key={role.key} value={role.key}>{role.label}</option>
+                      ))}
+                   </select>
                 </div>
              </div>
 
@@ -5192,7 +5255,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                    onClick={handleSaveUser}
                    className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 active:scale-[0.99]"
                 >
-                   Criar Administrador
+                   Criar Usuário
                 </button>
              </div>
           </div>
@@ -5228,7 +5291,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                       <h2 className="text-xl font-bold text-slate-900">{selectedUser.name}</h2>
                       <p className="text-slate-500">{selectedUser.email}</p>
                       <span className={`inline-block mt-1 px-2 py-0.5 rounded-md text-xs font-medium ${getRoleBadgeColor(selectedUser.role)}`}>
-                         {selectedUser.role}
+                         {getRoleLabel(selectedUser.role, rolesList)}
                       </span>
                    </div>
                 </div>
@@ -5396,11 +5459,11 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                 </div>
 
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-                   {rolesList.map((role) => (
+                   {roleOptions.map((role) => (
                      <label 
-                       key={role.id}
+                       key={role.key}
                        className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                         newRoleSelection === role.id 
+                         newRoleSelection === role.key 
                            ? 'border-primary bg-blue-50/50' 
                            : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
                        }`}
@@ -5408,16 +5471,18 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                         <input 
                            type="radio" 
                            name="role" 
-                           value={role.id}
-                           checked={newRoleSelection === role.id}
-                           onChange={() => setNewRoleSelection(role.id)}
+                           value={role.key}
+                           checked={newRoleSelection === role.key}
+                           onChange={() => setNewRoleSelection(role.key)}
                            className="mt-1"
                         />
                         <div>
-                           <span className={`block font-bold text-sm ${newRoleSelection === role.id ? 'text-primary' : 'text-slate-700'}`}>
+                           <span className={`block font-bold text-sm ${newRoleSelection === role.key ? 'text-primary' : 'text-slate-700'}`}>
                              {role.label}
                            </span>
-                           <span className="text-xs text-slate-400">{role.desc}</span>
+                           {rolesList.find(r => normalizeRoleKey(r.id) === role.key)?.desc && (
+                             <span className="text-xs text-slate-400">{rolesList.find(r => normalizeRoleKey(r.id) === role.key).desc}</span>
+                           )}
                         </div>
                      </label>
                    ))}
@@ -5606,30 +5671,19 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
               onClick={() => setIsModalOpen(true)}
               className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
             >
-                <Plus size={20} /> Novo Administrador
+                <Plus size={20} /> Novo Usuário
             </button>
           </div>
       </div>
 
       <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2 scrollbar-thin scrollbar-thumb-slate-200">
         {(() => {
-          // Extrair roles únicos dos usuários carregados
-          const userRoles = [...new Set(users.map(u => u.role))].filter(Boolean);
-          
-          // Mesclar com rolesList do banco para garantir que todos apareçam
-          // Se o role já existir em rolesList, usa a label dele. Se não, capitaliza o ID.
+          // Cargos padrão + criados + os que existirem nos usuários, agrupados pelo nome em português
+          const userRoleKeys = [...new Set(users.map(u => normalizeRoleKey(u.role)))].filter(Boolean);
           const allTabs = [
             { id: 'all', label: 'Todos' },
-            ...rolesList.map(r => ({ id: r.id, label: r.label })),
-            ...userRoles
-              .filter(roleId => !rolesList.some(r => r.id === roleId)) // Apenas os que não estão na lista
-              .map(roleId => ({ 
-                id: roleId, 
-                label: roleId === 'admin' ? 'Administrador' : 
-                       roleId === 'user' ? 'Funcionário' : 
-                       roleId === 'client' ? 'Cliente' : 
-                       roleId.charAt(0).toUpperCase() + roleId.slice(1) 
-              }))
+            ...roleOptions.map(r => ({ id: r.key, label: r.label })),
+            ...userRoleKeys.map(key => ({ id: key, label: getRoleLabel(key, rolesList) }))
           ];
 
           // Remover duplicatas por ID (caso haja overlap estranho)
@@ -5680,7 +5734,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                       <td className="px-6 py-4"><HighlightText text={user.email} highlight={globalSearchTerm} /></td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded-md text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
-                           {user.role}
+                           {getRoleLabel(user.role, rolesList)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right relative">
@@ -6252,7 +6306,8 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
       return (
         d.client.toLowerCase().includes(term) ||
         d.items.toLowerCase().includes(term) ||
-        d.id.toString().includes(term)
+        d.id.toString().includes(term) ||
+        formatOrderNumber(d).toLowerCase().includes(term.replace('#', ''))
       );
     })
     .sort((a, b) => {
@@ -6319,7 +6374,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                         <div>
                             <p className="text-sm text-blue-800 font-medium">Confirmação de Segurança</p>
                             <p className="text-xs text-blue-600 mt-1">
-                                Insira o código de verificação fornecido pelo cliente para confirmar a entrega do pedido <strong>#{deliveryToVerify?.id?.slice(0, 8)}</strong>.
+                                Insira o código de verificação fornecido pelo cliente para confirmar a entrega do pedido <strong>#{formatOrderNumber(deliveryToVerify)}</strong>.
                             </p>
                         </div>
                     </div>
@@ -6380,7 +6435,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
               <div className="flex justify-between items-start mb-2">
                  <div>
                     <h3 className="font-bold text-slate-900">
-                        <HighlightText text={`Pedido #${delivery.id}`} highlight={globalSearchTerm} />
+                        <HighlightText text={`Pedido #${formatOrderNumber(delivery)}`} highlight={globalSearchTerm} />
                     </h3>
                     <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
                         <Calendar size={12} /> {delivery.date} às {delivery.time}
@@ -6488,7 +6543,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                        {completedDeliveries.map((delivery) => (
                           <tr key={delivery.id} className="bg-white hover:bg-slate-50 transition-colors">
                              <td className="px-6 py-4 font-bold text-slate-900">
-                                #{delivery.id}
+                                #{formatOrderNumber(delivery)}
                              </td>
                              <td className="px-6 py-4">
                                 <div className="flex flex-col">
@@ -6537,7 +6592,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <Truck className="text-primary" />
-                Detalhes da Entrega #{selectedDelivery.id}
+                Detalhes da Entrega #{formatOrderNumber(selectedDelivery)}
               </h2>
               <button 
                 onClick={() => setIsDetailsModalOpen(false)}
@@ -8022,6 +8077,7 @@ function App() {
         
         return {
           id: d.id,
+          orderNumber: d.order_number ?? null,
           client: clientName,
           items: items.map(i => formatItemName(i)).join(', ') || 'Sem itens',
           itemsList: items.map(i => ({
