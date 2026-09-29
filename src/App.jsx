@@ -1316,6 +1316,48 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
 };
 
 const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, showToast }) => {
+  // --- Integração ERP ---
+  const [erpState, setErpState] = useState(null);
+  const [isSyncingErp, setIsSyncingErp] = useState(false);
+
+  const fetchErpState = async () => {
+    const { data } = await supabase.from('erp_sync_state').select('last_run_at, last_result, price_available').eq('id', 1).maybeSingle();
+    if (data) setErpState(data);
+  };
+
+  useEffect(() => {
+    fetchErpState();
+    const timer = setInterval(fetchErpState, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleSyncErp = async () => {
+    setIsSyncingErp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-erp', { body: { source: 'painel' } });
+      if (error) throw error;
+      if (data?.skipped) {
+        showToast(data.skipped, 'info');
+      } else {
+        const parts = [];
+        if (data?.novos) parts.push(`${data.novos} novo(s)`);
+        if (data?.nomes_alterados) parts.push(`${data.nomes_alterados} nome(s)`);
+        if (data?.precos_alterados) parts.push(`${data.precos_alterados} preço(s)`);
+        if (data?.estoque_alterado) parts.push(`${data.estoque_alterado} estoque(s)`);
+        if (data?.arquivados) parts.push(`${data.arquivados} arquivado(s)`);
+        showToast(parts.length ? `ERP sincronizado: ${parts.join(', ')} atualizados.` : 'ERP sincronizado: nada mudou.', data?.ok ? 'success' : 'warning');
+        if (data?.erros?.length) console.warn('Avisos da sincronização ERP:', data.erros);
+      }
+      onRefresh && onRefresh();
+    } catch (err) {
+      console.error('Erro ao sincronizar ERP:', err);
+      showToast('Não foi possível sincronizar com o ERP: ' + (err.message || 'erro desconhecido'), 'error');
+    } finally {
+      setIsSyncingErp(false);
+      fetchErpState();
+    }
+  };
+
   const [isCreateProductModalOpen, setIsCreateProductModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
@@ -1873,7 +1915,14 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
 
 
       <div className="flex justify-between items-center flex-wrap gap-4">
-        <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gerenciar Produtos</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gerenciar Produtos</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            {erpState?.last_run_at
+              ? <>Sincronizado com o ERP em {new Date(erpState.last_run_at).toLocaleString('pt-BR')}{erpState.price_available === false && ' · preços ainda não disponíveis no ERP'}</>
+              : 'Sincronização com o ERP a cada 5 minutos'}
+          </p>
+        </div>
         <div className="flex gap-2">
             <div className="relative">
               <input 
@@ -1890,6 +1939,15 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                 <Upload size={18} /> Importar
               </label>
             </div>
+            <button
+                onClick={handleSyncErp}
+                disabled={isSyncingErp}
+                title={erpState?.last_run_at ? `Última sincronização: ${new Date(erpState.last_run_at).toLocaleString('pt-BR')}` : 'Sincroniza automaticamente a cada 5 minutos'}
+                className="bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-sm text-sm font-medium disabled:opacity-60 disabled:cursor-wait"
+            >
+                <RefreshCw size={18} className={`text-primary ${isSyncingErp ? 'animate-spin' : ''}`} />
+                {isSyncingErp ? 'Sincronizando...' : 'Sincronizar ERP'}
+            </button>
             <button 
                 onClick={handleExportProducts} 
                 className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/30 text-sm font-medium"
@@ -1998,11 +2056,11 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                     <div className="flex flex-col">
                         {product.promotionalPrice ? (
                             <>
-                                <span className="font-bold text-slate-900">R$ {product.promotionalPrice}</span>
+                                <span className="text-slate-700">R$ {product.promotionalPrice}</span>
                                 <span className="text-sm text-red-500 line-through">R$ {product.price}</span>
                             </>
                         ) : (
-                            <span className="font-bold text-slate-900">R$ {product.price}</span>
+                            <span className="text-slate-700">R$ {product.price}</span>
                         )}
                     </div>
                 </td>
@@ -5977,7 +6035,7 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                                 </td>
                                 <td className="px-6 py-4">
                                     <div className="flex flex-col">
-                                        <span className="font-bold text-slate-800">{log.user_name || 'Usuário'}</span>
+                                        <span className="font-bold text-slate-800">{log.user_name || (log.details?.source === 'ERP' ? 'ERP Viasoft' : 'Usuário')}</span>
                                         <span className="text-xs text-slate-500">{log.user_email}</span>
                                     </div>
                                 </td>
