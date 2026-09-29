@@ -23,7 +23,9 @@ const ESTAB = Number(Deno.env.get('ERP_ESTAB') ?? '100');
 
 const LOG_EMAIL = 'ERP Viasoft (sincronização automática)';
 const TIME_BUDGET_MS = 140_000;      // para antes do limite da Edge Function
-const MIN_INTERVAL_MS = 4 * 60_000;  // chamadas sem ser admin respeitam este intervalo
+// Chamadas sem ser admin respeitam este intervalo. Conta a partir do FIM da última execução
+// (que leva ~1-2 min), por isso fica bem abaixo dos 5 min do agendamento.
+const MIN_INTERVAL_MS = 2 * 60_000;
 const STOCK_BATCH = 100;
 
 const cors = {

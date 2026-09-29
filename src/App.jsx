@@ -56,6 +56,9 @@ import {
   KeyRound,
   Archive,
   RefreshCw,
+  ChevronDown,
+  ArrowDownAZ,
+  ArrowUpAZ,
 } from 'lucide-react';
 import LoginScreen from './login';
 
@@ -1411,6 +1414,30 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
     return matchesSearch && matchesCategory;
   });
 
+  // --- Paginação (50 por página) ---
+  const PRODUCTS_PER_PAGE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStart = (safePage - 1) * PRODUCTS_PER_PAGE;
+  const pagedProducts = filteredProducts.slice(pageStart, pageStart + PRODUCTS_PER_PAGE);
+
+  // Volta para a 1ª página quando muda aba, busca ou filtro
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, globalSearchTerm, selectedCategories]);
+
+  // Números de página exibidos: 1 … 4 5 [6] 7 8 … 20
+  const pageNumbers = (() => {
+    const pages = [];
+    const from = Math.max(1, safePage - 2);
+    const to = Math.min(totalPages, safePage + 2);
+    if (from > 1) { pages.push(1); if (from > 2) pages.push('…'); }
+    for (let i = from; i <= to; i++) pages.push(i);
+    if (to < totalPages) { if (to < totalPages - 1) pages.push('…'); pages.push(totalPages); }
+    return pages;
+  })();
+
   const toggleCategory = (category) => {
     setSelectedCategories(prev => {
       const newCategories = prev.includes(category)
@@ -2048,7 +2075,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
             </tr>
           </thead>
           <tbody>
-            {filteredProducts.map((product) => (
+            {pagedProducts.map((product) => (
               <tr key={product.id} className="bg-white border-b hover:bg-slate-50">
                 <td className="px-6 py-4 font-medium text-slate-900"><HighlightText text={product.name} highlight={globalSearchTerm} /></td>
                 <td className="px-6 py-4"><HighlightText text={product.category} highlight={globalSearchTerm} /></td>
@@ -2085,6 +2112,46 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
           </tbody>
         </table>
         </div>
+
+        {filteredProducts.length > 0 && (
+          <div className="px-4 py-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <span className="text-sm text-slate-500">
+              Mostrando <strong className="text-slate-700">{pageStart + 1}–{Math.min(pageStart + PRODUCTS_PER_PAGE, filteredProducts.length)}</strong> de <strong className="text-slate-700">{filteredProducts.length}</strong> produtos
+            </span>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Anterior
+                </button>
+                {pageNumbers.map((n, i) => n === '…' ? (
+                  <span key={`gap-${i}`} className="px-2 text-slate-400">…</span>
+                ) : (
+                  <button
+                    key={n}
+                    onClick={() => setCurrentPage(n)}
+                    className={`min-w-[36px] px-2 py-1.5 rounded-lg text-sm transition-colors ${
+                      n === safePage ? 'bg-primary text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage === totalPages}
+                  className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Próxima
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -6182,15 +6249,198 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
   );
 };
 
+// Filtro de coluna no estilo Excel: pesquisa, (Selecionar Tudo) e lista de valores com caixas de seleção.
+// `selected` = null significa "todos"; senão é um array com os valores permitidos.
+const ColumnFilter = ({ label, values, selected, onChange, onSort, sortDir, align = 'left' }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [draft, setDraft] = useState(new Set());
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = React.useRef(null);
+
+  const isActive = selected !== null;
+
+  const openMenu = () => {
+    const r = btnRef.current.getBoundingClientRect();
+    const width = 260;
+    const left = Math.min(Math.max(8, align === 'right' ? r.right - width : r.left), window.innerWidth - width - 8);
+    setPos({ top: r.bottom + 6, left });
+    setDraft(new Set(selected ?? values));
+    setSearch('');
+    setOpen(true);
+  };
+
+  const visible = values.filter(v => String(v).toLowerCase().includes(search.trim().toLowerCase()));
+  const allVisibleChecked = visible.length > 0 && visible.every(v => draft.has(v));
+
+  const toggleAll = () => {
+    const next = new Set(draft);
+    if (allVisibleChecked) visible.forEach(v => next.delete(v));
+    else visible.forEach(v => next.add(v));
+    setDraft(next);
+  };
+
+  const toggle = (v) => {
+    const next = new Set(draft);
+    next.has(v) ? next.delete(v) : next.add(v);
+    setDraft(next);
+  };
+
+  const apply = () => {
+    // Com pesquisa digitada, filtra só pelos itens encontrados e marcados (igual ao Excel)
+    const chosen = search.trim() ? visible.filter(v => draft.has(v)) : values.filter(v => draft.has(v));
+    if (chosen.length === 0) return;
+    onChange(chosen.length === values.length ? null : chosen);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        className="inline-flex items-center gap-1.5 uppercase group"
+        title={`Filtrar ${label}`}
+      >
+        {label}
+        <span className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+          isActive || sortDir ? 'bg-primary border-primary text-white' : 'bg-white border-slate-300 text-slate-500 group-hover:border-slate-400'
+        }`}>
+          {isActive ? <FilterIcon size={11} /> : <ChevronDown size={12} />}
+        </span>
+      </button>
+
+      {open && createPortal(
+        <>
+          <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-[91] w-[260px] bg-white rounded-xl shadow-2xl border border-slate-200 text-sm normal-case font-normal text-slate-700 animate-scale-up"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            {onSort && (
+              <div className="p-1.5 border-b border-slate-100">
+                <button type="button" onClick={() => { onSort('asc'); setOpen(false); }}
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 text-left ${sortDir === 'asc' ? 'text-primary font-medium' : ''}`}>
+                  <ArrowDownAZ size={15} /> Classificar do menor para o maior
+                </button>
+                <button type="button" onClick={() => { onSort('desc'); setOpen(false); }}
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-50 text-left ${sortDir === 'desc' ? 'text-primary font-medium' : ''}`}>
+                  <ArrowUpAZ size={15} /> Classificar do maior para o menor
+                </button>
+              </div>
+            )}
+
+            <div className="p-3 space-y-2">
+              {isActive && (
+                <button type="button" onClick={() => { onChange(null); setOpen(false); }}
+                  className="w-full text-left text-xs text-red-600 hover:underline">
+                  Limpar filtro de "{label}"
+                </button>
+              )}
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') apply(); }}
+                  placeholder="Pesquisar"
+                  className="w-full pl-8 pr-2 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div className="max-h-60 overflow-y-auto border border-slate-100 rounded-lg py-1">
+                <label className="flex items-center gap-2 px-2.5 py-1 hover:bg-slate-50 cursor-pointer font-medium">
+                  <input type="checkbox" checked={allVisibleChecked} onChange={toggleAll} className="accent-[#0047AB]" />
+                  {search.trim() ? '(Selecionar Todos os Resultados)' : '(Selecionar Tudo)'}
+                </label>
+                {visible.length === 0 ? (
+                  <div className="px-2.5 py-2 text-xs text-slate-400">Nenhum resultado</div>
+                ) : visible.map(v => (
+                  <label key={String(v)} className="flex items-center gap-2 px-2.5 py-1 hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" checked={draft.has(v)} onChange={() => toggle(v)} className="accent-[#0047AB]" />
+                    <span className="truncate" title={String(v)}>{v === '' ? '(Vazias)' : String(v)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-3 pb-3 flex gap-2">
+              <button type="button" onClick={() => setOpen(false)}
+                className="flex-1 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">Cancelar</button>
+              <button type="button" onClick={apply} disabled={draft.size === 0}
+                className="flex-1 py-1.5 rounded-lg bg-primary text-white font-medium hover:bg-blue-800 disabled:opacity-50">OK</button>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  );
+};
+
 const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [adjustment, setAdjustment] = useState({ type: 'add', value: '' });
 
-  const filteredProducts = products.filter(product => {
-    const term = globalSearchTerm?.trim().toLowerCase() || '';
-    return !term || (product.name || '').toLowerCase().includes(term) || (product.category || '').toLowerCase().includes(term);
+  // --- Filtros por coluna (estilo Excel) ---
+  const STOCK_COLUMNS = {
+    name: (p) => p.name || '',
+    category: (p) => p.category || '',
+    stock: (p) => parseInt(p.stock) || 0,
+    status: (p) => (parseInt(p.stock) <= 5 ? 'Baixo Estoque' : 'Normal'),
+  };
+  const EMPTY_FILTERS = { name: null, category: null, stock: null, status: null };
+  const [columnFilters, setColumnFilters] = useState(EMPTY_FILTERS);
+  const [sort, setSort] = useState({ key: null, dir: null });
+
+  const term = globalSearchTerm?.trim().toLowerCase() || '';
+  const searched = products.filter(product =>
+    !term || (product.name || '').toLowerCase().includes(term) || (product.category || '').toLowerCase().includes(term)
+  );
+
+  const passes = (p, skipKey) => Object.entries(columnFilters).every(([key, allowed]) =>
+    key === skipKey || allowed === null || allowed.includes(STOCK_COLUMNS[key](p))
+  );
+
+  // Como no Excel: a lista de cada coluna mostra só o que sobra depois dos filtros das outras colunas
+  const optionsFor = (key) => {
+    const vals = [...new Set(searched.filter(p => passes(p, key)).map(STOCK_COLUMNS[key]))];
+    return key === 'stock' ? vals.sort((a, b) => a - b) : vals.sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+  };
+
+  const filteredProducts = searched.filter(p => passes(p)).sort((a, b) => {
+    if (!sort.key) return 0;
+    const va = STOCK_COLUMNS[sort.key](a), vb = STOCK_COLUMNS[sort.key](b);
+    const cmp = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'pt-BR');
+    return sort.dir === 'desc' ? -cmp : cmp;
   });
+
+  const setFilter = (key) => (allowed) => setColumnFilters(prev => ({ ...prev, [key]: allowed }));
+  const sortBy = (key) => (dir) => setSort({ key, dir });
+  const hasActiveFilters = Object.values(columnFilters).some(v => v !== null) || !!sort.key;
+
+  // --- Paginação (50 por página) ---
+  const STOCK_PER_PAGE = 50;
+  const [stockPage, setStockPage] = useState(1);
+  const stockTotalPages = Math.max(1, Math.ceil(filteredProducts.length / STOCK_PER_PAGE));
+  const stockSafePage = Math.min(stockPage, stockTotalPages);
+  const stockStart = (stockSafePage - 1) * STOCK_PER_PAGE;
+  const pagedStock = filteredProducts.slice(stockStart, stockStart + STOCK_PER_PAGE);
+
+  useEffect(() => { setStockPage(1); }, [globalSearchTerm, columnFilters, sort]);
+
+  const stockPageNumbers = (() => {
+    const pages = [];
+    const from = Math.max(1, stockSafePage - 2);
+    const to = Math.min(stockTotalPages, stockSafePage + 2);
+    if (from > 1) { pages.push(1); if (from > 2) pages.push('…'); }
+    for (let i = from; i <= to; i++) pages.push(i);
+    if (to < stockTotalPages) { if (to < stockTotalPages - 1) pages.push('…'); pages.push(stockTotalPages); }
+    return pages;
+  })();
 
   const handleOpenEdit = (product) => {
     setSelectedProduct(product);
@@ -6316,6 +6566,14 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
             <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
                 <Boxes className="text-primary" /> Controle de Estoque
             </h1>
+            {hasActiveFilters && (
+                <button
+                    onClick={() => { setColumnFilters(EMPTY_FILTERS); setSort({ key: null, dir: null }); }}
+                    className="text-sm text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 inline-flex items-center gap-1.5"
+                >
+                    <X size={14} /> Limpar filtros
+                </button>
+            )}
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -6323,15 +6581,26 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
                 <table className="w-full text-sm text-left text-slate-500">
                     <thead className="text-xs text-slate-700 uppercase bg-slate-50">
                         <tr>
-                            <th className="px-6 py-3">Produto</th>
-                            <th className="px-6 py-3">Categoria</th>
-                            <th className="px-6 py-3">Estoque Atual</th>
-                            <th className="px-6 py-3">Status</th>
+                            <th className="px-6 py-3">
+                                <ColumnFilter label="Produto" values={optionsFor('name')} selected={columnFilters.name} onChange={setFilter('name')} onSort={sortBy('name')} sortDir={sort.key === 'name' ? sort.dir : null} />
+                            </th>
+                            <th className="px-6 py-3">
+                                <ColumnFilter label="Categoria" values={optionsFor('category')} selected={columnFilters.category} onChange={setFilter('category')} onSort={sortBy('category')} sortDir={sort.key === 'category' ? sort.dir : null} />
+                            </th>
+                            <th className="px-6 py-3">
+                                <ColumnFilter label="Estoque Atual" values={optionsFor('stock')} selected={columnFilters.stock} onChange={setFilter('stock')} onSort={sortBy('stock')} sortDir={sort.key === 'stock' ? sort.dir : null} />
+                            </th>
+                            <th className="px-6 py-3">
+                                <ColumnFilter label="Status" values={optionsFor('status')} selected={columnFilters.status} onChange={setFilter('status')} onSort={sortBy('status')} sortDir={sort.key === 'status' ? sort.dir : null} />
+                            </th>
                             <th className="px-6 py-3 text-right">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {filteredProducts.map((product) => (
+                        {pagedStock.length === 0 && (
+                            <tr><td colSpan="5" className="px-6 py-10 text-center text-slate-400">Nenhum produto com esses filtros.</td></tr>
+                        )}
+                        {pagedStock.map((product) => (
                             <tr key={product.id} className="bg-white hover:bg-slate-50 transition-colors">
                                 <td className="px-6 py-4 font-medium text-slate-900 flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center p-1">
@@ -6359,6 +6628,28 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
                     </tbody>
                 </table>
             </div>
+
+            {filteredProducts.length > 0 && (
+              <div className="px-4 py-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <span className="text-sm text-slate-500">
+                  Mostrando <strong className="text-slate-700">{stockStart + 1}–{Math.min(stockStart + STOCK_PER_PAGE, filteredProducts.length)}</strong> de <strong className="text-slate-700">{filteredProducts.length}</strong> produtos
+                </span>
+                {stockTotalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setStockPage(p => Math.max(1, p - 1))} disabled={stockSafePage === 1}
+                      className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Anterior</button>
+                    {stockPageNumbers.map((n, i) => n === '…' ? (
+                      <span key={`gap-${i}`} className="px-2 text-slate-400">…</span>
+                    ) : (
+                      <button key={n} onClick={() => setStockPage(n)}
+                        className={`min-w-[36px] px-2 py-1.5 rounded-lg text-sm transition-colors ${n === stockSafePage ? 'bg-primary text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{n}</button>
+                    ))}
+                    <button onClick={() => setStockPage(p => Math.min(stockTotalPages, p + 1))} disabled={stockSafePage === stockTotalPages}
+                      className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Próxima</button>
+                  </div>
+                )}
+              </div>
+            )}
         </div>
     </div>
   );
