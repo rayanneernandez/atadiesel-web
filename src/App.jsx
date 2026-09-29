@@ -4705,9 +4705,24 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   });
 
   const roleOptions = buildRoleOptions(rolesList);
+  const [showNewUserPassword, setShowNewUserPassword] = useState(false);
+
+  const openNewUserModal = () => {
+    setNewUser({ name: '', email: '', password: '', role: 'admin' });
+    setShowNewUserPassword(false);
+    setIsModalOpen(true);
+  };
+
+  const translateUserRpcError = (error) => {
+    const msg = error?.message || 'Erro desconhecido';
+    if (msg.includes('Could not find the function') || (msg.includes('function') && msg.includes('does not exist'))) {
+      return "Função do banco não encontrada. Rode o arquivo 'usuarios_login.sql' no Supabase.";
+    }
+    return msg;
+  };
 
   const handleSaveUser = async () => {
-    const email = newUser.email.trim();
+    const email = newUser.email.trim().toLowerCase();
     const password = newUser.password.trim();
     const name = newUser.name.trim();
 
@@ -4716,96 +4731,42 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       return;
     }
 
+    if (password.length < 6) {
+      showToast("A senha provisória deve ter pelo menos 6 caracteres.", "warning");
+      return;
+    }
+
     const roleConfig = roleOptions.find(r => r.key === normalizeRoleKey(newUser.role)) || roleOptions[0];
-    const roleValue = roleConfig.dbValue;
-    const roleLabel = roleConfig.label;
 
     try {
-      // 1. Tenta criar via Auth padrão (API Pública)
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email,
-        password: password,
-        options: {
-          data: {
-            full_name: name,
-            role: roleValue
-          }
-        }
+      // Cria a conta de login + perfil direto no banco (não troca a sessão de quem está logado)
+      const { error } = await supabase.rpc('admin_create_user', {
+        p_email: email,
+        p_password: password,
+        p_name: name,
+        p_role: roleConfig.dbValue,
+        p_permissions: roleConfig.permissions || null,
       });
 
-      if (authError) throw authError;
+      if (error) throw error;
 
-      // 2. Se sucesso no Auth, garante registro na tabela profiles
-      const { error: dbError } = await supabase.from('profiles').upsert([{
-        id: authData.user.id,
-        name: name,
-        email: email,
-        role: roleValue,
-        ...(roleConfig.permissions ? { permissions: roleConfig.permissions } : {})
-      }]);
-
-      if (dbError) throw dbError;
-
-      showToast(`${roleLabel} cadastrado com sucesso!`, "success");
+      showToast(`${roleConfig.label} cadastrado com sucesso!`, "success");
 
       if (logAction) {
-          logAction('USER_CHANGE', name || email || 'Novo Usuário', {
-            action: 'create_user',
-            email: email,
-            role: roleValue
-          });
+        logAction('USER_CHANGE', name || email || 'Novo Usuário', {
+          action: 'create_user',
+          email: email,
+          role: roleConfig.dbValue
+        });
       }
 
       fetchUsers();
       setIsModalOpen(false);
       setNewUser({ name: '', email: '', password: '', role: 'admin' });
-
+      setShowNewUserPassword(false);
     } catch (error) {
-      console.error("Erro ao criar usuário via API padrão:", error);
-      
-      // FALLBACK: Tenta criar via RPC (Banco de Dados Direto)
-      // Útil para erros como: Rate Limit, Email Inválido (falso positivo), Bloqueios de API
-      try {
-          showToast("Método padrão falhou. Tentando criação direta via Banco de Dados...", "info");
-          
-          const { data: rpcData, error: rpcError } = await supabase.rpc('create_user_admin', {
-              email: email,
-              password: password,
-              full_name: name,
-              role_name: roleValue
-          });
-
-          if (rpcError) {
-            // Verifica se o erro é porque a função não existe
-            if (rpcError.message?.includes("function") && rpcError.message?.includes("not found")) {
-                throw new Error("Função de criação direta não encontrada. Por favor, execute o script 'create_admin_user.sql' no Supabase.");
-            }
-            throw rpcError;
-          }
-
-          // Sucesso via RPC
-          showToast(`${roleLabel} criado com sucesso (Modo Direto)!`, "success");
-          
-          if (logAction) {
-            logAction('USER_CHANGE', name, {
-                action: 'create_user_rpc',
-                email: email,
-                role: roleValue
-            });
-          }
-          
-          fetchUsers();
-          setIsModalOpen(false);
-          setNewUser({ name: '', email: '', password: '', role: 'admin' });
-
-      } catch (finalError) {
-          console.error("Falha final na criação de usuário:", finalError);
-          let msg = finalError.message || "Erro desconhecido";
-          if (msg.includes("Email address") && msg.includes("invalid")) {
-              msg = "O formato do e-mail é inválido ou não aceito.";
-          }
-          showToast("Não foi possível criar o usuário: " + msg, "error");
-      }
+      console.error("Erro ao criar usuário:", error);
+      showToast("Não foi possível criar o usuário: " + translateUserRpcError(error), "error");
     }
   };
 
@@ -4885,17 +4846,13 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
     setIsChangingPassword(true);
     try {
-      const { error } = await supabase.rpc('set_user_password', {
-        user_id: selectedUser.id,
-        new_password: pwd,
+      // Grava a senha, corrige a conta de login se preciso e marca como provisória
+      const { error } = await supabase.rpc('admin_set_user_password', {
+        p_user_id: selectedUser.id,
+        p_password: pwd,
       });
 
-      if (error) {
-        if (error.message?.includes('function') && error.message?.includes('not found')) {
-          throw new Error("Função de alteração de senha não encontrada. Execute o SQL de 'set_user_password' no Supabase.");
-        }
-        throw error;
-      }
+      if (error) throw new Error(translateUserRpcError(error));
 
       showToast(`Senha de ${selectedUser.name} alterada com sucesso!`, 'success');
 
@@ -5207,6 +5164,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Nome Completo</label>
                    <input 
                       type="text" 
+                      name="novo-usuario-nome"
+                      autoComplete="off"
                       value={newUser.name}
                       onChange={(e) => setNewUser({...newUser, name: e.target.value})}
                       placeholder="Ex: Ana Pereira"
@@ -5218,6 +5177,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                    <label className="block text-sm font-bold text-slate-700 mb-1.5">E-mail</label>
                    <input 
                       type="email" 
+                      name="novo-usuario-email"
+                      autoComplete="off"
                       value={newUser.email}
                       onChange={(e) => setNewUser({...newUser, email: e.target.value})}
                       placeholder="Ex: ana@atadiesel.com"
@@ -5227,13 +5188,26 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
                 <div>
                    <label className="block text-sm font-bold text-slate-700 mb-1.5">Senha Provisória</label>
-                   <input 
-                      type="password" 
-                      value={newUser.password}
-                      onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                      placeholder="******"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400"
-                   />
+                   <div className="relative">
+                     <input 
+                        type={showNewUserPassword ? 'text' : 'password'}
+                        name="novo-usuario-senha"
+                        autoComplete="new-password"
+                        value={newUser.password}
+                        onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                        placeholder="Mínimo 6 caracteres"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400"
+                     />
+                     <button
+                        type="button"
+                        onClick={() => setShowNewUserPassword(v => !v)}
+                        title={showNewUserPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                        className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-primary transition-colors"
+                     >
+                        {showNewUserPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                     </button>
+                   </div>
+                   <p className="text-xs text-slate-400 mt-1.5">No primeiro acesso ao painel, o usuário será obrigado a criar uma senha nova.</p>
                 </div>
                 
                 <div>
@@ -5545,6 +5519,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                 <div className="relative">
                   <input
                     type={showPasswordDraft ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={passwordDraft}
                     onChange={(e) => setPasswordDraft(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
@@ -5568,6 +5543,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                 <div className="relative">
                   <input
                     type={showPasswordDraftConfirm ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={passwordDraftConfirm}
                     onChange={(e) => setPasswordDraftConfirm(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700"
@@ -5668,7 +5644,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                 <ShieldPlus size={20} className="text-primary" /> Criar Cargo
             </button>
             <button 
-              onClick={() => setIsModalOpen(true)}
+              onClick={openNewUserModal}
               className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
             >
                 <Plus size={20} /> Novo Usuário
@@ -7828,6 +7804,130 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
 
 // --- APP PRINCIPAL ---
 
+// Modal obrigatório: aparece no primeiro login quando a senha foi criada pelo administrador
+const ForcePasswordChangeModal = ({ userName, onDone, onLogout }) => {
+  const [pwd, setPwd] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (pwd.length < 6) return setError('A senha deve ter pelo menos 6 caracteres.');
+    if (pwd !== confirm) return setError('As senhas não conferem.');
+
+    setIsSaving(true);
+    try {
+      const { error: authError } = await supabase.auth.updateUser({ password: pwd });
+      if (authError) throw authError;
+
+      const { error: rpcError } = await supabase.rpc('clear_must_change_password');
+      if (rpcError) throw rpcError;
+
+      onDone();
+    } catch (err) {
+      console.error('Erro ao redefinir senha:', err);
+      const msg = err.message || 'Erro desconhecido';
+      setError(msg.includes('different from the old')
+        ? 'A nova senha precisa ser diferente da senha provisória.'
+        : 'Não foi possível salvar a nova senha: ' + msg);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400";
+  const eyeClass = "absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-primary transition-colors";
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up"
+      >
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+            <KeyRound size={20} className="text-primary" />
+            Crie sua nova senha
+          </h3>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-2">
+            <Info size={16} className="mt-0.5 shrink-0" />
+            <p>
+              Olá{userName ? `, ${userName.split(' ')[0]}` : ''}! Você entrou com uma senha provisória.
+              Para continuar, defina uma senha pessoal.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nova senha</label>
+            <div className="relative">
+              <input
+                type={showPwd ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className={inputClass}
+                autoFocus
+                disabled={isSaving}
+              />
+              <button type="button" onClick={() => setShowPwd(v => !v)} className={eyeClass} title={showPwd ? 'Ocultar senha' : 'Mostrar senha'}>
+                {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">Confirmar nova senha</label>
+            <div className="relative">
+              <input
+                type={showConfirm ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                placeholder="Digite a senha de novo"
+                className={inputClass}
+                disabled={isSaving}
+              />
+              <button type="button" onClick={() => setShowConfirm(v => !v)} className={eyeClass} title={showConfirm ? 'Ocultar senha' : 'Mostrar senha'}>
+                {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</div>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3">
+          <button
+            type="button"
+            onClick={onLogout}
+            disabled={isSaving}
+            className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors"
+          >
+            Sair
+          </button>
+          <button
+            type="submit"
+            disabled={isSaving || !pwd || !confirm}
+            className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSaving ? 'Salvando...' : 'Salvar nova senha'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 function App() {
   const [session, setSession] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -8347,6 +8447,16 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans">
       <ToastContainer toasts={toasts} removeToast={removeToast} />
+      {userProfile?.must_change_password && (
+        <ForcePasswordChangeModal
+          userName={userProfile.name}
+          onDone={() => {
+            setUserProfile(prev => ({ ...prev, must_change_password: false }));
+            showToast('Senha alterada com sucesso!', 'success');
+          }}
+          onLogout={handleLogout}
+        />
+      )}
       
       {/* Sidebar Escura */}
       <aside 
