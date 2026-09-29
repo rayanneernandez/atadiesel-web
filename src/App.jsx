@@ -2252,11 +2252,15 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
         imageUrl = publicUrl;
       }
 
+      // "Válido até" vale o dia inteiro: até 23:59:59 no horário de Brasília
+      const expiration = newHighlight.expiration ? String(newHighlight.expiration).slice(0, 10) : null;
+
       const highlightData = {
         title: newHighlight.title || '',
         subtitle: newHighlight.description || '',
-        expires_at: newHighlight.expiration || null,
-        image_url: imageUrl
+        expires_at: expiration ? `${expiration}T23:59:59-03:00` : null,
+        image_url: imageUrl,
+        updated_at: new Date().toISOString()
       };
 
       console.log("Tentando salvar destaque:", highlightData);
@@ -2301,7 +2305,14 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
             });
         }
       } else {
-        const { error } = await supabase.from('highlights').insert([highlightData]);
+        // A tabela não gera id nem data sozinha, então enviamos na criação
+        const { error } = await supabase.from('highlights').insert([{
+          ...highlightData,
+          id: crypto.randomUUID(),
+          created_at: new Date().toISOString(),
+          is_active: true,
+          archived: false,
+        }]);
         if (error) throw error;
         showToastMessage("Destaque criado com sucesso!", 'success');
         
@@ -2369,7 +2380,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
         id: highlight.id,
         title: highlight.title,
         description: highlight.description,
-        expiration: highlight.expiration ? new Date(highlight.expiration).toISOString().split('T')[0] : '',
+        expiration: highlight.expiration ? new Date(highlight.expiration).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '',
         image: highlight.image,
         imageFile: null
       });
@@ -2390,40 +2401,12 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
     globalSearchTerm ? h.title.toLowerCase().includes(globalSearchTerm.toLowerCase()) : true
   );
 
-  const activeHighlights = filteredHighlights.filter(h => {
-    if (h.archived) return false;
-    if (!h.expiration) return true;
-    const expDate = new Date(h.expiration);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    // Converte a data de expiração (UTC do banco) para data local correspondente ao dia
-    const localExpDate = new Date(
-      expDate.getUTCFullYear(), 
-      expDate.getUTCMonth(), 
-      expDate.getUTCDate()
-    );
-    localExpDate.setHours(0, 0, 0, 0);
-    
-    return localExpDate >= today;
-  });
+  // Vence no horário gravado (fim do dia "Válido até", horário de Brasília)
+  const isExpired = (h) => !!h.expiration && new Date(h.expiration).getTime() < Date.now();
 
-  const inactiveHighlights = filteredHighlights.filter(h => {
-    if (h.archived) return false;
-    if (!h.expiration) return false;
-    const expDate = new Date(h.expiration);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const localExpDate = new Date(
-      expDate.getUTCFullYear(), 
-      expDate.getUTCMonth(), 
-      expDate.getUTCDate()
-    );
-    localExpDate.setHours(0, 0, 0, 0);
-    
-    return localExpDate < today;
-  });
+  const activeHighlights = filteredHighlights.filter(h => !h.archived && !isExpired(h));
+
+  const inactiveHighlights = filteredHighlights.filter(h => !h.archived && isExpired(h));
 
   const archivedHighlights = filteredHighlights.filter(h => h.archived);
 
@@ -2709,7 +2692,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                    {highlight.expiration && (
                      <div className="flex items-center gap-1 text-xs text-slate-500 mt-2">
                        <Calendar size={12} />
-                       <span>Válido até: {new Date(highlight.expiration).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                       <span>Válido até: {new Date(highlight.expiration).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
                      </div>
                    )}
                    <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
@@ -6609,7 +6592,7 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
                                     <HighlightText text={product.name} highlight={globalSearchTerm} />
                                 </td>
                                 <td className="px-6 py-4"><HighlightText text={product.category} highlight={globalSearchTerm} /></td>
-                                <td className="px-6 py-4 font-bold text-slate-800 text-lg">{product.stock}</td>
+                                <td className="px-6 py-4 text-slate-700">{product.stock}</td>
                                 <td className="px-6 py-4">
                                     <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${parseInt(product.stock) <= 5 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                                         {parseInt(product.stock) <= 5 ? 'Baixo Estoque' : 'Normal'}
