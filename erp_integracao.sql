@@ -53,7 +53,7 @@ select cron.schedule(
   '*/5 * * * *',
   $$
   select net.http_post(
-    url := 'https://crbqwpcwrottjveedolz.supabase.co/functions/v1/sync-erp',
+    url := 'https://crbqwpcwrottjveedolz.supabase.co/functions/v1/rapid-handler',
     headers := jsonb_build_object('Content-Type', 'application/json'),
     body := '{"source":"cron"}'::jsonb,
     timeout_milliseconds := 300000

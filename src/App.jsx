@@ -1334,7 +1334,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   const handleSyncErp = async () => {
     setIsSyncingErp(true);
     try {
-      const { data, error } = await supabase.functions.invoke('sync-erp', { body: { source: 'painel' } });
+      const { data, error } = await supabase.functions.invoke('rapid-handler', { body: { source: 'painel' } });
       if (error) throw error;
       if (data?.skipped) {
         showToast(data.skipped, 'info');
