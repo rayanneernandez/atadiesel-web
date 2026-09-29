@@ -4541,6 +4541,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
         permissions: u.permissions || {},
         receives_email: u.receives_email || false,
         app_access: u.app_access || false,
+        must_change_password: !!u.must_change_password,
         status: (session?.user?.email === u.email) ? 'Ativo' : 'Inativo', 
         visits: 0, 
         totalSpent: 0,
@@ -4871,6 +4872,37 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       showToast('Erro ao alterar senha: ' + (error.message || 'Erro desconhecido'), 'error');
     } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  // Obriga o usuário a criar uma senha nova no próximo login (a senha atual continua valendo até lá)
+  const handleRequestPasswordReset = async (user) => {
+    setActiveMenuId(null);
+    if (!window.confirm(`Pedir para ${user.name} criar uma nova senha?
+
+No próximo acesso ao painel, depois de entrar com a senha atual, ele será obrigado a cadastrar uma senha nova.`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ must_change_password: true })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      showToast(`${user.name} vai criar uma nova senha no próximo acesso.`, 'success');
+
+      if (logAction) {
+        logAction('USER_CHANGE', user.name || user.email || 'Usuário', {
+          action: 'request_password_reset',
+          target_email: user.email,
+        });
+      }
+
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, must_change_password: true } : u));
+    } catch (error) {
+      console.error('Erro ao pedir nova senha:', error);
+      showToast('Erro ao pedir nova senha: ' + error.message, 'error');
     }
   };
 
@@ -5705,6 +5737,14 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                               {user.name.charAt(0)}
                            </div>
                            <HighlightText text={user.name} highlight={globalSearchTerm} />
+                           {user.must_change_password && (
+                             <span
+                               title="Vai criar uma senha nova no próximo acesso"
+                               className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-100"
+                             >
+                               Nova senha pendente
+                             </span>
+                           )}
                         </div>
                       </td>
                       <td className="px-6 py-4"><HighlightText text={user.email} highlight={globalSearchTerm} /></td>
@@ -5761,6 +5801,13 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
                                      >
                                         <KeyRound size={16} className="text-slate-400" /> 
                                         Alterar Senha
+                                     </button>
+                                     <button
+                                       onClick={() => handleRequestPasswordReset(user)}
+                                       className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
+                                     >
+                                        <RefreshCw size={16} className="text-slate-400" /> 
+                                        Pedir Nova Senha
                                      </button>
                                      <button
                                        onClick={() => {
