@@ -59,6 +59,9 @@ import {
   ChevronDown,
   ArrowDownAZ,
   ArrowUpAZ,
+  Settings,
+  Store,
+  Save,
 } from 'lucide-react';
 import LoginScreen from './login';
 
@@ -4714,7 +4717,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     { id: 'checklist_dashboard_view', label: 'Checklist: Dashboard' },
     { id: 'Usuários', label: 'Usuários' },
     { id: 'Logs', label: 'Logs' },
-    { id: 'Entregas', label: 'Entregas' }
+    { id: 'Entregas', label: 'Entregas' },
+    { id: 'Configurações', label: 'Configurações' }
   ];
 
   const handleCreateRole = async () => {
@@ -5968,6 +5972,7 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
     if (activeTab === 'loyalty') types = ['LOYALTY_CHANGE'];
     if (activeTab === 'highlights') types = ['HIGHLIGHT_CHANGE'];
     if (activeTab === 'users') types = ['USER_CHANGE'];
+    if (activeTab === 'settings') types = ['SETTINGS_CHANGE'];
     
     try {
         const { data, error } = await supabase
@@ -6055,6 +6060,12 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'users' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
             >
                 Usuários
+            </button>
+            <button
+                onClick={() => setActiveTab('settings')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'settings' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+                Configurações
             </button>
         </div>
 
@@ -6174,6 +6185,20 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                                                         Validade: <span className="font-medium text-slate-700">{log.details.validUntil}</span>
                                                     </div>
                                                 )}
+                                            </div>
+                                        )}
+
+                                        {/* Settings Tab */}
+                                        {activeTab === 'settings' && log.details?.changes && (
+                                            <div className="space-y-1.5">
+                                                {log.details.changes.map((change, idx) => (
+                                                    <div key={idx} className="bg-slate-50 px-2 py-1 rounded border border-slate-100 text-xs">
+                                                        <span className="font-bold text-slate-600">{change.field}:</span>{' '}
+                                                        <span className="text-red-500 line-through">{change.old}</span>{' '}
+                                                        <ArrowUpRight size={12} className="inline text-slate-400" />{' '}
+                                                        <span className="text-emerald-600 font-bold">{change.new}</span>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
 
@@ -8183,6 +8208,333 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
 
 // --- APP PRINCIPAL ---
 
+// ---------------------------------------------------------------------------
+// CONFIGURAÇÕES DA LOJA: informações da tela "Nossa Loja" do app
+// ---------------------------------------------------------------------------
+const onlyDigits = (v) => String(v || '').replace(/\D/g, '');
+
+// Mostra o WhatsApp como (18) 99999-9999; no banco fica 5518999999999
+const formatWhatsapp = (digits) => {
+  let d = onlyDigits(digits);
+  if (d.startsWith('55') && d.length > 11) d = d.slice(2);
+  d = d.slice(0, 11);
+  if (d.length <= 2) return d ? `(${d}` : '';
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+};
+
+const hoursText = (h) => (h.closed ? 'Fechado' : `${h.open || '--:--'} - ${h.close || '--:--'}`);
+
+const SettingsScreen = ({ logAction, showToast }) => {
+  const [form, setForm] = useState(null);
+  const [original, setOriginal] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const load = async () => {
+    setIsLoading(true);
+    setLoadError('');
+    const { data, error } = await supabase.from('store_settings').select('*').eq('id', 1).maybeSingle();
+    if (error || !data) {
+      setLoadError(error?.message?.includes('store_settings')
+        ? "A tabela de configurações ainda não existe. Rode o arquivo 'configuracoes_loja.sql' no Supabase."
+        : (error?.message || 'Configurações não encontradas.'));
+    } else {
+      const normalized = { ...data, hours: Array.isArray(data.hours) ? data.hours : [], whatsappDisplay: formatWhatsapp(data.whatsapp) };
+      setForm(normalized);
+      setOriginal(normalized);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const setHour = (index, field, value) => setForm(prev => ({
+    ...prev,
+    hours: prev.hours.map((h, i) => (i === index ? { ...h, [field]: value } : h)),
+  }));
+
+  const addHour = () => setForm(prev => ({ ...prev, hours: [...prev.hours, { label: '', closed: false, open: '08:00', close: '18:00' }] }));
+  const removeHour = (index) => setForm(prev => ({ ...prev, hours: prev.hours.filter((_, i) => i !== index) }));
+  const moveHour = (index, dir) => setForm(prev => {
+    const hours = [...prev.hours];
+    const j = index + dir;
+    if (j < 0 || j >= hours.length) return prev;
+    [hours[index], hours[j]] = [hours[j], hours[index]];
+    return { ...prev, hours };
+  });
+
+  const handleSave = async () => {
+    const whatsappDigits = onlyDigits(form.whatsappDisplay);
+    if (whatsappDigits && whatsappDigits.length < 10) return showToast('WhatsApp inválido. Informe DDD + número.', 'warning');
+    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) return showToast('E-mail inválido.', 'warning');
+    if (form.hours.some(h => !String(h.label || '').trim())) return showToast('Preencha o nome de todas as linhas de horário.', 'warning');
+    if (form.hours.some(h => !h.closed && (!h.open || !h.close))) return showToast('Informe abertura e fechamento, ou marque como Fechado.', 'warning');
+
+    const lat = form.latitude === '' || form.latitude == null ? null : Number(String(form.latitude).replace(',', '.'));
+    const lng = form.longitude === '' || form.longitude == null ? null : Number(String(form.longitude).replace(',', '.'));
+    if ((lat != null && isNaN(lat)) || (lng != null && isNaN(lng))) return showToast('Latitude e longitude devem ser números.', 'warning');
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const payload = {
+      address_line1: (form.address_line1 || '').trim(),
+      address_line2: (form.address_line2 || '').trim(),
+      zip: (form.zip || '').trim(),
+      latitude: lat,
+      longitude: lng,
+      whatsapp: whatsappDigits ? (whatsappDigits.length <= 11 ? '55' + whatsappDigits : whatsappDigits) : '',
+      email: (form.email || '').trim(),
+      hours: form.hours.map(h => ({ label: h.label.trim(), closed: !!h.closed, open: h.closed ? '' : h.open, close: h.closed ? '' : h.close })),
+      autonomous_enabled: !!form.autonomous_enabled,
+      autonomous_title: (form.autonomous_title || '').trim(),
+      autonomous_text: (form.autonomous_text || '').trim(),
+      updated_at: new Date().toISOString(),
+      updated_by: user?.id || null,
+    };
+
+    setIsSaving(true);
+    try {
+      const { data, error } = await supabase.from('store_settings').update(payload).eq('id', 1).select();
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error('Sem permissão para alterar as configurações.');
+
+      // Log com o que mudou
+      const changes = [];
+      const cmp = (label, oldV, newV) => { if (String(oldV ?? '') !== String(newV ?? '')) changes.push({ field: label, old: oldV || '-', new: newV || '-' }); };
+      cmp('Endereço', original.address_line1, payload.address_line1);
+      cmp('Cidade/UF', original.address_line2, payload.address_line2);
+      cmp('CEP', original.zip, payload.zip);
+      cmp('Localização no mapa', original.latitude != null ? `${original.latitude}, ${original.longitude}` : '', lat != null ? `${lat}, ${lng}` : '');
+      cmp('WhatsApp', formatWhatsapp(original.whatsapp), formatWhatsapp(payload.whatsapp));
+      cmp('E-mail', original.email, payload.email);
+      const oldHours = (original.hours || []).map(h => `${h.label}: ${hoursText(h)}`).join(' | ');
+      const newHours = payload.hours.map(h => `${h.label}: ${hoursText(h)}`).join(' | ');
+      cmp('Horário', oldHours, newHours);
+      cmp('Loja Autônoma', original.autonomous_enabled ? 'Exibida' : 'Oculta', payload.autonomous_enabled ? 'Exibida' : 'Oculta');
+      cmp('Título Loja Autônoma', original.autonomous_title, payload.autonomous_title);
+      cmp('Texto Loja Autônoma', original.autonomous_text, payload.autonomous_text);
+
+      if (changes.length && logAction) logAction('SETTINGS_CHANGE', 'Nossa Loja (app)', { changes });
+
+      showToast(changes.length ? 'Configurações salvas! O app já mostra as novas informações.' : 'Nada foi alterado.', 'success');
+      const normalized = { ...data[0], hours: data[0].hours || [], whatsappDisplay: formatWhatsapp(data[0].whatsapp) };
+      setForm(normalized);
+      setOriginal(normalized);
+    } catch (err) {
+      console.error('Erro ao salvar configurações:', err);
+      showToast('Erro ao salvar: ' + (err.message || 'erro desconhecido'), 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400";
+  const labelClass = "block text-sm font-bold text-slate-700 mb-1.5";
+  const cardClass = "bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4";
+
+  if (isLoading) {
+    return (
+      <div className="p-12 text-center text-slate-500">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+        <p>Carregando configurações...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-12 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">
+        <p className="font-bold mb-2">Não foi possível carregar as configurações</p>
+        <p className="text-sm mb-4">{loadError}</p>
+        <button onClick={load} className="px-4 py-2 bg-white border border-red-200 rounded-lg text-red-600 hover:bg-red-50 font-bold text-sm">Tentar novamente</button>
+      </div>
+    );
+  }
+
+  const hasChanges = JSON.stringify({ ...form, whatsappDisplay: undefined }) !== JSON.stringify({ ...original, whatsappDisplay: undefined })
+    || onlyDigits(form.whatsappDisplay) !== onlyDigits(original.whatsappDisplay);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
+            <Settings className="text-primary" /> Configurações da Loja
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Informações exibidas no app, na tela "Nossa Loja".
+            {original?.updated_at && <> Última alteração em {new Date(original.updated_at).toLocaleString('pt-BR')}.</>}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {hasChanges && (
+            <button onClick={() => setForm(original)} disabled={isSaving}
+              className="bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors text-sm font-medium">
+              Descartar
+            </button>
+          )}
+          <button onClick={handleSave} disabled={isSaving || !hasChanges}
+            className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+            <Save size={18} /> {isSaving ? 'Salvando...' : 'Salvar alterações'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+        <div className="xl:col-span-2 space-y-6">
+          {/* Endereço */}
+          <div className={cardClass}>
+            <h3 className="font-bold text-slate-800 flex items-center gap-2"><MapPin size={18} className="text-red-600" /> Endereço</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className={labelClass}>Rua e número</label>
+                <input className={inputClass} value={form.address_line1 || ''} onChange={e => set('address_line1', e.target.value)} placeholder="Ex: Rua Alziro Zarur, 832" />
+              </div>
+              <div>
+                <label className={labelClass}>Cidade - UF</label>
+                <input className={inputClass} value={form.address_line2 || ''} onChange={e => set('address_line2', e.target.value)} placeholder="Ex: Araçatuba - SP" />
+              </div>
+              <div>
+                <label className={labelClass}>CEP</label>
+                <input className={inputClass} value={form.zip || ''} onChange={e => set('zip', e.target.value)} placeholder="Ex: 16026-000" />
+              </div>
+              <div>
+                <label className={labelClass}>Latitude (mapa)</label>
+                <input className={inputClass} value={form.latitude ?? ''} onChange={e => set('latitude', e.target.value)} placeholder="-21.1903" />
+              </div>
+              <div>
+                <label className={labelClass}>Longitude (mapa)</label>
+                <input className={inputClass} value={form.longitude ?? ''} onChange={e => set('longitude', e.target.value)} placeholder="-50.4362" />
+              </div>
+            </div>
+            <p className="text-xs text-slate-400">
+              Para pegar a localização: no Google Maps, clique com o botão direito em cima da loja e clique nos números que aparecem (latitude, longitude).
+              {form.latitude && form.longitude && (
+                <> <a className="text-primary hover:underline" target="_blank" rel="noreferrer"
+                  href={`https://www.google.com/maps?q=${String(form.latitude).replace(',', '.')},${String(form.longitude).replace(',', '.')}`}>Conferir no mapa</a></>
+              )}
+            </p>
+          </div>
+
+          {/* Contato */}
+          <div className={cardClass}>
+            <h3 className="font-bold text-slate-800 flex items-center gap-2"><Smartphone size={18} className="text-emerald-600" /> Contato</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>WhatsApp</label>
+                <input className={inputClass} value={form.whatsappDisplay || ''} onChange={e => set('whatsappDisplay', formatWhatsapp(e.target.value))} placeholder="(18) 99999-9999" inputMode="tel" />
+                <p className="text-xs text-slate-400 mt-1">O botão "Abrir WhatsApp" do app abre conversa com este número.</p>
+              </div>
+              <div>
+                <label className={labelClass}>E-mail</label>
+                <input className={inputClass} type="email" value={form.email || ''} onChange={e => set('email', e.target.value)} placeholder="contato@atadiesel.com.br" />
+              </div>
+            </div>
+          </div>
+
+          {/* Horário */}
+          <div className={cardClass}>
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2"><Clock size={18} className="text-primary" /> Horário de Funcionamento</h3>
+              <button onClick={addHour} className="text-sm text-primary hover:bg-blue-50 px-3 py-1.5 rounded-lg inline-flex items-center gap-1"><Plus size={16} /> Adicionar linha</button>
+            </div>
+            <div className="space-y-2">
+              {form.hours.map((h, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-center bg-slate-50 border border-slate-100 rounded-xl p-2">
+                  <div className="col-span-12 md:col-span-4">
+                    <input className={inputClass + ' bg-white'} value={h.label} onChange={e => setHour(i, 'label', e.target.value)} placeholder="Ex: Segunda a Sexta" />
+                  </div>
+                  <label className="col-span-4 md:col-span-2 flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+                    <input type="checkbox" checked={!!h.closed} onChange={e => setHour(i, 'closed', e.target.checked)} className="accent-[#0047AB] w-4 h-4" />
+                    Fechado
+                  </label>
+                  <input type="time" disabled={h.closed} className={inputClass + ' bg-white col-span-4 md:col-span-2 disabled:opacity-40'} value={h.open || ''} onChange={e => setHour(i, 'open', e.target.value)} />
+                  <input type="time" disabled={h.closed} className={inputClass + ' bg-white col-span-4 md:col-span-2 disabled:opacity-40'} value={h.close || ''} onChange={e => setHour(i, 'close', e.target.value)} />
+                  <div className="col-span-12 md:col-span-2 flex justify-end gap-1">
+                    <button onClick={() => moveHour(i, -1)} disabled={i === 0} title="Subir" className="p-2 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowUpRight size={16} className="-rotate-45" /></button>
+                    <button onClick={() => moveHour(i, 1)} disabled={i === form.hours.length - 1} title="Descer" className="p-2 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowDownRight size={16} className="rotate-45" /></button>
+                    <button onClick={() => removeHour(i)} title="Remover" className="p-2 text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              ))}
+              {form.hours.length === 0 && <p className="text-sm text-slate-400">Nenhum horário cadastrado.</p>}
+            </div>
+          </div>
+
+          {/* Loja Autônoma */}
+          <div className={cardClass}>
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2"><Store size={18} className="text-primary" /> Loja Autônoma</h3>
+              <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                Exibir no app
+                <div onClick={() => set('autonomous_enabled', !form.autonomous_enabled)}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${form.autonomous_enabled ? 'bg-primary' : 'bg-slate-300'}`}>
+                  <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${form.autonomous_enabled ? 'translate-x-5' : ''}`}></div>
+                </div>
+              </label>
+            </div>
+            <div>
+              <label className={labelClass}>Título</label>
+              <input className={inputClass} disabled={!form.autonomous_enabled} value={form.autonomous_title || ''} onChange={e => set('autonomous_title', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>Texto</label>
+              <textarea rows={3} className={inputClass + ' resize-none'} disabled={!form.autonomous_enabled} value={form.autonomous_text || ''} onChange={e => set('autonomous_text', e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        {/* Pré-visualização do app */}
+        <div className="xl:sticky xl:top-4">
+          <p className="text-xs font-bold text-slate-500 uppercase mb-2">Como fica no app</p>
+          <div className="bg-slate-100 rounded-[2rem] p-3 border-4 border-slate-800 shadow-xl max-w-[340px] mx-auto">
+            <div className="bg-[#1E3A8A] text-white rounded-t-2xl px-4 py-3">
+              <p className="font-bold">Nossa Loja</p>
+              <p className="text-xs opacity-80">Informações e Contato</p>
+            </div>
+            <div className="space-y-2 pt-2 text-[13px]">
+              <div className="bg-white rounded-xl p-3">
+                <p className="font-bold text-slate-800 flex items-center gap-1"><MapPin size={14} className="text-red-600" /> Endereço</p>
+                <p className="text-slate-500 mt-1">{form.address_line1 || '-'}</p>
+                <p className="text-slate-500">{form.address_line2}</p>
+                {form.zip && <p className="text-slate-500">{form.zip}</p>}
+                <div className="mt-2 bg-red-700 text-white text-center rounded-full py-1.5 font-bold text-xs">Como Chegar</div>
+              </div>
+              <div className="bg-white rounded-xl p-3">
+                <p className="font-bold text-slate-800 mb-1">Contato</p>
+                <p className="text-[11px] text-slate-400">WhatsApp</p>
+                <p className="text-slate-700">{form.whatsappDisplay || '-'}</p>
+                <div className="mt-1.5 bg-green-500 text-white text-center rounded-lg py-1.5 font-bold text-xs">Abrir WhatsApp</div>
+                <p className="text-[11px] text-slate-400 mt-2">Email</p>
+                <p className="text-slate-700 break-all">{form.email || '-'}</p>
+              </div>
+              <div className="bg-white rounded-xl p-3">
+                <p className="font-bold text-slate-800 flex items-center gap-1 mb-1"><Clock size={14} className="text-primary" /> Horário de Funcionamento</p>
+                {form.hours.map((h, i) => (
+                  <div key={i} className="flex justify-between py-1 border-b border-slate-50 last:border-0">
+                    <span className="text-slate-500">{h.label || '-'}</span>
+                    <span className={h.closed ? 'text-red-600 font-medium' : 'text-slate-700 font-medium'}>{hoursText(h)}</span>
+                  </div>
+                ))}
+              </div>
+              {form.autonomous_enabled && (
+                <div className="bg-[#1E3A8A] text-white rounded-xl p-3">
+                  <p className="font-bold">{form.autonomous_title}</p>
+                  <p className="text-xs opacity-90 mt-1">{form.autonomous_text}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Modal obrigatório: aparece no primeiro login quando a senha foi criada pelo administrador
 const ForcePasswordChangeModal = ({ userName, onDone, onLogout }) => {
   const [pwd, setPwd] = useState('');
@@ -8812,6 +9164,7 @@ function App() {
       case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} />);
       case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
+      case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
@@ -8864,6 +9217,7 @@ function App() {
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} visible={hasPermission('Usuários')} />
           <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} visible={hasPermission('Logs')} />
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
+          <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} isOpen={isSidebarOpen} visible={hasPermission('Configurações')} />
         </nav>
 
         <div className="p-4 border-t border-slate-800/50">
