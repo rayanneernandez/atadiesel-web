@@ -7,6 +7,8 @@
 //     * produto NOVO no ERP   -> cria no painel (código que não existia quando a integração começou)
 // - Estoque: saldo mais recente de cada produto do painel
 // - Preço: só quando o servidor do ERP tiver o endpoint /vshub/produto-preco
+// - Vendas: cada nota/cupom de saída vira uma linha em erp_sales, com itens, pagamento,
+//   cliente (CPF/CNPJ) e o recibo em PDF guardado no Storage (bucket "recibos")
 // Toda alteração vai para audit_logs (tela Logs), como "ERP Viasoft".
 //
 // Secrets necessários (Supabase > Edge Functions > Secrets):
@@ -100,6 +102,73 @@ function categoryFor(name: string, grupo?: number | null) {
   return (grupo != null && byGroup[grupo]) || 'Outros';
 }
 
+// --------------------------------------------------------- notas ---
+
+const PAG: Record<string, string> = {
+  '01': 'Dinheiro', '02': 'Cheque', '03': 'Cartão de Crédito', '04': 'Cartão de Débito', '05': 'Crédito Loja',
+  '10': 'Vale Alimentação', '11': 'Vale Refeição', '12': 'Vale Presente', '13': 'Vale Combustível',
+  '15': 'Boleto', '16': 'Depósito', '17': 'PIX', '18': 'Transferência', '19': 'Fidelidade/Cashback', '90': 'Sem pagamento', '99': 'Outros',
+};
+
+const tag = (xml: string, t: string) => (xml.match(new RegExp(`<${t}>([\\s\\S]*?)</${t}>`)) ?? [])[1] ?? '';
+const num = (v: string) => (v ? Number(v) : 0);
+const unescapeXml = (v: string) => v.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+
+function b64ToBytes(b64: string) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Lê NF-e / NFC-e (modelo 55/65) e CF-e SAT (modelo 59)
+function parseFiscalXml(xml: string) {
+  const ide = tag(xml, 'ide');
+  const dest = tag(xml, 'dest');
+  const sat = /<CFe[\s>]/.test(xml);
+
+  let emitted: string | null = tag(ide, 'dhEmi') || null;
+  if (!emitted && tag(ide, 'dEmi')) {
+    const d = tag(ide, 'dEmi'), h = tag(ide, 'hEmi').padEnd(6, '0');
+    emitted = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${h.slice(0, 2)}:${h.slice(2, 4)}:${h.slice(4, 6)}-03:00`;
+  }
+
+  const itens = [...xml.matchAll(/<det [^>]*>([\s\S]*?)<\/det>/g)].map(([, det]) => {
+    const prod = tag(det, 'prod');
+    const qtd = num(tag(prod, 'qCom'));
+    const unit = num(tag(prod, 'vUnCom'));
+    const desc = num(tag(prod, 'vDesc'));
+    const bruto = num(tag(prod, 'vProd')) || qtd * unit;
+    return {
+      codigo: tag(prod, 'cProd'),
+      descricao: unescapeXml(tag(prod, 'xProd')),
+      quantidade: qtd,
+      unidade: tag(prod, 'uCom'),
+      valor_unit: unit,
+      desconto: desc,
+      total: Math.round((bruto - desc) * 100) / 100,
+    };
+  });
+
+  const pagamentos = sat
+    ? [...xml.matchAll(/<MP>([\s\S]*?)<\/MP>/g)].map(([, mp]) => ({ forma: PAG[tag(mp, 'cMP')] ?? tag(mp, 'cMP'), valor: num(tag(mp, 'vMP')) }))
+    : [...xml.matchAll(/<detPag>([\s\S]*?)<\/detPag>/g)].map(([, dp]) => ({ forma: PAG[tag(dp, 'tPag')] ?? tag(dp, 'tPag'), valor: num(tag(dp, 'vPag')) }));
+
+  const total = tag(xml, 'ICMSTot');
+  return {
+    numero: tag(ide, 'nNF') || tag(ide, 'nCFe'),
+    serie: tag(ide, 'serie') || tag(ide, 'nserieSAT'),
+    emitted_at: emitted,
+    cliente_nome: unescapeXml(tag(dest, 'xNome')),
+    cliente_doc: (tag(dest, 'CPF') || tag(dest, 'CNPJ')).replace(/\D/g, ''),
+    cliente_email: tag(dest, 'email'),
+    valor_total: num(tag(total, 'vNF')) || num(tag(xml, 'vCFe')),
+    desconto: num(tag(total, 'vDesc')) || num(tag(xml, 'vDescSubtot')),
+    itens,
+    pagamentos,
+  };
+}
+
 const brl = (cents: number | null | undefined) =>
   cents == null ? '-' : (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -143,7 +212,8 @@ Deno.serve(async (req) => {
   const result = {
     cadastro_lidos: 0, nomes_alterados: 0, arquivados: 0, desarquivados: 0, novos: 0,
     estoque_alterado: 0, precos_alterados: 0, preco_disponivel: state?.price_available ?? null,
-    baseline: state?.baseline_done ? 'concluída' : 'em andamento', erros: [] as string[],
+    baseline: state?.baseline_done ? 'concluída' : 'em andamento', vendas_novas: 0, vendas_atualizadas: 0,
+    erros: [] as string[],
   };
   const patch: Record<string, unknown> = {};
   const logs: any[] = [];
@@ -348,7 +418,109 @@ Deno.serve(async (req) => {
       patch.price_checked_at = new Date().toISOString();
     }
 
-    // ------------------------ 4. lista de códigos existentes (1ª vez)
+    // ----------------------------------------- 4. vendas + recibos
+    // Notas do ERP em ordem de Id. docs_skip = quantas já foram lidas.
+    if (timeLeft() > 30_000) {
+      try {
+        let dskip: number | null = state?.docs_skip ?? null;
+
+        // 1ª vez: procura a primeira nota a partir de docs_start (busca binária)
+        if (dskip == null) {
+          const start = String(state?.docs_start ?? '2026-09-01');
+          const emissaoAt = async (i: number) => {
+            const d = await erpGet('vshub/v1/docfiscal', { Top: 1, Skip: i, Estabs: ESTAB });
+            return d?.value?.[0]?.Emissao as string | undefined;
+          };
+          let hi = 1;
+          while (await emissaoAt(hi)) hi *= 2;
+          let lo = 0;
+          while (lo < hi) {
+            const mid = Math.floor((lo + hi) / 2);
+            const em = await emissaoAt(mid);
+            if (!em || em >= start) hi = mid; else lo = mid + 1;
+          }
+          dskip = lo;
+        }
+
+        const PAGE = 25;
+        while (timeLeft() > 25_000) {
+          const list = (await erpGet('vshub/v1/docfiscal', { Top: PAGE, Skip: dskip, Estabs: ESTAB }))?.value ?? [];
+          if (!list.length) break;
+
+          for (const doc of list) {
+            if (timeLeft() < 20_000) break;
+            dskip!++;
+            // Só vendas (saída) de NF-e, NFC-e e CF-e SAT
+            if (doc.Operacao !== 'S' || !['55', '65', '59'].includes(String(doc.Modelo))) continue;
+
+            const { data: exists } = await db.from('erp_sales').select('id').eq('id', doc.Id).maybeSingle();
+            if (exists) continue;
+
+            let parsed: ReturnType<typeof parseFiscalXml> | null = null;
+            let pdfPath: string | null = null;
+            try {
+              const file = await erpGet(`vshub/v1/docfiscal/${encodeURIComponent(doc.Id)}/download-por-id`);
+              if (file?.DocXML_Base64) parsed = parseFiscalXml(new TextDecoder().decode(b64ToBytes(file.DocXML_Base64)));
+              if (file?.DocPDF_Base64) {
+                pdfPath = `${doc.Estab}/${doc.Modelo}/${String(doc.Id).replace('|', '-')}.pdf`;
+                const { error: upErr } = await db.storage.from('recibos')
+                  .upload(pdfPath, b64ToBytes(file.DocPDF_Base64), { contentType: 'application/pdf', upsert: true });
+                if (upErr) { result.erros.push(`Recibo ${doc.Id}: ${upErr.message}`); pdfPath = null; }
+              }
+            } catch (e) {
+              result.erros.push(`Nota ${doc.Id}: ${(e as Error).message}`);
+            }
+
+            const row = {
+              id: doc.Id,
+              estab: doc.Estab,
+              modelo: String(doc.Modelo),
+              numero: parsed?.numero || String(doc.Id).split('|')[1],
+              serie: parsed?.serie || doc.Serie,
+              chave_acesso: doc.ChaveAcesso,
+              emitted_at: parsed?.emitted_at || `${doc.Emissao}T12:00:00-03:00`,
+              emissao: doc.Emissao,
+              operacao: doc.OperacaoDescricao,
+              status_fiscal: doc.StatusFiscal,
+              cliente_nome: parsed?.cliente_nome || (doc.PessoaNome && doc.PessoaNome !== 'CONSUMIDOR FINAL' ? doc.PessoaNome : 'Consumidor final'),
+              cliente_doc: parsed?.cliente_doc || '',
+              cliente_email: parsed?.cliente_email || '',
+              valor_total: parsed?.valor_total ?? Number(doc.Valor || 0),
+              desconto: parsed?.desconto ?? 0,
+              pagamentos: parsed?.pagamentos ?? [],
+              itens: parsed?.itens ?? [],
+              pdf_path: pdfPath,
+              synced_at: new Date().toISOString(),
+            };
+            const { error } = await db.from('erp_sales').upsert(row);
+            if (error) result.erros.push(`Venda ${doc.Id}: ${error.message}`);
+            else result.vendas_novas++;
+          }
+          if (list.length < PAGE) break;
+        }
+        patch.docs_skip = dskip;
+
+        // Atualiza a situação (ex.: cancelamento) das notas mais recentes já guardadas
+        if (timeLeft() > 10_000 && dskip! > 0) {
+          const recent = (await erpGet('vshub/v1/docfiscal', { Top: 300, Skip: Math.max(0, dskip! - 300), Estabs: ESTAB }))?.value ?? [];
+          const ids = recent.filter((d: any) => d.Operacao === 'S').map((d: any) => d.Id);
+          if (ids.length) {
+            const { data: saved } = await db.from('erp_sales').select('id, status_fiscal').in('id', ids);
+            const savedMap = new Map((saved ?? []).map((r: any) => [r.id, r.status_fiscal]));
+            for (const d of recent) {
+              if (savedMap.has(d.Id) && savedMap.get(d.Id) !== d.StatusFiscal) {
+                await db.from('erp_sales').update({ status_fiscal: d.StatusFiscal, synced_at: new Date().toISOString() }).eq('id', d.Id);
+                result.vendas_atualizadas++;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        result.erros.push('Vendas: ' + (e as Error).message);
+      }
+    }
+
+    // ------------------------ 5. lista de códigos existentes (1ª vez)
     // Guarda todos os códigos que já existem no ERP para não puxar os antigos como "novos".
     if (!baselineDone) {
       let bskip = state?.baseline_skip ?? 0;

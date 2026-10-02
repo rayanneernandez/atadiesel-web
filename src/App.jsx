@@ -62,6 +62,10 @@ import {
   Settings,
   Store,
   Save,
+  Receipt,
+  FileDown,
+  UserCheck,
+  Printer,
 } from 'lucide-react';
 import LoginScreen from './login';
 
@@ -4718,6 +4722,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     { id: 'Usuários', label: 'Usuários' },
     { id: 'Logs', label: 'Logs' },
     { id: 'Entregas', label: 'Entregas' },
+    { id: 'Vendas', label: 'Vendas' },
     { id: 'Configurações', label: 'Configurações' }
   ];
 
@@ -8209,6 +8214,414 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
 // --- APP PRINCIPAL ---
 
 // ---------------------------------------------------------------------------
+// VENDAS: notas e cupons do ERP com recibo em PDF, ligados ao cliente pelo CPF/CNPJ
+// ---------------------------------------------------------------------------
+const SALE_TYPES = {
+  '65': { label: 'Balcão (NFC-e)', short: 'Balcão', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
+  '59': { label: 'Balcão (CF-e SAT)', short: 'Balcão', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
+  '55': { label: 'NF-e', short: 'NF-e', cls: 'bg-slate-50 text-slate-700 border-slate-200' },
+};
+
+const formatDoc = (d) => {
+  const v = String(d || '').replace(/\D/g, '');
+  if (v.length === 11) return v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  if (v.length === 14) return v.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  return v;
+};
+
+const money = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const localDate = (offsetDays = 0) => {
+  const d = new Date(Date.now() + offsetDays * 86400000);
+  return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+};
+
+const SalesScreen = ({ globalSearchTerm, showToast }) => {
+  const PER_PAGE = 50;
+  const [sales, setSales] = useState([]);
+  const [count, setCount] = useState(0);
+  const [summary, setSummary] = useState({ total: 0, qtd: 0 });
+  const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [from, setFrom] = useState(localDate(-30));
+  const [to, setTo] = useState(localDate(0));
+  const [type, setType] = useState('all');          // all | balcao | nfe
+  const [onlyApp, setOnlyApp] = useState(false);
+  const [showCancelled, setShowCancelled] = useState(true);
+  const [appCustomers, setAppCustomers] = useState(new Map()); // doc -> nome
+  const [selected, setSelected] = useState(null);
+  const [downloading, setDownloading] = useState(null);
+
+  // Clientes do app com CPF/CNPJ (para marcar e filtrar as vendas deles)
+  useEffect(() => {
+    supabase.from('profiles').select('id, name, cpf').not('cpf', 'is', null).then(({ data }) => {
+      const map = new Map();
+      (data || []).forEach(p => {
+        const doc = String(p.cpf || '').replace(/\D/g, '');
+        if (doc) map.set(doc, p.name || 'Cliente');
+      });
+      setAppCustomers(map);
+    });
+  }, []);
+
+  const term = (globalSearchTerm || '').trim();
+
+  const applyFilters = (q) => {
+    q = q.gte('emitted_at', `${from}T00:00:00-03:00`).lte('emitted_at', `${to}T23:59:59-03:00`);
+    if (type === 'balcao') q = q.in('modelo', ['65', '59']);
+    if (type === 'nfe') q = q.eq('modelo', '55');
+    if (!showCancelled) q = q.neq('status_fiscal', 'Cancelado');
+    if (onlyApp) {
+      const docs = [...appCustomers.keys()];
+      q = q.in('cliente_doc', docs.length ? docs : ['-']);
+    }
+    if (term) {
+      const digits = term.replace(/\D/g, '');
+      const safe = term.replace(/[,()%]/g, ' ');
+      const ors = [`cliente_nome.ilike.%${safe}%`, `numero.ilike.%${safe}%`];
+      if (digits.length >= 3) ors.push(`cliente_doc.ilike.%${digits}%`);
+      q = q.or(ors.join(','));
+    }
+    return q;
+  };
+
+  const load = async () => {
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const start = (page - 1) * PER_PAGE;
+      const { data, count: total, error } = await applyFilters(
+        supabase.from('erp_sales')
+          .select('id, modelo, numero, serie, emitted_at, cliente_nome, cliente_doc, valor_total, status_fiscal, pdf_path', { count: 'exact' })
+      ).order('emitted_at', { ascending: false }).range(start, start + PER_PAGE - 1);
+      if (error) throw error;
+      setSales(data || []);
+      setCount(total || 0);
+
+      // Totais do período (sem as canceladas)
+      const { data: totals, error: tErr } = await applyFilters(supabase.from('erp_sales').select('valor_total, status_fiscal'))
+        .neq('status_fiscal', 'Cancelado').limit(10000);
+      if (!tErr) setSummary({ total: (totals || []).reduce((s, r) => s + Number(r.valor_total || 0), 0), qtd: (totals || []).length });
+    } catch (err) {
+      console.error('Erro ao carregar vendas:', err);
+      setLoadError(String(err.message || '').includes('erp_sales')
+        ? "A tabela de vendas ainda não existe. Rode o arquivo 'vendas_erp.sql' no Supabase."
+        : (err.message || 'Erro ao carregar vendas.'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { setPage(1); }, [from, to, type, onlyApp, showCancelled, term]);
+  useEffect(() => { load(); }, [page, from, to, type, onlyApp, showCancelled, term, appCustomers]);
+
+  const openDetails = async (sale) => {
+    setSelected({ ...sale, loading: true });
+    const { data, error } = await supabase.from('erp_sales').select('*').eq('id', sale.id).maybeSingle();
+    if (error || !data) { showToast('Não foi possível abrir a venda.', 'error'); setSelected(null); return; }
+    setSelected(data);
+  };
+
+  // Busca o PDF do recibo (Storage privado) e entrega como arquivo local
+  const getReceiptBlob = async (sale) => {
+    if (!sale.pdf_path) { showToast('Esta venda não tem recibo em PDF no ERP.', 'warning'); return null; }
+    const { data, error } = await supabase.storage.from('recibos').download(sale.pdf_path);
+    if (error) throw error;
+    return URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
+  };
+
+  const receiptAction = async (sale, action) => {
+    setDownloading(`${sale.id}:${action}`);
+    try {
+      const url = await getReceiptBlob(sale);
+      if (!url) return;
+
+      if (action === 'download') {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `recibo-${sale.modelo === '55' ? 'nfe' : 'cupom'}-${sale.numero}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else if (action === 'print') {
+        // Abre o PDF num quadro invisível e chama a impressão do navegador
+        const frame = document.createElement('iframe');
+        frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+        frame.src = url;
+        frame.onload = () => {
+          setTimeout(() => {
+            try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+            catch { window.open(url, '_blank'); }
+          }, 300);
+        };
+        document.body.appendChild(frame);
+        setTimeout(() => frame.remove(), 60_000);
+      } else {
+        window.open(url, '_blank');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      showToast('Erro ao abrir o recibo: ' + (err.message || 'erro desconhecido'), 'error');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(count / PER_PAGE));
+  const pageNumbers = (() => {
+    const pages = [];
+    const a = Math.max(1, page - 2), b = Math.min(totalPages, page + 2);
+    if (a > 1) { pages.push(1); if (a > 2) pages.push('…'); }
+    for (let i = a; i <= b; i++) pages.push(i);
+    if (b < totalPages) { if (b < totalPages - 1) pages.push('…'); pages.push(totalPages); }
+    return pages;
+  })();
+
+  const inputClass = "bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-slate-700";
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-end flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
+            <Receipt className="text-primary" /> Vendas
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">Notas e cupons emitidos no ERP, com o recibo de cada venda. Atualiza a cada 5 minutos.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="date" className={inputClass} value={from} max={to} onChange={e => setFrom(e.target.value)} />
+          <span className="text-slate-400 text-sm">até</span>
+          <input type="date" className={inputClass} value={to} min={from} onChange={e => setTo(e.target.value)} />
+          <select className={inputClass} value={type} onChange={e => setType(e.target.value)}>
+            <option value="all">Todas</option>
+            <option value="balcao">Balcão (cupom)</option>
+            <option value="nfe">NF-e</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+          <p className="text-sm text-slate-500">Total vendido no período</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{money(summary.total)}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+          <p className="text-sm text-slate-500">Vendas</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{summary.qtd.toLocaleString('pt-BR')}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+          <p className="text-sm text-slate-500">Ticket médio</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{money(summary.qtd ? summary.total / summary.qtd : 0)}</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap gap-4 items-center text-sm text-slate-600">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" className="accent-[#0047AB] w-4 h-4" checked={onlyApp} onChange={e => setOnlyApp(e.target.checked)} />
+            Só clientes do app
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" className="accent-[#0047AB] w-4 h-4" checked={showCancelled} onChange={e => setShowCancelled(e.target.checked)} />
+            Mostrar canceladas
+          </label>
+          <span className="text-xs text-slate-400 ml-auto">Use a busca do topo para procurar por cliente, CPF/CNPJ ou número da nota.</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left text-slate-500">
+            <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+              <tr>
+                <th className="px-6 py-3">Data</th>
+                <th className="px-6 py-3">Nº</th>
+                <th className="px-6 py-3">Tipo</th>
+                <th className="px-6 py-3">Cliente</th>
+                <th className="px-6 py-3 text-right">Valor</th>
+                <th className="px-6 py-3">Situação</th>
+                <th className="px-6 py-3 text-right">Recibo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoading ? (
+                <tr><td colSpan="7" className="px-6 py-10 text-center text-slate-400">Carregando vendas...</td></tr>
+              ) : loadError ? (
+                <tr><td colSpan="7" className="px-6 py-10 text-center text-red-500">{loadError}</td></tr>
+              ) : sales.length === 0 ? (
+                <tr><td colSpan="7" className="px-6 py-10 text-center text-slate-400">Nenhuma venda neste período.</td></tr>
+              ) : sales.map(sale => {
+                const t = SALE_TYPES[sale.modelo] || { short: sale.modelo, cls: 'bg-slate-50 text-slate-600 border-slate-200' };
+                const appName = sale.cliente_doc ? appCustomers.get(sale.cliente_doc) : null;
+                const cancelled = sale.status_fiscal === 'Cancelado';
+                return (
+                  <tr key={sale.id} onClick={() => openDetails(sale)} className={`bg-white hover:bg-slate-50 transition-colors cursor-pointer ${cancelled ? 'opacity-60' : ''}`}>
+                    <td className="px-6 py-3 whitespace-nowrap text-slate-700">{new Date(sale.emitted_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}</td>
+                    <td className="px-6 py-3 text-slate-700">{sale.numero}</td>
+                    <td className="px-6 py-3"><span className={`px-2 py-0.5 rounded border text-xs ${t.cls}`}>{t.short}</span></td>
+                    <td className="px-6 py-3">
+                      <div className="flex flex-col">
+                        <span className="text-slate-800">{sale.cliente_nome || 'Consumidor final'}</span>
+                        <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                          {formatDoc(sale.cliente_doc)}
+                          {appName && <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 rounded"><UserCheck size={11} /> Cliente do app</span>}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={`px-6 py-3 text-right text-slate-700 whitespace-nowrap ${cancelled ? 'line-through' : ''}`}>{money(sale.valor_total)}</td>
+                    <td className="px-6 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs ${cancelled ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>{sale.status_fiscal || '-'}</span>
+                    </td>
+                    <td className="px-6 py-3 text-right" onClick={e => e.stopPropagation()}>
+                      {sale.pdf_path ? (
+                        <div className="inline-flex gap-1">
+                          <button onClick={() => receiptAction(sale, 'download')} disabled={!!downloading} title="Baixar recibo"
+                            className="text-primary hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-2 rounded-lg disabled:opacity-50">
+                            <FileDown size={15} />
+                          </button>
+                          <button onClick={() => receiptAction(sale, 'print')} disabled={!!downloading} title="Imprimir recibo"
+                            className="text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 p-2 rounded-lg disabled:opacity-50">
+                            <Printer size={15} />
+                          </button>
+                        </div>
+                      ) : <span className="text-xs text-slate-300">sem PDF</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {count > 0 && (
+          <div className="px-4 py-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <span className="text-sm text-slate-500">
+              Mostrando <strong className="text-slate-700">{(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, count)}</strong> de <strong className="text-slate-700">{count.toLocaleString('pt-BR')}</strong> vendas
+            </span>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                  className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+                {pageNumbers.map((n, i) => n === '…' ? <span key={`g${i}`} className="px-2 text-slate-400">…</span> : (
+                  <button key={n} onClick={() => setPage(n)}
+                    className={`min-w-[36px] px-2 py-1.5 rounded-lg text-sm ${n === page ? 'bg-primary text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{n}</button>
+                ))}
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                  className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Próxima</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Detalhes da venda */}
+      {selected && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setSelected(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col animate-scale-up" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                <Receipt size={20} className="text-primary" />
+                {(SALE_TYPES[selected.modelo]?.label) || 'Nota'} nº {selected.numero}
+              </h3>
+              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full"><X size={20} /></button>
+            </div>
+
+            {selected.loading ? (
+              <div className="p-12 text-center text-slate-400">Carregando...</div>
+            ) : (
+              <div className="p-6 space-y-5 overflow-y-auto">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-400">Data</p>
+                    <p className="text-slate-800">{new Date(selected.emitted_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Situação</p>
+                    <p className={selected.status_fiscal === 'Cancelado' ? 'text-red-600' : 'text-emerald-700'}>{selected.status_fiscal}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-slate-400">Cliente</p>
+                    <p className="text-slate-800">{selected.cliente_nome || 'Consumidor final'}</p>
+                    <p className="text-xs text-slate-500">
+                      {formatDoc(selected.cliente_doc)}{selected.cliente_email ? ` · ${selected.cliente_email}` : ''}
+                    </p>
+                    {selected.cliente_doc && appCustomers.get(selected.cliente_doc) && (
+                      <p className="text-xs text-emerald-700 mt-1 inline-flex items-center gap-1"><UserCheck size={12} /> Cliente do app: {appCustomers.get(selected.cliente_doc)}. Ele vê este recibo no app.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-bold text-slate-700 mb-2">Itens</p>
+                  <div className="border border-slate-100 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-xs text-slate-500">
+                        <tr><th className="px-3 py-2 text-left">Produto</th><th className="px-3 py-2 text-right">Qtd</th><th className="px-3 py-2 text-right">Unit.</th><th className="px-3 py-2 text-right">Total</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {(selected.itens || []).map((it, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-2 text-slate-700"><span className="text-xs text-slate-400 mr-1">{it.codigo}</span>{it.descricao}</td>
+                            <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap">{Number(it.quantidade).toLocaleString('pt-BR')} {it.unidade}</td>
+                            <td className="px-3 py-2 text-right text-slate-600 whitespace-nowrap">{money(it.valor_unit)}</td>
+                            <td className="px-3 py-2 text-right text-slate-800 whitespace-nowrap">{money(it.total)}</td>
+                          </tr>
+                        ))}
+                        {(!selected.itens || selected.itens.length === 0) && (
+                          <tr><td colSpan="4" className="px-3 py-4 text-center text-slate-400">Itens não disponíveis.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-start gap-4 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-400 mb-1">Pagamento</p>
+                    {(selected.pagamentos || []).length ? selected.pagamentos.map((pg, i) => (
+                      <p key={i} className="text-slate-700">{pg.forma}: {money(pg.valor)}</p>
+                    )) : <p className="text-slate-400">-</p>}
+                  </div>
+                  <div className="text-right">
+                    {Number(selected.desconto) > 0 && <p className="text-slate-500">Desconto: {money(selected.desconto)}</p>}
+                    <p className="text-lg font-bold text-slate-900">Total: {money(selected.valor_total)}</p>
+                  </div>
+                </div>
+
+                {selected.chave_acesso && (
+                  <p className="text-[11px] text-slate-400 break-all">Chave de acesso: {selected.chave_acesso}</p>
+                )}
+              </div>
+            )}
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-wrap gap-2">
+              <button onClick={() => setSelected(null)} className="bg-white border border-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl hover:bg-slate-50">Fechar</button>
+              {selected.pdf_path ? (
+                <>
+                  <button onClick={() => receiptAction(selected, 'view')} disabled={!!downloading}
+                    className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                    <Eye size={18} /> Ver PDF
+                  </button>
+                  <button onClick={() => receiptAction(selected, 'print')} disabled={!!downloading}
+                    className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                    <Printer size={18} /> {downloading === `${selected.id}:print` ? 'Preparando...' : 'Imprimir'}
+                  </button>
+                  <button onClick={() => receiptAction(selected, 'download')} disabled={!!downloading}
+                    className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-50 inline-flex items-center justify-center gap-2">
+                    <FileDown size={18} /> {downloading === `${selected.id}:download` ? 'Baixando...' : 'Baixar'}
+                  </button>
+                </>
+              ) : (
+                <span className="flex-1 text-center text-sm text-slate-400 py-2.5">Esta venda não tem recibo em PDF no ERP.</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // CONFIGURAÇÕES DA LOJA: informações da tela "Nossa Loja" do app
 // ---------------------------------------------------------------------------
 const onlyDigits = (v) => String(v || '').replace(/\D/g, '');
@@ -9165,6 +9578,7 @@ function App() {
       case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
       case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} />);
+      case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
@@ -9217,6 +9631,7 @@ function App() {
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} visible={hasPermission('Usuários')} />
           <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} visible={hasPermission('Logs')} />
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
+          <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
           <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} isOpen={isSidebarOpen} visible={hasPermission('Configurações')} />
         </nav>
 
