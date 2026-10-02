@@ -19,7 +19,8 @@ create table if not exists public.erp_sales (
   cliente_nome text,
   cliente_doc text,                    -- CPF/CNPJ só números (vazio no balcão sem CPF)
   cliente_email text,
-  valor_total numeric(14,2) not null default 0,
+  valor_total numeric(14,2) not null default 0,   -- soma só dos itens da loja
+  valor_nota numeric(14,2),                        -- valor cheio da nota (inclui diesel, se houver)
   desconto numeric(14,2) not null default 0,
   pagamentos jsonb not null default '[]'::jsonb,   -- [{ "forma": "PIX", "valor": 10 }]
   itens jsonb not null default '[]'::jsonb,        -- [{ "codigo","descricao","quantidade","unidade","valor_unit","desconto","total" }]

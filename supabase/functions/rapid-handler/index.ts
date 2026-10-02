@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
   const result = {
     cadastro_lidos: 0, nomes_alterados: 0, arquivados: 0, desarquivados: 0, novos: 0,
     estoque_alterado: 0, precos_alterados: 0, preco_disponivel: state?.price_available ?? null,
-    baseline: state?.baseline_done ? 'concluída' : 'em andamento', vendas_novas: 0, vendas_atualizadas: 0,
+    baseline: state?.baseline_done ? 'concluída' : 'em andamento', vendas_novas: 0, vendas_atualizadas: 0, vendas_ignoradas: 0,
     erros: [] as string[],
   };
   const patch: Record<string, unknown> = {};
@@ -457,18 +457,28 @@ Deno.serve(async (req) => {
             if (exists) continue;
 
             let parsed: ReturnType<typeof parseFiscalXml> | null = null;
-            let pdfPath: string | null = null;
+            let file: any = null;
             try {
-              const file = await erpGet(`vshub/v1/docfiscal/${encodeURIComponent(doc.Id)}/download-por-id`);
+              file = await erpGet(`vshub/v1/docfiscal/${encodeURIComponent(doc.Id)}/download-por-id`);
               if (file?.DocXML_Base64) parsed = parseFiscalXml(new TextDecoder().decode(b64ToBytes(file.DocXML_Base64)));
-              if (file?.DocPDF_Base64) {
-                pdfPath = `${doc.Estab}/${doc.Modelo}/${String(doc.Id).replace('|', '-')}.pdf`;
-                const { error: upErr } = await db.storage.from('recibos')
-                  .upload(pdfPath, b64ToBytes(file.DocPDF_Base64), { contentType: 'application/pdf', upsert: true });
-                if (upErr) { result.erros.push(`Recibo ${doc.Id}: ${upErr.message}`); pdfPath = null; }
-              }
             } catch (e) {
               result.erros.push(`Nota ${doc.Id}: ${(e as Error).message}`);
+              continue;
+            }
+            if (!parsed) continue;
+
+            // Só itens da loja (produtos cadastrados em Gerenciar Produtos). Diesel a granel fica de fora.
+            const lojaItens = parsed.itens.filter((it) => bySku.has(String(it.codigo).trim()));
+            if (!lojaItens.length) { result.vendas_ignoradas++; continue; }
+            const lojaTotal = Math.round(lojaItens.reduce((sum, it) => sum + Number(it.total || 0), 0) * 100) / 100;
+            const notaSoDaLoja = lojaItens.length === parsed.itens.length;
+
+            let pdfPath: string | null = null;
+            if (file?.DocPDF_Base64) {
+              pdfPath = `${doc.Estab}/${doc.Modelo}/${String(doc.Id).replace('|', '-')}.pdf`;
+              const { error: upErr } = await db.storage.from('recibos')
+                .upload(pdfPath, b64ToBytes(file.DocPDF_Base64), { contentType: 'application/pdf', upsert: true });
+              if (upErr) { result.erros.push(`Recibo ${doc.Id}: ${upErr.message}`); pdfPath = null; }
             }
 
             const row = {
@@ -485,10 +495,12 @@ Deno.serve(async (req) => {
               cliente_nome: parsed?.cliente_nome || (doc.PessoaNome && doc.PessoaNome !== 'CONSUMIDOR FINAL' ? doc.PessoaNome : 'Consumidor final'),
               cliente_doc: parsed?.cliente_doc || '',
               cliente_email: parsed?.cliente_email || '',
-              valor_total: parsed?.valor_total ?? Number(doc.Valor || 0),
-              desconto: parsed?.desconto ?? 0,
-              pagamentos: parsed?.pagamentos ?? [],
-              itens: parsed?.itens ?? [],
+              // Total = só os itens da loja; o valor cheio da nota fica em valor_nota
+              valor_total: notaSoDaLoja ? (parsed.valor_total || lojaTotal) : lojaTotal,
+              valor_nota: parsed.valor_total || Number(doc.Valor || 0),
+              desconto: notaSoDaLoja ? (parsed.desconto ?? 0) : lojaItens.reduce((sum, it) => sum + Number(it.desconto || 0), 0),
+              pagamentos: parsed.pagamentos ?? [],
+              itens: lojaItens,
               pdf_path: pdfPath,
               synced_at: new Date().toISOString(),
             };

@@ -8387,7 +8387,7 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
             <Receipt className="text-primary" /> Vendas
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Notas e cupons emitidos no ERP, com o recibo de cada venda. Atualiza a cada 5 minutos.</p>
+          <p className="text-sm text-slate-500 mt-1">Vendas de itens da loja (produtos cadastrados) emitidas no ERP, com o recibo de cada venda. Atualiza a cada 5 minutos.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="date" className={inputClass} value={from} max={to} onChange={e => setFrom(e.target.value)} />
@@ -8584,6 +8584,9 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
                   <div className="text-right">
                     {Number(selected.desconto) > 0 && <p className="text-slate-500">Desconto: {money(selected.desconto)}</p>}
                     <p className="text-lg font-bold text-slate-900">Total: {money(selected.valor_total)}</p>
+                    {Number(selected.valor_nota) > Number(selected.valor_total) + 0.01 && (
+                      <p className="text-xs text-amber-700 mt-1">Nota completa: {money(selected.valor_nota)} (inclui itens que não são da loja, como diesel)</p>
+                    )}
                   </div>
                 </div>
 
