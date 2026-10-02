@@ -5985,7 +5985,7 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
             .select('*')
             .in('action_type', types)
             .order('created_at', { ascending: false })
-            .limit(100);
+            .limit(1000);
 
         if (error) {
             console.error("Erro ao buscar logs:", error);
@@ -6025,12 +6025,109 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
     return new Date(dateString).toLocaleString('pt-BR');
   };
 
+  // --- Filtros por coluna (estilo Excel) ---
+  const USER_ACTIONS = {
+    create_user: 'Novo Usuário Cadastrado',
+    create_user_rpc: 'Novo Usuário Cadastrado',
+    create_role: 'Novo Cargo Criado',
+    update_role: 'Alteração de Cargo',
+    update_permissions: 'Alteração de Permissões',
+    reset_password: 'Senha Redefinida',
+    request_password_reset: 'Pedido de Nova Senha',
+    delete_user: 'Usuário Excluído',
+  };
+
+  const STOCK_TYPES = { add: 'Adição', remove: 'Remoção' };
+
+  // Resumo de "Detalhes da Alteração" usado no filtro (um log pode ter mais de um)
+  const detailTags = (log) => {
+    const d = log.details || {};
+    if (activeTab === 'stock') return [STOCK_TYPES[d.adjustmentType] || 'Ajuste'];
+    if (activeTab === 'users') return [USER_ACTIONS[d.action] || d.action || 'Outro'];
+    if (activeTab === 'loyalty') return ['Alteração de Configuração'];
+    if (activeTab === 'highlights') return [d.action || 'Alteração'];
+    const tags = [];
+    if (d.action === 'Criação') tags.push('Produto Criado');
+    if (Array.isArray(d.changes)) d.changes.forEach(c => c?.field && tags.push(c.field));
+    if (d.oldPrice !== undefined || d.newPrice !== undefined) tags.push('Preço');
+    return tags.length ? [...new Set(tags)] : ['Outro'];
+  };
+
+  const LOG_COLUMNS = {
+    date: (log) => new Date(log.created_at).toLocaleDateString('pt-BR'),
+    user: (log) => log.user_name || (log.details?.source === 'ERP' ? 'ERP Viasoft' : (log.user_email || 'Usuário')),
+    item: (log) => log.entity_name || '-',
+    detail: detailTags,
+  };
+
+  const EMPTY_LOG_FILTERS = { date: null, user: null, item: null, detail: null };
+  const [logFilters, setLogFilters] = useState(EMPTY_LOG_FILTERS);
+  const [logSort, setLogSort] = useState({ key: null, dir: null });
+  const [logPage, setLogPage] = useState(1);
+
+  // Ao trocar de aba, limpa os filtros
+  useEffect(() => { setLogFilters(EMPTY_LOG_FILTERS); setLogSort({ key: null, dir: null }); setLogPage(1); }, [activeTab]);
+  useEffect(() => { setLogPage(1); }, [logFilters, logSort, globalSearchTerm]);
+
+  const asList = (v) => (Array.isArray(v) ? v : [v]);
+  const logPasses = (log, skipKey) => Object.entries(logFilters).every(([key, allowed]) =>
+    key === skipKey || allowed === null || asList(LOG_COLUMNS[key](log)).some(v => allowed.includes(v))
+  );
+
+  const term = (globalSearchTerm || '').trim().toLowerCase();
+  const searchedLogs = logs.filter(log => !term ||
+    String(log.entity_name || '').toLowerCase().includes(term) ||
+    String(log.user_email || '').toLowerCase().includes(term) ||
+    String(log.user_name || '').toLowerCase().includes(term));
+
+  const dayKey = (br) => br.split('/').reverse().join('-'); // dd/mm/aaaa -> aaaa-mm-dd
+  const logOptionsFor = (key) => {
+    const vals = [...new Set(searchedLogs.filter(l => logPasses(l, key)).flatMap(l => asList(LOG_COLUMNS[key](l))))];
+    return key === 'date'
+      ? vals.sort((a, b) => dayKey(b).localeCompare(dayKey(a)))   // datas mais recentes primeiro
+      : vals.sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+  };
+
+  const filteredLogs = searchedLogs.filter(l => logPasses(l)).sort((a, b) => {
+    if (!logSort.key) return 0; // já vem do banco do mais recente para o mais antigo
+    let cmp;
+    if (logSort.key === 'date') cmp = new Date(a.created_at) - new Date(b.created_at);
+    else cmp = String(asList(LOG_COLUMNS[logSort.key](a))[0]).localeCompare(String(asList(LOG_COLUMNS[logSort.key](b))[0]), 'pt-BR');
+    return logSort.dir === 'desc' ? -cmp : cmp;
+  });
+
+  const LOGS_PER_PAGE = 50;
+  const logTotalPages = Math.max(1, Math.ceil(filteredLogs.length / LOGS_PER_PAGE));
+  const logSafePage = Math.min(logPage, logTotalPages);
+  const logStart = (logSafePage - 1) * LOGS_PER_PAGE;
+  const pagedLogs = filteredLogs.slice(logStart, logStart + LOGS_PER_PAGE);
+  const logPageNumbers = (() => {
+    const pages = [];
+    const a = Math.max(1, logSafePage - 2), b = Math.min(logTotalPages, logSafePage + 2);
+    if (a > 1) { pages.push(1); if (a > 2) pages.push('…'); }
+    for (let i = a; i <= b; i++) pages.push(i);
+    if (b < logTotalPages) { if (b < logTotalPages - 1) pages.push('…'); pages.push(logTotalPages); }
+    return pages;
+  })();
+
+  const setLogFilter = (key) => (allowed) => setLogFilters(prev => ({ ...prev, [key]: allowed }));
+  const sortLogsBy = (key) => (dir) => setLogSort({ key, dir });
+  const hasLogFilters = Object.values(logFilters).some(v => v !== null) || !!logSort.key;
+
   return (
     <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
             <History className="text-primary" /> Logs de Auditoria
         </h1>
+        {hasLogFilters && (
+            <button
+                onClick={() => { setLogFilters(EMPTY_LOG_FILTERS); setLogSort({ key: null, dir: null }); }}
+                className="text-sm text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 inline-flex items-center gap-1.5"
+            >
+                <X size={14} /> Limpar filtros
+            </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -6079,19 +6176,27 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
             <table className="w-full text-sm text-left text-slate-500">
                 <thead className="text-xs text-slate-700 uppercase bg-slate-50">
                     <tr>
-                        <th className="px-6 py-3">Data/Hora</th>
-                        <th className="px-6 py-3">Usuário</th>
-                        <th className="px-6 py-3">Item/Entidade</th>
-                        <th className="px-6 py-3">Detalhes da Alteração</th>
+                        <th className="px-6 py-3">
+                            <ColumnFilter label="Data/Hora" values={logOptionsFor('date')} selected={logFilters.date} onChange={setLogFilter('date')} onSort={sortLogsBy('date')} sortDir={logSort.key === 'date' ? logSort.dir : null} />
+                        </th>
+                        <th className="px-6 py-3">
+                            <ColumnFilter label="Usuário" values={logOptionsFor('user')} selected={logFilters.user} onChange={setLogFilter('user')} onSort={sortLogsBy('user')} sortDir={logSort.key === 'user' ? logSort.dir : null} />
+                        </th>
+                        <th className="px-6 py-3">
+                            <ColumnFilter label="Item/Entidade" values={logOptionsFor('item')} selected={logFilters.item} onChange={setLogFilter('item')} onSort={sortLogsBy('item')} sortDir={logSort.key === 'item' ? logSort.dir : null} />
+                        </th>
+                        <th className="px-6 py-3">
+                            <ColumnFilter label="Detalhes da Alteração" values={logOptionsFor('detail')} selected={logFilters.detail} onChange={setLogFilter('detail')} onSort={sortLogsBy('detail')} sortDir={logSort.key === 'detail' ? logSort.dir : null} />
+                        </th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                     {loading ? (
                         <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">Carregando logs...</td></tr>
-                    ) : logs.length === 0 ? (
-                        <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">Nenhum registro encontrado.</td></tr>
+                    ) : pagedLogs.length === 0 ? (
+                        <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">{logs.length ? 'Nenhum registro com esses filtros.' : 'Nenhum registro encontrado.'}</td></tr>
                     ) : (
-                        logs.map((log) => (
+                        pagedLogs.map((log) => (
                             <tr key={log.id} className="bg-white hover:bg-slate-50 transition-colors">
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <div className="flex items-center gap-2">
@@ -6101,7 +6206,7 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                                 </td>
                                 <td className="px-6 py-4">
                                     <div className="flex flex-col">
-                                        <span className="font-bold text-slate-800">{log.user_name || (log.details?.source === 'ERP' ? 'ERP Viasoft' : 'Usuário')}</span>
+                                        <span className="font-bold text-slate-800">{LOG_COLUMNS.user(log)}</span>
                                         <span className="text-xs text-slate-500">{log.user_email}</span>
                                     </div>
                                 </td>
@@ -6216,6 +6321,8 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                                                     {log.details.action === 'update_role' && 'Alteração de Cargo'}
                                                     {log.details.action === 'update_permissions' && 'Alteração de Permissões'}
                                                     {log.details.action === 'reset_password' && 'Senha Redefinida'}
+                                                    {log.details.action === 'create_user_rpc' && 'Novo Usuário Cadastrado'}
+                                                    {log.details.action === 'request_password_reset' && 'Pedido de Nova Senha'}
                                                 </div>
                                                 
                                                 {log.details.action === 'create_user' && (
@@ -6257,6 +6364,26 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
                 </tbody>
             </table>
         </div>
+
+        {filteredLogs.length > 0 && (
+          <div className="px-4 py-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <span className="text-sm text-slate-500">
+              Mostrando <strong className="text-slate-700">{logStart + 1}–{Math.min(logStart + LOGS_PER_PAGE, filteredLogs.length)}</strong> de <strong className="text-slate-700">{filteredLogs.length}</strong> registros
+            </span>
+            {logTotalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logSafePage === 1}
+                  className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Anterior</button>
+                {logPageNumbers.map((n, i) => n === '…' ? <span key={`g${i}`} className="px-2 text-slate-400">…</span> : (
+                  <button key={n} onClick={() => setLogPage(n)}
+                    className={`min-w-[36px] px-2 py-1.5 rounded-lg text-sm ${n === logSafePage ? 'bg-primary text-white font-medium shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{n}</button>
+                ))}
+                <button onClick={() => setLogPage(p => Math.min(logTotalPages, p + 1))} disabled={logSafePage === logTotalPages}
+                  className="px-3 py-1.5 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed">Próxima</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -71,3 +71,8 @@ body {
 .animate-scale-up {
   animation: scaleUp 0.2s ease-out forwards;
 }
+/* Janelas (modais) em tela cheia: o espaçamento automático "space-y-*" do container
+   colocava margem em cima do fundo escuro e deixava uma faixa sem escurecer no topo */
+[class*="space-y-"] > .fixed {
+  margin-top: 0 !important;
+}
