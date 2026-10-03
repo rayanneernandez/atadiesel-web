@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
+import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import logoSmall from './assets/logoso.png';
 import logoFull from './assets/logo.png';
 import { 
@@ -4723,6 +4724,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     { id: 'Logs', label: 'Logs' },
     { id: 'Entregas', label: 'Entregas' },
     { id: 'Vendas', label: 'Vendas' },
+    { id: 'Loja Autônoma', label: 'Loja Autônoma' },
     { id: 'Configurações', label: 'Configurações' }
   ];
 
@@ -4824,9 +4826,11 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
   const roleOptions = buildRoleOptions(rolesList);
   const [showNewUserPassword, setShowNewUserPassword] = useState(false);
+  const [staffAccess, setStaffAccess] = useState({ ...EMPTY_STAFF_ACCESS }); // acesso à loja autônoma (cargo Funcionário)
 
   const openNewUserModal = () => {
     setNewUser({ name: '', email: '', password: '', role: 'admin' });
+    setStaffAccess({ ...EMPTY_STAFF_ACCESS });
     setShowNewUserPassword(false);
     setIsModalOpen(true);
   };
@@ -4855,10 +4859,15 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     }
 
     const roleConfig = roleOptions.find(r => r.key === normalizeRoleKey(newUser.role)) || roleOptions[0];
+    const isStaff = ['funcionario', 'entregador'].includes(normalizeRoleKey(newUser.role)); // quem entra na loja autônoma
+    if (isStaff) {
+      const problem = validateStaffAccess(staffAccess);
+      if (problem) { showToast(problem, "warning"); return; }
+    }
 
     try {
       // Cria a conta de login + perfil direto no banco (não troca a sessão de quem está logado)
-      const { error } = await supabase.rpc('admin_create_user', {
+      const { data: newId, error } = await supabase.rpc('admin_create_user', {
         p_email: email,
         p_password: password,
         p_name: name,
@@ -4869,6 +4878,16 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       if (error) throw error;
 
       showToast(`${roleConfig.label} cadastrado com sucesso!`, "success");
+
+      // Funcionário: grava também o acesso à Loja Autônoma e já envia para lá
+      if (isStaff) {
+        try {
+          const r = await registerAutonomousStaff({ profileId: newId, name, access: staffAccess, roleTitle: roleConfig.label });
+          showToast(r.synced ? 'Acesso à Loja Autônoma liberado.' : `Acesso salvo, mas o envio para a Loja Autônoma falhou (${r.reason}). Use Loja Autônoma → Sincronização.`, r.synced ? 'success' : 'warning');
+        } catch (e) {
+          showToast(`Usuário criado, mas o acesso à Loja Autônoma não foi salvo: ${e.message}`, 'warning');
+        }
+      }
 
       if (logAction) {
         logAction('USER_CHANGE', name || email || 'Novo Usuário', {
@@ -4881,6 +4900,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       fetchUsers();
       setIsModalOpen(false);
       setNewUser({ name: '', email: '', password: '', role: 'admin' });
+      setStaffAccess({ ...EMPTY_STAFF_ACCESS });
       setShowNewUserPassword(false);
     } catch (error) {
       console.error("Erro ao criar usuário:", error);
@@ -5288,10 +5308,10 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
           onClick={() => setIsModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
-             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                    <UserPlus size={20} className="text-primary" />
                    Novo Usuário
@@ -5301,7 +5321,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                 </button>
              </div>
              
-             <div className="p-6 space-y-4">
+             <div className="p-6 space-y-4 overflow-y-auto min-h-0">
                 <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-start gap-2">
                    <div className="mt-0.5">
                      <Info size={16} />
@@ -5371,9 +5391,13 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                       ))}
                    </select>
                 </div>
+
+                {['funcionario', 'entregador'].includes(normalizeRoleKey(newUser.role)) && (
+                  <StaffAccessFields value={staffAccess} onChange={setStaffAccess} />
+                )}
              </div>
 
-             <div className="p-6 border-t border-slate-100 bg-white">
+             <div className="p-6 border-t border-slate-100 bg-white shrink-0">
                 <button 
                    onClick={handleSaveUser}
                    className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 active:scale-[0.99]"
@@ -9708,6 +9732,7 @@ function App() {
       case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
       case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} />);
+      case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
@@ -9762,6 +9787,7 @@ function App() {
           <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} visible={hasPermission('Logs')} />
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
+          <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
           <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} isOpen={isSidebarOpen} visible={hasPermission('Configurações')} />
         </nav>
 
