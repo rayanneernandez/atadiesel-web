@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
-import logo from './assets/logo.png';
+import logo from './assets/logo-atadiesel-branco.png';
 import { supabase } from './supabaseClient';
 
 const LoginScreen = ({ onLogin }) => {
@@ -78,7 +78,7 @@ const LoginScreen = ({ onLogin }) => {
         {/* Header */}
         <div className="bg-slate-900/50 p-6 text-center border-b border-slate-700">
           <div className="w-72 mx-auto flex items-center justify-center mb-4">
-            <img src={logo} alt="Atadisel" className="w-full h-auto object-contain" />
+            <img src={logo} alt="Atadiesel" className="w-full h-auto object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-2">Bem-vindo de volta!</h1>
           <p className="text-slate-400">Acesse o painel administrativo da Atadisel</p>

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import logoSmall from './assets/logoso.png';
-import logoFull from './assets/logo.png';
+import logoFull from './assets/logo-atadiesel-branco.png';
 import { 
   LayoutDashboard, 
   Package, 
@@ -9768,7 +9768,7 @@ function App() {
           <div className="flex items-center gap-3 text-white font-bold text-xl overflow-hidden w-full">
              <div className="flex items-center justify-center w-full transition-all duration-300">
                 {isSidebarOpen ? (
-                  <img src={logoFull} alt="Atadiesel" className="h-14 w-auto object-contain transition-all hover:scale-105" />
+                  <img src={logoFull} alt="Atadiesel" className="h-16 w-auto max-w-full object-contain transition-all hover:scale-105" />
                 ) : (
                   <img src={logoSmall} alt="Atadiesel" className="h-10 w-auto object-contain transition-all hover:scale-110" />
                 )}
