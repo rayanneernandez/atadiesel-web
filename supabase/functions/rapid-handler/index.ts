@@ -91,6 +91,10 @@ const isInactive = (p: any) => {
 
 const cleanName = (s: string) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
+// Óleo diesel a granel não faz parte do painel: nem como produto nem nas vendas importadas.
+// (Não pega "aditivo para diesel" e outros produtos da loja que só citam a palavra.)
+const isDiesel = (name: unknown) => /(oleo|óleo)\s+diesel|diesel\s+(b\s*)?s\d{2,3}\b|onu\s*1202/i.test(String(name ?? ''));
+
 // Mesmas regras usadas na importação da planilha
 function categoryFor(name: string, grupo?: number | null) {
   const up = name.toUpperCase();
@@ -257,6 +261,7 @@ Deno.serve(async (req) => {
         const code = codeOf(p);
         if (!code) continue;
         const name = cleanName(p.Descricao || p.DescricaoReduzida);
+        if (isDiesel(name)) { if (!bySku.has(code)) await db.from('erp_known_codes').upsert({ code }); continue; } // diesel nunca entra no painel
         const inactive = isInactive(p);
         const mine = bySku.get(code);
 
@@ -468,7 +473,7 @@ Deno.serve(async (req) => {
             if (!parsed) continue;
 
             // Só itens da loja (produtos cadastrados em Gerenciar Produtos). Diesel a granel fica de fora.
-            const lojaItens = parsed.itens.filter((it) => bySku.has(String(it.codigo).trim()));
+            const lojaItens = parsed.itens.filter((it) => bySku.has(String(it.codigo).trim()) && !isDiesel(it.descricao));
             if (!lojaItens.length) { result.vendas_ignoradas++; continue; }
             const lojaTotal = Math.round(lojaItens.reduce((sum, it) => sum + Number(it.total || 0), 0) * 100) / 100;
             const notaSoDaLoja = lojaItens.length === parsed.itens.length;
