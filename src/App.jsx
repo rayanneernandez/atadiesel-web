@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
+import IntegracoesScreen from './Integracoes';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import logoSmall from './assets/logoso.png';
 import logoFull from './assets/logo-atadiesel-branco.png';
@@ -67,6 +68,7 @@ import {
   FileDown,
   UserCheck,
   Printer,
+  Plug,
 } from 'lucide-react';
 import LoginScreen from './login';
 
@@ -411,10 +413,87 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
     (userProfile.permissions && userProfile.permissions['checklist_dashboard_view']);
 
   const [activeTab, setActiveTab] = useState(hasOverviewPermission ? 'overview' : (hasChecklistDashboardPermission ? 'checklist' : 'overview')); // 'overview' | 'checklist'
-  const [dateRange, setDateRange] = useState({
-    start: new Date().toISOString().slice(0, 10),
-    end: new Date().toISOString().slice(0, 10)
+  const [dateRange, setDateRange] = useState(() => {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    return { start: `${today.slice(0, 8)}01`, end: today }; // do dia 1º do mês até hoje
   });
+
+  // Vendas do ERP (notas/cupons) e da Loja Autônoma. Somam com os pedidos do app nos números da Visão Geral.
+  const [autonomousSales, setAutonomousSales] = useState([]);
+  const [erpSales, setErpSales] = useState([]);
+  useEffect(() => {
+    if (!hasOverviewPermission) return;
+    // O Supabase devolve no máximo 1000 linhas por consulta, então lê em páginas.
+    const fetchAll = async (build) => {
+      const out = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data, error } = await build().range(from, from + 999);
+        if (error) { console.error('Erro ao carregar vendas:', error.message); break; }
+        out.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      return out;
+    };
+    const since = new Date(); since.setMonth(since.getMonth() - 7); since.setDate(1);
+    const sinceIso = since.toISOString();
+    fetchAll(() => supabase.from('autonomous_sales')
+      .select('id, paid_at, amount_cents, customer_name, customer_cpf, items')
+      .gte('paid_at', sinceIso).order('paid_at', { ascending: false })).then(setAutonomousSales);
+    fetchAll(() => supabase.from('erp_sales')
+      .select('id, emitted_at, cliente_nome, valor_total, status_fiscal, itens')
+      .neq('status_fiscal', 'Cancelado').gte('emitted_at', sinceIso).order('emitted_at', { ascending: false })).then(setErpSales);
+  }, [hasOverviewPermission]);
+
+  // Todas as vendas num formato só: pedidos do app (orders) + Loja Autônoma. Canceladas ficam de fora.
+  const allSales = React.useMemo(() => {
+    const fromApp = deliveries
+      .filter(d => d.status !== 'Cancelado')
+      .map(d => {
+        const [dd, mm, yyyy] = String(d.date || '').split('/');
+        return { ...d, source: 'app', iso: yyyy && mm && dd ? `${yyyy}-${mm}-${dd}` : '' };
+      });
+    const fromStore = autonomousSales.map(a => ({
+      id: `loja-${a.id}`,
+      source: 'loja',
+      client: a.customer_name || a.customer_cpf || 'Cliente da loja',
+      value: Number(a.amount_cents || 0) / 100,
+      status: 'Entregue',
+      iso: a.paid_at ? new Date(a.paid_at).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '',
+      itemsList: (Array.isArray(a.items) ? a.items : []).map(i => ({
+        name: i.name || i.sku || 'Desconhecido',
+        quantity: i.quantity,
+        unitPrice: Number(i.unit_price_cents || 0) / 100,
+      })),
+    })).map(a => {
+      const [y, m, d] = a.iso.split('-');
+      return { ...a, date: a.iso ? `${d}/${m}/${y}` : '' };
+    });
+    const fromErp = erpSales.map(e => {
+      const iso = e.emitted_at ? new Date(e.emitted_at).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '';
+      const [y, m, d] = iso.split('-');
+      return {
+        id: `erp-${e.id}`,
+        source: 'erp',
+        client: e.cliente_nome || 'Consumidor',
+        value: Number(e.valor_total || 0),
+        status: 'Entregue',
+        iso,
+        date: iso ? `${d}/${m}/${y}` : '',
+        itemsList: (Array.isArray(e.itens) ? e.itens : []).map(i => ({
+          name: i.descricao || i.codigo || 'Desconhecido',
+          quantity: i.quantidade,
+          unitPrice: Number(i.valor_unit || 0),
+        })),
+      };
+    });
+    return [...fromApp, ...fromStore, ...fromErp];
+  }, [deliveries, autonomousSales, erpSales]);
+
+  // Vendas dentro do período escolhido (cards, categorias e produtos mais vendidos)
+  const periodSales = React.useMemo(
+    () => allSales.filter(s => s.iso && s.iso >= dateRange.start && s.iso <= dateRange.end),
+    [allSales, dateRange]
+  );
   
   const [checklistData, setChecklistData] = useState([]);
   const [usersList, setUsersList] = useState([]);
@@ -507,7 +586,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
     const prevMonthIndex = prevMonthDate.getMonth();
     const prevYear = prevMonthDate.getFullYear();
 
-    deliveries.forEach(order => {
+    allSales.forEach(order => {
         let orderMonth = -1;
         let orderYear = -1;
 
@@ -529,8 +608,9 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
             }
         }
 
-        // Processar Produtos e Categorias
-        if (order.itemsList && Array.isArray(order.itemsList)) {
+        // Processar Produtos e Categorias (só o período escolhido)
+        const inPeriod = order.iso && order.iso >= dateRange.start && order.iso <= dateRange.end;
+        if (inPeriod && order.itemsList && Array.isArray(order.itemsList)) {
             order.itemsList.forEach(item => {
                 const itemName = item.name || 'Desconhecido';
                 const qty = Number(item.quantity) || 0;
@@ -598,15 +678,16 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
         });
 
     return { processedSales: salesList, processedCategories, processedTopProducts };
-  }, [deliveries, products]);
+  }, [allSales, products, dateRange]);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
 
   // Cálculos em Tempo Real
-  const activeClients = new Set(deliveries.map(d => d.client)).size;
-  const totalOrders = deliveries.length;
-  const monthlyRevenue = deliveries.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
+  const activeClients = new Set(periodSales.map(d => d.client)).size;
+  const totalOrders = periodSales.length;
+  const monthlyRevenue = periodSales.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
   const averageTicket = totalOrders > 0 ? monthlyRevenue / totalOrders : 0;
+  const revenueBySource = periodSales.reduce((acc, s) => { acc[s.source] = (acc[s.source] || 0) + (Number(s.value) || 0); return acc; }, {});
 
   // Formatação de Moeda
   const toNumber = (v) => {
@@ -697,8 +778,8 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
 
       const kpiRows = [
         ['Clientes (Total)', String(totalClients || 0), 'Clientes Ativos (com pedidos)', String(activeClients || 0)],
-        ['Total de Entregas', String(totalOrders || 0), 'Entregas em Andamento', String(deliveriesInProgressCount)],
-        ['Entregas Concluídas', String(deliveriesCompletedCount), 'Receita (Entregas)', formatCurrencyNoWrap(monthlyRevenue || 0)],
+        ['Total de Vendas', String(totalOrders || 0), 'Entregas em Andamento', String(deliveriesInProgressCount)],
+        ['Entregas Concluídas', String(deliveriesCompletedCount), 'Receita (Vendas)', formatCurrencyNoWrap(monthlyRevenue || 0)],
         ['Ticket Médio', formatCurrencyNoWrap(averageTicket || 0), 'Produtos Cadastrados', String((products || []).length)],
         ['Sem Estoque', String(outOfStock), 'Estoque Baixo (≤ 5)', String(lowStock)]
       ];
@@ -901,7 +982,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
         { Metrica: 'Total de Entregas', Valor: totalOrders || 0 },
         { Metrica: 'Entregas em Andamento', Valor: deliveriesInProgressCount },
         { Metrica: 'Entregas Concluídas', Valor: deliveriesCompletedCount },
-        { Metrica: 'Receita (Entregas)', Valor: Number(monthlyRevenue || 0) },
+        { Metrica: 'Receita (Vendas)', Valor: Number(monthlyRevenue || 0) },
         { Metrica: 'Ticket Médio', Valor: Number(averageTicket || 0) },
         { Metrica: 'Produtos Cadastrados', Valor: (products || []).length },
         { Metrica: 'Sem Estoque', Valor: outOfStock },
@@ -1110,40 +1191,45 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
     {activeTab === 'overview' && hasOverviewPermission && (
     <div className="space-y-6 animate-fade-in">
     {/* Grid de Estatísticas Premium */}
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+ <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
       <StatCard 
         icon={Users} 
         label={<HighlightText text="Total de Clientes" highlight={globalSearchTerm} />}
         value={<HighlightText text={totalClients.toString()} highlight={globalSearchTerm} />}
-        trend="+12.5%" 
-        trendUp={true}
         color="blue" 
       />
       <StatCard 
         icon={ShoppingBag} 
         label={<HighlightText text="Total de Pedidos" highlight={globalSearchTerm} />}
         value={<HighlightText text={totalOrders.toString()} highlight={globalSearchTerm} />}
-        trend="+8.2%" 
-        trendUp={true}
         color="emerald" 
       />
       <StatCard 
         icon={DollarSign} 
         label={<HighlightText text="Receita Total" highlight={globalSearchTerm} />}
         value={<HighlightText text={formatCurrency(monthlyRevenue)} highlight={globalSearchTerm} />}
-        trend="-2.4%" 
-        trendUp={false}
         color="amber" 
+      />
+      <StatCard 
+        icon={Package} 
+        label={<HighlightText text="Produtos Cadastrados" highlight={globalSearchTerm} />}
+        value={<HighlightText text={products.length.toString()} highlight={globalSearchTerm} />}
+        color="blue" 
       />
       <StatCard 
         icon={TrendingUp} 
         label={<HighlightText text="Ticket Médio" highlight={globalSearchTerm} />}
         value={<HighlightText text={formatCurrency(averageTicket)} highlight={globalSearchTerm} />}
-        trend="+1.3%" 
-        trendUp={true}
         color="indigo" 
       />
     </div>
+
+    <p className="text-xs text-slate-400 -mt-2">
+      Receita do período por origem:{' '}
+      <span className="text-slate-600 font-medium">ERP {formatCurrency(revenueBySource.erp || 0)}</span> ·{' '}
+      <span className="text-slate-600 font-medium">App {formatCurrency(revenueBySource.app || 0)}</span> ·{' '}
+      <span className="text-slate-600 font-medium">Loja Autônoma {formatCurrency(revenueBySource.loja || 0)}</span>
+    </p>
 
 
 
@@ -7290,10 +7376,12 @@ const StatCard = ({ icon: Icon, label, value, trend, trendUp, color }) => {
         <div className={`p-3 rounded-xl ${activeColor} group-hover:scale-110 transition-transform`}>
           <Icon size={24} />
         </div>
-        <div className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${trendUp ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-          {trendUp ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-          {trend}
-        </div>
+        {trend && (
+          <div className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${trendUp ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+            {trendUp ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+            {trend}
+          </div>
+        )}
       </div>
       <div>
         <h3 className="text-2xl font-bold text-slate-800 tracking-tight">{value}</h3>
@@ -9258,15 +9346,21 @@ function App() {
                 .eq('id', session.user.id)
                 .single();
             setUserProfile(data);
+            const { data: okInt } = await supabase.rpc('is_integration_admin');
+            setCanIntegrations(!!okInt);
         } else {
             setUserProfile(null);
+            setCanIntegrations(false);
         }
     };
     fetchProfile();
   }, [session]);
 
+  const [canIntegrations, setCanIntegrations] = useState(false);
+
   const hasPermission = (moduleId) => {
     if (!userProfile) return false;
+    if (moduleId === 'Integrações') return canIntegrations; // só e-mails em integration_admins (checado também no banco via RLS)
     const role = userProfile.role?.toLowerCase() || '';
 
     if (role === 'admin' || role === 'administrador') return true;
@@ -9732,6 +9826,7 @@ function App() {
       case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
       case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} />);
+      case 'Integrações': return renderIfAllowed('Integrações', <IntegracoesScreen showToast={showToast} session={session} />);
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
@@ -9776,7 +9871,7 @@ function App() {
           </div>
         </div>
 
-        <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-700">
+        <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto overflow-x-hidden sidebar-scroll">
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} isOpen={isSidebarOpen} visible={hasPermission('Dashboard')} />
           <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} visible={hasPermission('Produtos')} />
           <SidebarItem icon={Boxes} label="Estoque" active={activeTab === 'Estoque'} onClick={() => setActiveTab('Estoque')} isOpen={isSidebarOpen} visible={hasPermission('Estoque')} />
@@ -9788,6 +9883,7 @@ function App() {
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
           <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
+          <SidebarItem icon={Plug} label="Integrações" active={activeTab === 'Integrações'} onClick={() => setActiveTab('Integrações')} isOpen={isSidebarOpen} visible={hasPermission('Integrações')} />
           <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} isOpen={isSidebarOpen} visible={hasPermission('Configurações')} />
         </nav>
 
