@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import IntegracoesScreen from './Integracoes';
+import UserDetailTabs from './UserDetail';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import logoSmall from './assets/logoso.png';
 import logoFull from './assets/logo-atadiesel-branco.png';
@@ -69,6 +70,7 @@ import {
   UserCheck,
   Printer,
   Plug,
+  Pencil,
 } from 'lucide-react';
 import LoginScreen from './login';
 
@@ -1258,6 +1260,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} dy={10} />
               <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} tickFormatter={(value) => `R${value/1000}k`} />
               <Tooltip 
+                formatter={(value) => [formatCurrency(value), 'Vendas']}
                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
               <Area type="monotone" dataKey="vendas" stroke="#0047AB" strokeWidth={3} fillOpacity={1} fill="url(#colorVendas)" />
@@ -4760,6 +4763,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [detailsInit, setDetailsInit] = useState({});
   const [isChangeRoleModalOpen, setIsChangeRoleModalOpen] = useState(false);
   const [isCreateRoleModalOpen, setIsCreateRoleModalOpen] = useState(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
@@ -4963,12 +4967,19 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
       if (error) throw error;
 
+      supabase.from('profiles').update({ signup_source: 'painel' }).eq('id', newId).then(() => {}); // origem do cadastro (ignora se a coluna ainda não existe)
+
       showToast(`${roleConfig.label} cadastrado com sucesso!`, "success");
 
       // Funcionário: grava também o acesso à Loja Autônoma e já envia para lá
       if (isStaff) {
         try {
           const r = await registerAutonomousStaff({ profileId: newId, name, access: staffAccess, roleTitle: roleConfig.label });
+          // CPF e telefone também no cadastro do usuário (aparecem em Detalhes > Cadastro)
+          const cpfDigits = staffAccess.cpf.replace(/\D/g, '');
+          const phoneDigits = staffAccess.phone.replace(/\D/g, '');
+          await supabase.from('profiles').update({ cpf: cpfDigits }).eq('id', newId);
+          await supabase.from('profiles').update({ phone: phoneDigits }).eq('id', newId); // ignora se o perfil não tiver a coluna
           showToast(r.synced ? 'Acesso à Loja Autônoma liberado.' : `Acesso salvo, mas o envio para a Loja Autônoma falhou (${r.reason}). Use Loja Autônoma → Sincronização.`, r.synced ? 'success' : 'warning');
         } catch (e) {
           showToast(`Usuário criado, mas o acesso à Loja Autônoma não foi salvo: ${e.message}`, 'warning');
@@ -4994,31 +5005,33 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     }
   };
 
-  const handleViewDetails = async (user) => {
+  const handleViewDetails = async (user, init = {}) => {
+    setDetailsInit(init); // aba inicial e se já abre editando (menu dos 3 pontinhos)
     // Inicia com os dados básicos e flag de carregamento
     setSelectedUser({ ...user, isLoadingStats: true });
     setIsDetailsModalOpen(true);
     setActiveMenuId(null);
 
     try {
-        // Busca estatísticas reais de entregas
-        const { data: deliveries, error } = await supabase
-            .from('deliveries')
-            .select('total_value, created_at')
-            .eq('client_id', user.id)
-            .neq('status', 'Cancelado'); // Opcional: Ignorar cancelados
+        // Compras do cliente: pedidos do app (orders), notas do ERP e Loja Autônoma (ligadas pelo CPF/CNPJ)
+        const doc = String(user.cpf || user.cnpj || '').replace(/\D/g, '');
+        const [ordersRes, erpRes, storeRes] = await Promise.all([
+            supabase.from('orders').select('total, created_at, status').eq('user_id', user.id),
+            doc ? supabase.from('erp_sales').select('valor_total, emitted_at, status_fiscal').eq('cliente_doc', doc) : Promise.resolve({ data: [] }),
+            doc ? supabase.from('autonomous_sales').select('amount_cents, paid_at').eq('customer_cpf', doc) : Promise.resolve({ data: [] }),
+        ]);
 
-        if (error) throw error;
+        const purchases = [
+            ...(ordersRes.data || []).filter(o => !/cancel/i.test(o.status || '')).map(o => ({ value: Number(o.total) || 0, at: o.created_at })),
+            ...(erpRes.data || []).filter(e => e.status_fiscal !== 'Cancelado').map(e => ({ value: Number(e.valor_total) || 0, at: e.emitted_at })),
+            ...(storeRes.data || []).map(a => ({ value: Number(a.amount_cents || 0) / 100, at: a.paid_at })),
+        ];
+        const visits = purchases.length;
+        const totalSpent = purchases.reduce((acc, p) => acc + p.value, 0);
 
-        const visits = deliveries?.length || 0;
-        const totalSpent = deliveries?.reduce((acc, curr) => acc + (Number(curr.total_value) || 0), 0) || 0;
-        
         let lastVisit = '-';
-        if (deliveries && deliveries.length > 0) {
-            // Ordena para pegar a data mais recente
-            const sorted = deliveries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            lastVisit = sorted[0].created_at;
-        }
+        const dates = purchases.map(p => p.at).filter(Boolean).sort((x, y) => new Date(y) - new Date(x));
+        if (dates.length > 0) lastVisit = dates[0];
 
         // Atualiza o modal com os dados calculados
         setSelectedUser(prev => {
@@ -5502,7 +5515,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
           onClick={() => setIsDetailsModalOpen(false)}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -5529,6 +5542,12 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                    </div>
                 </div>
 
+                <UserDetailTabs user={selectedUser} initialTab={detailsInit.tab} startEditing={!!detailsInit.edit} onUserUpdated={(updated, fields, note) => {
+                  setSelectedUser(prev => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
+                  setUsers(prev => prev.map(u => (u.id === updated.id ? { ...u, ...updated } : u)));
+                  if (note) showToast(note, 'warning'); else showToast('Dados do usuário atualizados!', 'success');
+                  logAction('USER_CHANGE', updated.name || updated.email || 'Usuário', { action: 'update_profile', target_email: updated.email, fields });
+                }} summary={
                 <div className="space-y-4">
                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between group hover:border-blue-200 transition-colors">
                       <div className="flex items-center gap-3">
@@ -5578,6 +5597,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                       </span>
                    </div>
                 </div>
+                } />
              </div>
           </div>
         </div>
@@ -5963,7 +5983,9 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs">
                               {user.name.charAt(0)}
                            </div>
-                           <HighlightText text={user.name} highlight={globalSearchTerm} />
+                           <button type="button" onClick={() => handleViewDetails(user)} title="Ver detalhes" className="text-left hover:text-primary hover:underline">
+                             <HighlightText text={user.name} highlight={globalSearchTerm} />
+                           </button>
                            {user.must_change_password && (
                              <span
                                title="Vai criar uma senha nova no próximo acesso"
@@ -6007,6 +6029,13 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                                      >
                                         <Eye size={16} className="text-slate-400" /> 
                                         Ver Detalhes
+                                     </button>
+                                     <button
+                                       onClick={() => handleViewDetails(user, { tab: 'cadastro', edit: true })}
+                                       className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
+                                     >
+                                        <Pencil size={16} className="text-slate-400" />
+                                        Editar Dados
                                      </button>
                                      <button
                                        onClick={() => handleOpenPermissionsModal(user)}

@@ -65,8 +65,24 @@ export function StaffAccessFields({ value, onChange }) {
   );
 }
 
+export function isValidCpf(value) {
+  const c = onlyDigits(value);
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
+  for (const n of [9, 10]) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += Number(c[i]) * (n + 1 - i);
+    if (((sum * 10) % 11) % 10 !== Number(c[n])) return false;
+  }
+  return true;
+}
+
+/** Envia os funcionários para a loja autônoma. Devolve { synced, reason }. */
+export async function syncAutonomousStaff() {
+  try { await callFn('sync_staff'); return { synced: true }; } catch (e) { return { synced: false, reason: e.message }; }
+}
+
 export function validateStaffAccess(v) {
-  if (onlyDigits(v.cpf).length !== 11) return 'Informe o CPF do funcionário (11 números).';
+  if (!isValidCpf(v.cpf)) return 'Informe um CPF válido do funcionário (11 números).';
   if (![10, 11].includes(onlyDigits(v.phone).length)) return 'Informe o telefone do funcionário com DDD.';
   if (!v.days.length) return 'Escolha pelo menos um dia de acesso à loja autônoma.';
   return null;
@@ -232,27 +248,44 @@ function StaffTab({ showToast }) {
     } finally { importing = false; }
   }, []);
   const importOnce = useCallback(async () => {
-    const { data: profs, error } = await supabase.from('profiles').select('id, name, email, role, cpf').or('role.ilike.funcion%,role.ilike.entregador%,role.ilike.driver%');
+    const { data: profs, error } = await supabase.from('profiles').select('*').or('role.ilike.funcion%,role.ilike.entregador%,role.ilike.driver%');
     if (error || !profs?.length) return 0;
-    const { data: have } = await supabase.from('autonomous_staff').select('profile_id, cpf');
+    const { data: have } = await supabase.from('autonomous_staff').select('id, profile_id, cpf, phone');
     const haveProfile = new Set((have || []).map((r) => r.profile_id).filter(Boolean));
     const haveCpf = new Set((have || []).map((r) => r.cpf).filter(Boolean));
+    const phoneOf = (p) => { const d = onlyDigits(p.phone || p.mobile || p.whatsapp); return [10, 11].includes(d.length) ? d : null; };
     const fresh = profs.filter((p) => !haveProfile.has(p.id)).map((p) => {
       const cpf = onlyDigits(p.cpf);
       const usable = cpf.length === 11 && !haveCpf.has(cpf);
       if (usable) haveCpf.add(cpf);
       const isDriver = /^(entregador|driver)/i.test(p.role || '');
-      return { profile_id: p.id, name: p.name || p.email || (isDriver ? 'Entregador' : 'Funcionário'), cpf: usable ? cpf : null, phone: null, role_title: isDriver ? 'Entregador' : 'Funcionário', active: true };
+      return { profile_id: p.id, name: p.name || p.email || (isDriver ? 'Entregador' : 'Funcionário'), cpf: usable ? cpf : null, phone: phoneOf(p), role_title: isDriver ? 'Entregador' : 'Funcionário', active: true };
     });
-    if (!fresh.length) return 0;
-    const { error: insErr } = await supabase.from('autonomous_staff').upsert(fresh, { onConflict: 'profile_id', ignoreDuplicates: true });
-    return insErr ? 0 : fresh.length;
+    let changed = 0;
+    if (fresh.length) {
+      const { error: insErr } = await supabase.from('autonomous_staff').upsert(fresh, { onConflict: 'profile_id', ignoreDuplicates: true });
+      if (!insErr) changed += fresh.length;
+    }
+    // Quem já estava na lista mas sem CPF/telefone: completa com o que o cadastro do usuário já tem
+    for (const row of (have || []).filter((r) => r.profile_id && (!r.cpf || !r.phone))) {
+      const p = profs.find((x) => x.id === row.profile_id);
+      if (!p) continue;
+      const patch = {};
+      const cpf = onlyDigits(p.cpf);
+      if (!row.cpf && cpf.length === 11 && !haveCpf.has(cpf)) { patch.cpf = cpf; haveCpf.add(cpf); }
+      if (!row.phone && phoneOf(p)) patch.phone = phoneOf(p);
+      if (Object.keys(patch).length) {
+        const { error: upErr } = await supabase.from('autonomous_staff').update(patch).eq('id', row.id);
+        if (!upErr) changed += 1;
+      }
+    }
+    return changed;
   }, []);
 
   useEffect(() => {
     (async () => {
       const added = await importFromPanel();
-      if (added) showToast(`${added} funcionário(s) do painel adicionados. Complete CPF e telefone de cada um.`, 'info');
+      if (added) showToast(`${added} funcionário(s) do painel adicionados ou completados. Confira CPF e telefone e clique em Sincronizar.`, 'info');
       load();
     })();
   }, [importFromPanel, load]); // eslint-disable-line react-hooks/exhaustive-deps

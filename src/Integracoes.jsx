@@ -11,7 +11,7 @@ const inputCls = 'w-full border border-slate-200 rounded-xl px-3 py-2 text-sm ou
 
 const onlyDigits = (v) => String(v || '').replace(/\D/g, '');
 const fmtDate = (s) => (s ? new Date(s).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '—');
-const fmtDoc = (d) => {
+export const fmtDoc = (d) => {
   const v = onlyDigits(d);
   if (v.length === 11) return v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
   if (v.length === 14) return v.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
@@ -98,7 +98,7 @@ function ProviderCard({ row, onSave, onActivate, saving }) {
 // Mostra qualquer retorno do provedor em campos legíveis (objetos e listas aninhados viram blocos).
 const prettyLabel = (k) => String(k).replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
 const isEmpty = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
-function DataView({ data, level = 0 }) {
+export function DataView({ data, level = 0 }) {
   if (Array.isArray(data)) {
     return (
       <div className="space-y-2">
@@ -166,6 +166,95 @@ function DetailModal({ item, profile, onClose }) {
   );
 }
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://atadiesel-main.onrender.com';
+
+/** Consulta um CPF/CNPJ pelo backend do app (só e-mails em integration_admins). Devolve { name, status, age, adult, deceased, data }. */
+export async function adhocLookup(document, birthdate) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const resp = await fetch(`${BACKEND_URL}/document-lookup/adhoc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+    body: JSON.stringify({ document: onlyDigits(document), ...(birthdate ? { birthdate } : {}) }),
+  });
+  const json = await resp.json().catch(() => null);
+  if (!resp.ok) throw new Error(json?.error || (resp.status === 404 ? 'O backend do app ainda não tem a consulta avulsa (falta o deploy).' : `Erro ${resp.status}`));
+  return json;
+}
+const maskDoc = (v) => {
+  const d = onlyDigits(v).slice(0, 14);
+  if (d.length <= 11) return d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  return d.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2');
+};
+
+// Consulta avulsa de um CPF/CNPJ, feita pelo backend do app no provedor ativo (gasta saldo do provedor).
+function AdhocLookup({ showToast, onDone }) {
+  const [doc, setDoc] = useState('');
+  const [birthdate, setBirthdate] = useState('');
+  const [provider, setProvider] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    supabase.from('integrations').select('provider').eq('kind', 'cpf_lookup').eq('enabled', true).maybeSingle()
+      .then(({ data }) => setProvider(data?.provider || null));
+  }, []);
+
+  const digits = onlyDigits(doc);
+  const isCpf = digits.length === 11;
+  const needsBirth = provider === 'infosimples' && isCpf;
+  const valid = isCpf || digits.length === 14;
+
+  const run = async () => {
+    setLoading(true); setError(''); setResult(null);
+    try {
+      const json = await adhocLookup(digits, needsBirth ? birthdate : null);
+      setResult(json);
+      onDone?.();
+    } catch (e) {
+      setError(e.message || 'Falha ao consultar');
+      showToast?.(`Consulta falhou: ${e.message}`, 'error');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className={`${card} p-5 space-y-4`}>
+      <div>
+        <h3 className="text-base font-bold text-slate-800">Consulta avulsa</h3>
+        <p className="text-xs text-slate-500">
+          Consulta qualquer CPF ou CNPJ no provedor ativo ({provider ? PROVIDERS[provider]?.title : 'nenhum ativo'}). Cada consulta é cobrada pelo provedor e fica registrada abaixo.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-sm font-bold text-slate-700">CPF ou CNPJ
+          <input className={`${inputCls} mt-1.5 w-64`} inputMode="numeric" value={doc} onChange={(e) => setDoc(maskDoc(e.target.value))} placeholder="000.000.000-00" />
+        </label>
+        {needsBirth && (
+          <label className="text-sm font-bold text-slate-700">Data de nascimento
+            <input type="date" className={`${inputCls} mt-1.5 w-44`} value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
+          </label>
+        )}
+        <button className={btnPrimary} disabled={loading || !valid || !provider || (needsBirth && !birthdate)} onClick={run}>{loading ? 'Consultando…' : 'Consultar'}</button>
+      </div>
+      {!provider && <p className="text-xs text-amber-600">Ative um provedor (Dabra ou Infosimples) na aba Integrações para consultar.</p>}
+      {needsBirth && <p className="text-xs text-slate-400">A Infosimples exige a data de nascimento para consultar CPF.</p>}
+      {error && <div className="text-sm bg-red-50 border border-red-100 text-red-700 rounded-xl p-3">{error}</div>}
+      {result && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <span><span className="text-slate-400">Nome: </span><b>{result.name || '—'}</b></span>
+            <span><span className="text-slate-400">Situação: </span><b>{result.status || '—'}</b></span>
+            {result.age !== null && result.age !== undefined && <span><span className="text-slate-400">Idade: </span><b>{result.age}</b> {result.adult === false ? '(menor de 18)' : result.adult ? '(maior de 18)' : ''}</span>}
+            {result.deceased && <span className="text-red-600 font-bold">Consta óbito</span>}
+          </div>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4"><DataView data={result.data} /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LookupsTab({ showToast }) {
   const [rows, setRows] = useState([]);
   const [profiles, setProfiles] = useState({});
@@ -198,6 +287,8 @@ function LookupsTab({ showToast }) {
   }, [rows, profiles, q]);
 
   return (
+    <div className="space-y-4">
+    <AdhocLookup showToast={showToast} onDone={load} />
     <div className={`${card} overflow-hidden`}>
       <div className="p-4 flex items-center gap-3 border-b border-slate-100">
         <input className={`${inputCls} max-w-sm`} placeholder="Buscar por cliente, CPF/CNPJ ou provedor" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -228,6 +319,7 @@ function LookupsTab({ showToast }) {
         </table>
       </div>
       <DetailModal item={selected} profile={selected ? profiles[selected.user_id] : null} onClose={() => setSelected(null)} />
+    </div>
     </div>
   );
 }
