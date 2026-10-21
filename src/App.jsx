@@ -4739,6 +4739,18 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
       if (error) throw error;
       
       const formatted = data.map(u => ({
+        // dados de cadastro (aparecem em Detalhes do Usuario > Cadastro)
+        cpf: u.cpf,
+        cnpj: u.cnpj,
+        person_type: u.person_type,
+        company_name: u.company_name,
+        company_owner_id: u.company_owner_id,
+        company_link_status: u.company_link_status,
+        phone: u.phone,
+        mobile: u.mobile,
+        whatsapp: u.whatsapp,
+        created_at: u.created_at,
+        signup_source: u.signup_source,
         id: u.id,
         name: u.name || 'Sem Nome',  
         email: u.email,
@@ -6998,7 +7010,12 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
 
   const handleConfirmVerification = () => {
     if (verificationCode.trim()) {
-        // Aqui poderia validar o código se houvesse lógica de backend para isso
+        // Confere o código do pedido (retirada na loja ou entrega) antes de dar a baixa
+        const realCode = String(deliveryToVerify?.deliveryCode || '').trim();
+        if (realCode && verificationCode.trim() !== realCode) {
+            setVerificationError('Código inválido para este pedido.');
+            return;
+        }
         onUpdateStatus(deliveryToVerify.id, 'Entregue');
         setIsVerificationModalOpen(false);
         setDeliveryToVerify(null);
@@ -9762,6 +9779,7 @@ function App() {
           })(),
           fullAddress: d.address || d.address_text || 'Endereço não informado',
           isPickup: d.delivery === 'loja',
+          deliveryCode: d.delivery_code ? String(d.delivery_code) : '',
           paymentType: d.payment_type || null,
           isPaid: ['paid', 'preparing', 'driver_assigned', 'out_for_delivery', 'delivered'].includes(String(d.status)),
           paymentStatus: d.payment_status || null

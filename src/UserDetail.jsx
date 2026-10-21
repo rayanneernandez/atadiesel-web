@@ -162,6 +162,57 @@ function RegisterPanel({ user, onUserUpdated, autoEdit = false }) {
   );
 }
 
+const LINK_STATUS = {
+  approved: { label: 'Ativo', cls: 'bg-emerald-50 text-emerald-700' },
+  pending: { label: 'Aguardando aprovação', cls: 'bg-amber-50 text-amber-700' },
+  rejected: { label: 'Recusado', cls: 'bg-red-50 text-red-600' },
+  inactive: { label: 'Desativado', cls: 'bg-slate-100 text-slate-600' },
+};
+
+// Funcionários que a empresa (cliente PJ) cadastrou ou que pediram vínculo pelo CNPJ dela
+function EmployeesPanel({ user }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    setError('');
+    supabase.from('profiles').select('id, name, email, cpf, phone, company_link_status').eq('company_owner_id', user.id).order('name')
+      .then(({ data, error: err }) => {
+        if (!alive) return;
+        if (err) setError(err.message);
+        setRows(data || []);
+      });
+    return () => { alive = false; };
+  }, [user.id]);
+
+  if (rows === null) return <p className="text-sm text-slate-400">Carregando...</p>;
+  if (error) return <p className="text-sm text-red-500">{error}</p>;
+  if (!rows.length) return <p className="text-sm text-slate-500">Nenhum funcionário vinculado a esta empresa.</p>;
+  return (
+    <div className="border border-slate-100 rounded-xl overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-500">
+          <tr><th className="px-3 py-2 text-left">Nome</th><th className="px-3 py-2 text-left">CPF</th><th className="px-3 py-2 text-left">Telefone</th><th className="px-3 py-2 text-left">Situação</th></tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map(e => {
+            const st = LINK_STATUS[e.company_link_status || 'approved'] || LINK_STATUS.approved;
+            return (
+              <tr key={e.id}>
+                <td className="px-3 py-2"><div className="font-medium text-slate-800">{e.name || 'Sem nome'}</div><div className="text-xs text-slate-400">{e.email}</div></td>
+                <td className="px-3 py-2 text-slate-600">{e.cpf ? fmtDoc(e.cpf) : '—'}</td>
+                <td className="px-3 py-2 text-slate-600">{e.phone ? fmtPhone(e.phone) : '—'}</td>
+                <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${st.cls}`}>{st.label}</span></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function CpfPanel({ user }) {
   const document = onlyDigits(user.cpf || user.cnpj);
   const [loading, setLoading] = useState(true);
@@ -268,7 +319,8 @@ export default function UserDetailTabs({ user: baseUser, summary, onUserUpdated,
     phone: baseUser.phone || baseUser.mobile || baseUser.whatsapp || staff?.phone || baseUser.phone,
   };
 
-  const tabs = [['resumo', 'Resumo'], ['cadastro', 'Cadastro'], ['cpf', 'Dados do CPF/CNPJ']];
+  const isCompany = user.person_type === 'pj' || (!!user.cnpj && !user.cpf);
+  const tabs = [['resumo', 'Resumo'], ['cadastro', 'Cadastro'], ['cpf', 'Dados do CPF/CNPJ'], ...(isCompany ? [['funcionarios', 'Funcionários vinculados']] : [])];
   return (
     <div>
       <div className="flex gap-5 border-b border-slate-200 mb-5">
@@ -281,6 +333,7 @@ export default function UserDetailTabs({ user: baseUser, summary, onUserUpdated,
       {tab === 'resumo' && summary}
       {tab === 'cadastro' && <RegisterPanel key={`${user.id}-${staff ? 's' : 'n'}`} user={user} onUserUpdated={onUserUpdated} autoEdit={startEditing} />}
       {tab === 'cpf' && <CpfPanel user={user} />}
+      {tab === 'funcionarios' && <EmployeesPanel user={user} />}
     </div>
   );
 }
