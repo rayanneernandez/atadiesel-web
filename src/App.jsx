@@ -929,7 +929,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
 
       const filteredDeliveries = (deliveries || []).filter(d => {
         if (reportConfig.deliveriesCompleted && (d.status === 'Entregue' || d.status === 'Cancelado')) return true;
-        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação')) return true;
+        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Entregador Atribuído')) return true;
         return false;
       });
 
@@ -1029,7 +1029,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
     if (reportConfig.deliveries) {
       const filteredDeliveries = (deliveries || []).filter(d => {
         if (reportConfig.deliveriesCompleted && (d.status === 'Entregue' || d.status === 'Cancelado')) return true;
-        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação')) return true;
+        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Entregador Atribuído')) return true;
         return false;
       });
 
@@ -6946,7 +6946,26 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
   );
 };
 
-const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus }) => {
+const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, onAssignDriver }) => {
+  const [driverPickFor, setDriverPickFor] = useState(null);   // pedido que vai receber entregador
+  const [availableDrivers, setAvailableDrivers] = useState([]);
+  const [driversLoading, setDriversLoading] = useState(false);
+
+  // Entregadores livres (mesma regra do app: perfil entregador/funcionario, sem entrega em andamento)
+  const openDriverPicker = async (delivery) => {
+    setDriverPickFor(delivery);
+    setDriversLoading(true);
+    try {
+      const { data: drivers } = await supabase.from('profiles').select('id, name, phone, email')
+        .or('perfil.eq.entregador,role.eq.driver,perfil.eq.driver,perfil.eq.funcionario,role.eq.Funcionário');
+      const { data: busy } = await supabase.from('orders').select('driver_id').in('status', ['driver_assigned', 'out_for_delivery']).not('driver_id', 'is', null);
+      const busyIds = new Set((busy || []).map(b => b.driver_id));
+      setAvailableDrivers((drivers || []).filter(d => !busyIds.has(d.id)));
+    } finally {
+      setDriversLoading(false);
+    }
+  };
+
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
@@ -6957,8 +6976,9 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
   const statusPriority = {
     'Pendente': 1,
     'Em Preparação': 2,
-    'Em Trânsito': 3,
-    'Entregue': 4
+    'Entregador Atribuído': 3,
+    'Em Trânsito': 4,
+    'Entregue': 5
   };
 
   const filteredDeliveries = deliveries
@@ -6993,6 +7013,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
   const getStatusColor = (status) => {
     switch (status) {
       case 'Entregue': return 'bg-green-100 text-green-800 border-green-200';
+      case 'Entregador Atribuído': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'Em Trânsito': return 'bg-amber-100 text-amber-800 border-amber-200';
       case 'Em Preparação': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
       case 'Pendente': return 'bg-blue-100 text-blue-800 border-blue-200';
@@ -7028,6 +7049,34 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
 
   return (
     <div className="space-y-8">
+      {/* Escolher entregador */}
+      {driverPickFor && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setDriverPickFor(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 className="font-bold text-lg text-slate-800">Atribuir entregador ao pedido #{formatOrderNumber(driverPickFor)}</h3>
+              <button onClick={() => setDriverPickFor(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full"><X size={20} /></button>
+            </div>
+            <div className="p-4 max-h-80 overflow-y-auto space-y-2">
+              {driversLoading ? (
+                <p className="text-sm text-slate-400 text-center py-6">Carregando entregadores...</p>
+              ) : availableDrivers.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">Nenhum entregador livre no momento.</p>
+              ) : availableDrivers.map(d => (
+                <button
+                  key={d.id}
+                  onClick={async () => { await onAssignDriver(driverPickFor.id, d); setDriverPickFor(null); }}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors"
+                >
+                  <span className="font-medium text-slate-800 block">{d.name || d.email}</span>
+                  <span className="text-xs text-slate-400">{d.phone || d.email}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Verificação de Código */}
       {isVerificationModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
@@ -7163,12 +7212,33 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                          </button>
                        ) : (
                          <button
-                             onClick={() => onUpdateStatus(delivery.id, 'Em Trânsito')}
+                             onClick={() => openDriverPicker(delivery)}
                              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
                          >
-                             Enviar para Entrega
+                             Atribuir Entregador
                          </button>
                        )}
+                    </div>
+                 )}
+                 {delivery.status === 'Entregador Atribuído' && (
+                    <div className="flex flex-col gap-2 w-full">
+                        <div className="w-full py-2 bg-orange-50 text-orange-700 text-xs font-medium rounded-lg text-center border border-orange-100">
+                            Entregador: {delivery.driver?.name || 'atribuído'}
+                        </div>
+                        <div className="flex gap-2 w-full">
+                          <button
+                              onClick={() => openDriverPicker(delivery)}
+                              className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors text-sm border border-slate-200"
+                          >
+                              Trocar entregador
+                          </button>
+                          <button
+                              onClick={() => onUpdateStatus(delivery.id, 'Em Trânsito')}
+                              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
+                          >
+                              Enviar para Entrega
+                          </button>
+                        </div>
                     </div>
                  )}
                  {delivery.status === 'Em Trânsito' && (
@@ -7410,12 +7480,28 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                     </button>
                   ) : (
                     <button
-                      onClick={() => { onUpdateStatus(selectedDelivery.id, 'Em Trânsito'); setIsDetailsModalOpen(false); }}
+                      onClick={() => { setIsDetailsModalOpen(false); openDriverPicker(selectedDelivery); }}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
                     >
-                      Enviar para Entrega
+                      Atribuir Entregador
                     </button>
                   )}
+                </>
+              )}
+              {selectedDelivery.status === 'Entregador Atribuído' && (
+                <>
+                  <button
+                    onClick={() => { setIsDetailsModalOpen(false); openDriverPicker(selectedDelivery); }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl border border-slate-200 transition-colors"
+                  >
+                    Trocar entregador
+                  </button>
+                  <button
+                    onClick={() => { onUpdateStatus(selectedDelivery.id, 'Em Trânsito'); setIsDetailsModalOpen(false); }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
+                  >
+                    Enviar para Entrega
+                  </button>
                 </>
               )}
               {selectedDelivery.status === 'Em Trânsito' && (
@@ -9645,7 +9731,7 @@ function App() {
       'processing': 'Em Preparação',
       'preparing': 'Em Preparação',
       'pending_payment': 'Aguardando pagamento',
-      'driver_assigned': 'Em Trânsito',
+      'driver_assigned': 'Entregador Atribuído',
       'out_for_delivery': 'Em Trânsito',
       'delivered': 'Entregue',
       'cancelled': 'Cancelado',
@@ -9653,6 +9739,7 @@ function App() {
       'Pendente': 'Pendente',
       'Em Preparação': 'Em Preparação',
       'Em Trânsito': 'Em Trânsito',
+      'Entregador Atribuído': 'Entregador Atribuído',
       'Entregue': 'Entregue',
       'Cancelado': 'Cancelado'
     };
@@ -9664,6 +9751,7 @@ function App() {
       'Pendente': 'pending',
       'Em Preparação': 'preparing',
       'Em Trânsito': 'out_for_delivery',
+      'Entregador Atribuído': 'driver_assigned',
       'Entregue': 'delivered',
       'Cancelado': 'cancelled'
     };
@@ -9956,6 +10044,26 @@ function App() {
     }
   };
 
+  // O admin escolhe o entregador: grava no pedido e passa para "Entregador Atribuído"
+  const handleAssignDriver = async (id, driver) => {
+    const { error } = await supabase
+      .from('orders')
+      .update({
+        driver_id: driver.id,
+        driver_name: driver.name || driver.email || 'Entregador',
+        status: 'driver_assigned',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
+    if (error) {
+      console.error('Erro ao atribuir entregador:', error);
+      showToast('Não foi possível atribuir o entregador: ' + error.message, 'error');
+    } else {
+      showToast('Entregador atribuído!', 'success');
+    }
+    fetchDeliveries();
+  };
+
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -9982,7 +10090,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const deliveryRequests = deliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Em Trânsito');
+  const deliveryRequests = deliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Entregador Atribuído' || d.status === 'Em Trânsito');
 
   const handleLogout = async () => {
     try {
@@ -10020,7 +10128,7 @@ function App() {
       case 'Integrações': return renderIfAllowed('Integrações', <IntegracoesScreen showToast={showToast} session={session} />);
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
-      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} />);
+      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
       default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} userProfile={userProfile} />);
