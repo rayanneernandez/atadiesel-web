@@ -6967,8 +6967,11 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
       return priorityA - priorityB;
     });
 
-  const activeDeliveries = filteredDeliveries.filter(d => d.status !== 'Entregue' && d.status !== 'Cancelado');
-  const completedDeliveries = filteredDeliveries.filter(d => d.status === 'Entregue' || d.status === 'Cancelado');
+  // Pedidos encerrados (entregues, cancelados ou com pagamento que falhou) saem dos cards e ficam só no histórico
+  const isFinishedDelivery = (d) => ['Entregue', 'Cancelado', 'cancelled', 'payment_failed'].includes(d.status);
+  const deliveryStatusLabel = (st) => (st === 'payment_failed' ? 'Pagamento falhou' : st === 'cancelled' ? 'Cancelado' : st);
+  const activeDeliveries = filteredDeliveries.filter(d => !isFinishedDelivery(d));
+  const completedDeliveries = filteredDeliveries.filter(d => isFinishedDelivery(d));
 
   const handleOpenDetails = (delivery) => {
     setSelectedDelivery(delivery);
@@ -7209,8 +7212,8 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                                 R$ {delivery.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                              </td>
                              <td className="px-6 py-4">
-                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(delivery.status)}`}>
-                                   {delivery.status}
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(delivery.status === 'payment_failed' ? 'Cancelado' : delivery.status)}`}>
+                                   {deliveryStatusLabel(delivery.status)}
                                 </span>
                              </td>
                              <td className="px-6 py-4 text-right">
