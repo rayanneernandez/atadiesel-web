@@ -8488,6 +8488,7 @@ const SALE_TYPES = {
   '65': { label: 'Balcão (NFC-e)', short: 'Balcão', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
   '59': { label: 'Balcão (CF-e SAT)', short: 'Balcão', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
   '55': { label: 'NF-e', short: 'NF-e', cls: 'bg-slate-50 text-slate-700 border-slate-200' },
+  'APP': { label: 'Pedido do app', short: 'App', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
 };
 
 const formatDoc = (d) => {
@@ -8506,15 +8507,13 @@ const localDate = (offsetDays = 0) => {
 
 const SalesScreen = ({ globalSearchTerm, showToast }) => {
   const PER_PAGE = 50;
-  const [sales, setSales] = useState([]);
-  const [count, setCount] = useState(0);
-  const [summary, setSummary] = useState({ total: 0, qtd: 0 });
+  const [allRows, setAllRows] = useState([]);   // vendas do ERP + pedidos do app, misturadas por data
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [from, setFrom] = useState(localDate(-30));
   const [to, setTo] = useState(localDate(0));
-  const [type, setType] = useState('all');          // all | balcao | nfe
+  const [type, setType] = useState('all');          // all | balcao | nfe | app
   const [onlyApp, setOnlyApp] = useState(false);
   const [showCancelled, setShowCancelled] = useState(true);
   const [appCustomers, setAppCustomers] = useState(new Map()); // doc -> nome
@@ -8554,23 +8553,85 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
     return q;
   };
 
+  // Vendas emitidas no ERP (todas do período, em blocos de 1000)
+  const fetchErpRows = async () => {
+    if (type === 'app') return [];
+    const out = [];
+    for (let off = 0; ; off += 1000) {
+      const { data, error } = await applyFilters(
+        supabase.from('erp_sales').select('id, modelo, numero, serie, emitted_at, cliente_nome, cliente_doc, valor_total, status_fiscal, pdf_path')
+      ).order('emitted_at', { ascending: false }).range(off, off + 999);
+      if (error) throw error;
+      out.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    return out.map(r => ({ ...r, source: 'erp' }));
+  };
+
+  // Pedidos feitos pelo app (tabela orders) já pagos/confirmados
+  const fetchAppRows = async () => {
+    if (type === 'balcao' || type === 'nfe') return [];
+    const { data: orders, error } = await supabase.from('orders').select('*')
+      .gte('created_at', `${from}T00:00:00-03:00`).lte('created_at', `${to}T23:59:59-03:00`)
+      .not('status', 'in', '(pending_payment,payment_failed)')
+      .order('created_at', { ascending: false }).limit(5000);
+    if (error) throw error;
+    const list = (orders || []).filter(o => showCancelled || !['cancelled', 'cancelado'].includes(String(o.status).toLowerCase()));
+    if (!list.length) return [];
+
+    const ids = list.map(o => o.id);
+    const userIds = [...new Set(list.map(o => o.user_id).filter(Boolean))];
+    const [{ data: items }, { data: profs }] = await Promise.all([
+      supabase.from('order_items').select('*').in('order_id', ids),
+      userIds.length ? supabase.from('profiles').select('id, name, email, cpf').in('id', userIds) : Promise.resolve({ data: [] }),
+    ]);
+    const prodIds = [...new Set((items || []).map(i => i.product_id).filter(Boolean))];
+    const { data: prods } = prodIds.length ? await supabase.from('products').select('id, sku').in('id', prodIds) : { data: [] };
+    const skuById = new Map((prods || []).map(p => [String(p.id), p.sku || '']));
+    const profById = new Map((profs || []).map(p => [p.id, p]));
+    const payLabel = { pix: 'PIX', card: 'Cartão', cash: 'Dinheiro' };
+
+    return list.map(o => {
+      const prof = profById.get(o.user_id);
+      const its = (items || []).filter(i => i.order_id === o.id).map(i => ({
+        codigo: skuById.get(String(i.product_id)) || '',
+        descricao: i.title || i.name || 'Item',
+        quantidade: Number(i.quantity || 1),
+        unidade: 'UN',
+        valor_unit: Number(i.unit_price || 0),
+        total: Number(i.unit_price || 0) * Number(i.quantity || 1),
+      }));
+      const cancelled = ['cancelled', 'cancelado'].includes(String(o.status).toLowerCase());
+      return {
+        id: `app-${o.id}`,
+        source: 'app',
+        modelo: 'APP',
+        numero: String(o.id).slice(0, 6).toUpperCase(),
+        emitted_at: o.created_at,
+        cliente_nome: prof?.name || prof?.email || 'Cliente do app',
+        cliente_doc: String(prof?.cpf || '').replace(/\D/g, ''),
+        cliente_email: prof?.email || '',
+        valor_total: Number(o.total || 0),
+        status_fiscal: cancelled ? 'Cancelado' : 'Pedido do app',
+        pdf_path: null,
+        itens: its,
+        pagamentos: [{ forma: payLabel[o.payment_type] || o.payment_type || '-', valor: Number(o.total || 0) }],
+        desconto: Number(o.discount_amount || 0),
+      };
+    }).filter(r => {
+      if (!term) return true;
+      const t = term.toLowerCase();
+      const digits = term.replace(/\D/g, '');
+      return String(r.cliente_nome).toLowerCase().includes(t) || r.numero.toLowerCase().includes(t) || (digits.length >= 3 && r.cliente_doc.includes(digits));
+    });
+  };
+
   const load = async () => {
     setIsLoading(true);
     setLoadError('');
     try {
-      const start = (page - 1) * PER_PAGE;
-      const { data, count: total, error } = await applyFilters(
-        supabase.from('erp_sales')
-          .select('id, modelo, numero, serie, emitted_at, cliente_nome, cliente_doc, valor_total, status_fiscal, pdf_path', { count: 'exact' })
-      ).order('emitted_at', { ascending: false }).range(start, start + PER_PAGE - 1);
-      if (error) throw error;
-      setSales(data || []);
-      setCount(total || 0);
-
-      // Totais do período (sem as canceladas)
-      const { data: totals, error: tErr } = await applyFilters(supabase.from('erp_sales').select('valor_total, status_fiscal'))
-        .neq('status_fiscal', 'Cancelado').limit(10000);
-      if (!tErr) setSummary({ total: (totals || []).reduce((s, r) => s + Number(r.valor_total || 0), 0), qtd: (totals || []).length });
+      const [erp, app] = await Promise.all([fetchErpRows(), fetchAppRows()]);
+      setAllRows([...erp, ...app].sort((a, b) => new Date(b.emitted_at) - new Date(a.emitted_at)));
     } catch (err) {
       console.error('Erro ao carregar vendas:', err);
       setLoadError(String(err.message || '').includes('erp_sales')
@@ -8581,10 +8642,18 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
     }
   };
 
+  const count = allRows.length;
+  const sales = allRows.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const summary = React.useMemo(() => {
+    const valid = allRows.filter(r => r.status_fiscal !== 'Cancelado');
+    return { total: valid.reduce((acc, r) => acc + Number(r.valor_total || 0), 0), qtd: valid.length };
+  }, [allRows]);
+
   useEffect(() => { setPage(1); }, [from, to, type, onlyApp, showCancelled, term]);
-  useEffect(() => { load(); }, [page, from, to, type, onlyApp, showCancelled, term, appCustomers]);
+  useEffect(() => { load(); }, [from, to, type, onlyApp, showCancelled, term, appCustomers]);
 
   const openDetails = async (sale) => {
+    if (sale.source === 'app') { setSelected(sale); return; }
     setSelected({ ...sale, loading: true });
     const { data, error } = await supabase.from('erp_sales').select('*').eq('id', sale.id).maybeSingle();
     if (error || !data) { showToast('Não foi possível abrir a venda.', 'error'); setSelected(null); return; }
@@ -8655,7 +8724,7 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2">
             <Receipt className="text-primary" /> Vendas
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Vendas de itens da loja (produtos cadastrados) emitidas no ERP, com o recibo de cada venda. Atualiza a cada 5 minutos.</p>
+          <p className="text-sm text-slate-500 mt-1">Vendas de itens da loja emitidas no ERP e pedidos feitos pelo app, com o recibo de cada venda. Atualiza a cada 5 minutos.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="date" className={inputClass} value={from} max={to} onChange={e => setFrom(e.target.value)} />
@@ -8665,6 +8734,7 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
             <option value="all">Todas</option>
             <option value="balcao">Balcão (cupom)</option>
             <option value="nfe">NF-e</option>
+            <option value="app">Pedidos do app</option>
           </select>
         </div>
       </div>
@@ -8688,7 +8758,7 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
         <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap gap-4 items-center text-sm text-slate-600">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input type="checkbox" className="accent-[#0047AB] w-4 h-4" checked={onlyApp} onChange={e => setOnlyApp(e.target.checked)} />
-            Só clientes do app
+            Só vendas do app
           </label>
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input type="checkbox" className="accent-[#0047AB] w-4 h-4" checked={showCancelled} onChange={e => setShowCancelled(e.target.checked)} />
@@ -8751,7 +8821,7 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
                             <Printer size={15} />
                           </button>
                         </div>
-                      ) : <span className="text-xs text-slate-300">sem PDF</span>}
+                      ) : <span className="text-xs text-slate-300">{sale.source === 'app' ? 'aguardando NF' : 'sem PDF'}</span>}
                     </td>
                   </tr>
                 );
@@ -8882,7 +8952,7 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
                   </button>
                 </>
               ) : (
-                <span className="flex-1 text-center text-sm text-slate-400 py-2.5">Esta venda não tem recibo em PDF no ERP.</span>
+                <span className="flex-1 text-center text-sm text-slate-400 py-2.5">{selected.source === 'app' ? 'O recibo fiscal será exibido aqui quando a nota for emitida pelo ERP.' : 'Esta venda não tem recibo em PDF no ERP.'}</span>
               )}
             </div>
           </div>
