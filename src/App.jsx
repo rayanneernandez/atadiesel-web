@@ -929,7 +929,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
 
       const filteredDeliveries = (deliveries || []).filter(d => {
         if (reportConfig.deliveriesCompleted && (d.status === 'Entregue' || d.status === 'Cancelado')) return true;
-        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Entregador Atribuído')) return true;
+        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Aguardando Retirada' || d.status === 'Entregador Atribuído')) return true;
         return false;
       });
 
@@ -1029,7 +1029,7 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
     if (reportConfig.deliveries) {
       const filteredDeliveries = (deliveries || []).filter(d => {
         if (reportConfig.deliveriesCompleted && (d.status === 'Entregue' || d.status === 'Cancelado')) return true;
-        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Entregador Atribuído')) return true;
+        if (reportConfig.deliveriesInProgress && (d.status === 'Em Trânsito' || d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Aguardando Retirada' || d.status === 'Entregador Atribuído')) return true;
         return false;
       });
 
@@ -6976,6 +6976,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
   const statusPriority = {
     'Pendente': 1,
     'Em Preparação': 2,
+    'Aguardando Retirada': 2,
     'Entregador Atribuído': 3,
     'Em Trânsito': 4,
     'Entregue': 5
@@ -7013,6 +7014,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
   const getStatusColor = (status) => {
     switch (status) {
       case 'Entregue': return 'bg-green-100 text-green-800 border-green-200';
+      case 'Aguardando Retirada': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'Entregador Atribuído': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'Em Trânsito': return 'bg-amber-100 text-amber-800 border-amber-200';
       case 'Em Preparação': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
@@ -7191,7 +7193,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                  </div>
                  
                  {/* Action Buttons */}
-                 {(delivery.status === 'Pendente' || delivery.status === 'Em Preparação') && (
+                 {(delivery.status === 'Pendente' || delivery.status === 'Em Preparação' || delivery.status === 'Aguardando Retirada') && (
                     <div className="flex gap-2 w-full">
                        <button 
                            onClick={() => {
@@ -7403,11 +7405,11 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                             </span>
                           )}
                           <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${selectedDelivery.isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                            {selectedDelivery.isPaid ? 'Pago' : 'Aguardando pagamento'}
+                            {selectedDelivery.isPaid ? 'Pago' : selectedDelivery.isCash ? (selectedDelivery.isPickup ? 'Receber na retirada' : 'Receber na entrega') : 'Aguardando pagamento'}
                           </span>
                        </span>
                     </div>
-                    {selectedDelivery.driver && (
+                    {selectedDelivery.driver && !selectedDelivery.isPickup && (
                       <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
                          <span className="text-slate-500 text-sm">Entregador</span>
                          <div className="text-right">
@@ -7458,7 +7460,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap justify-end shrink-0 gap-3">
-              {(selectedDelivery.status === 'Pendente' || selectedDelivery.status === 'Em Preparação') && (
+              {(selectedDelivery.status === 'Pendente' || selectedDelivery.status === 'Em Preparação' || selectedDelivery.status === 'Aguardando Retirada') && (
                 <>
                   <button
                     onClick={() => {
@@ -9752,6 +9754,7 @@ function App() {
       'Em Preparação': 'preparing',
       'Em Trânsito': 'out_for_delivery',
       'Entregador Atribuído': 'driver_assigned',
+      'Aguardando Retirada': 'preparing',
       'Entregue': 'delivered',
       'Cancelado': 'cancelled'
     };
@@ -9852,7 +9855,7 @@ function App() {
               unitPrice: i.unit_price
           })),
           distance: formatDistance(d),
-          status: translateStatus(d.status),
+          status: (d.delivery === 'loja' && ['paid', 'preparing', 'driver_assigned', 'out_for_delivery'].includes(String(d.status))) ? 'Aguardando Retirada' : translateStatus(d.status),
           date: new Date(d.created_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
           value: d.total || 0,
           time: new Date(d.created_at).toLocaleTimeString('pt-BR', { timeZone: 'UTC', hour: '2-digit', minute:'2-digit' }),
@@ -9869,7 +9872,9 @@ function App() {
           isPickup: d.delivery === 'loja',
           deliveryCode: d.delivery_code ? String(d.delivery_code) : '',
           paymentType: d.payment_type || null,
-          isPaid: ['paid', 'preparing', 'driver_assigned', 'out_for_delivery', 'delivered'].includes(String(d.status)),
+          // dinheiro só é pago na hora de retirar/receber
+          isCash: d.payment_type === 'cash',
+          isPaid: d.payment_type === 'cash' ? String(d.status) === 'delivered' : ['paid', 'preparing', 'driver_assigned', 'out_for_delivery', 'delivered'].includes(String(d.status)),
           paymentStatus: d.payment_status || null
        };
       });
@@ -10090,7 +10095,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const deliveryRequests = deliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Entregador Atribuído' || d.status === 'Em Trânsito');
+  const deliveryRequests = deliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Aguardando Retirada' || d.status === 'Entregador Atribuído' || d.status === 'Em Trânsito');
 
   const handleLogout = async () => {
     try {
