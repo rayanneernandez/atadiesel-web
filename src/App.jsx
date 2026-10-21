@@ -7137,12 +7137,21 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                        >
                            Recusar
                        </button>
-                       <button 
-                           onClick={() => onUpdateStatus(delivery.id, 'Em Trânsito')}
-                           className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
-                       >
-                           Enviar para Entrega
-                       </button>
+                       {delivery.isPickup ? (
+                         <button
+                             onClick={() => handleOpenVerification(delivery)}
+                             className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
+                         >
+                             Confirmar Retirada
+                         </button>
+                       ) : (
+                         <button
+                             onClick={() => onUpdateStatus(delivery.id, 'Em Trânsito')}
+                             className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
+                         >
+                             Enviar para Entrega
+                         </button>
+                       )}
                     </div>
                  )}
                  {delivery.status === 'Em Trânsito' && (
@@ -7294,6 +7303,23 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
                        <span className="text-slate-500 text-sm">Distância</span>
                        <span className="font-medium text-slate-900">{selectedDelivery.distance}</span>
                     </div>
+                    <div className="flex justify-between items-center">
+                       <span className="text-slate-500 text-sm">Entrega</span>
+                       <span className="font-medium text-slate-900">{selectedDelivery.isPickup ? 'Retirar na loja' : 'Receber em casa'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                       <span className="text-slate-500 text-sm">Pagamento</span>
+                       <span className="flex items-center gap-2">
+                          {selectedDelivery.paymentType && (
+                            <span className="font-medium text-slate-900">
+                              {{ pix: 'PIX', card: 'Cartão', cash: 'Dinheiro' }[selectedDelivery.paymentType] || selectedDelivery.paymentType}
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${selectedDelivery.isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                            {selectedDelivery.isPaid ? 'Pago' : 'Aguardando pagamento'}
+                          </span>
+                       </span>
+                    </div>
                     {selectedDelivery.driver && (
                       <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
                          <span className="text-slate-500 text-sm">Entregador</span>
@@ -7344,8 +7370,46 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus })
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end shrink-0 gap-3">
-              <button 
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap justify-end shrink-0 gap-3">
+              {(selectedDelivery.status === 'Pendente' || selectedDelivery.status === 'Em Preparação') && (
+                <>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Tem certeza que deseja recusar este pedido?')) {
+                        onUpdateStatus(selectedDelivery.id, 'Cancelado');
+                        setIsDetailsModalOpen(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-100 transition-colors"
+                  >
+                    Recusar
+                  </button>
+                  {selectedDelivery.isPickup ? (
+                    <button
+                      onClick={() => { setIsDetailsModalOpen(false); handleOpenVerification(selectedDelivery); }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl transition-colors"
+                    >
+                      Confirmar Retirada
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { onUpdateStatus(selectedDelivery.id, 'Em Trânsito'); setIsDetailsModalOpen(false); }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
+                    >
+                      Enviar para Entrega
+                    </button>
+                  )}
+                </>
+              )}
+              {selectedDelivery.status === 'Em Trânsito' && (
+                <button
+                  onClick={() => { setIsDetailsModalOpen(false); handleOpenVerification(selectedDelivery); }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl transition-colors"
+                >
+                  Confirmar Entrega
+                </button>
+              )}
+              <button
                 onClick={() => setIsDetailsModalOpen(false)}
                 className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium rounded-xl transition-colors"
               >
@@ -9562,6 +9626,9 @@ function App() {
       'paid': 'Pendente',
       'payment_confirmed': 'Pendente',
       'processing': 'Em Preparação',
+      'preparing': 'Em Preparação',
+      'pending_payment': 'Aguardando pagamento',
+      'driver_assigned': 'Em Trânsito',
       'out_for_delivery': 'Em Trânsito',
       'delivered': 'Entregue',
       'cancelled': 'Cancelado',
@@ -9578,7 +9645,7 @@ function App() {
   const reverseTranslateStatus = (status) => {
     const map = {
       'Pendente': 'pending',
-      'Em Preparação': 'processing',
+      'Em Preparação': 'preparing',
       'Em Trânsito': 'out_for_delivery',
       'Entregue': 'delivered',
       'Cancelado': 'cancelled'
@@ -9693,7 +9760,11 @@ function App() {
                 phone: driverProfile.phone || driverProfile.mobile || driverProfile.whatsapp || 'Sem contato'
             } : null;
           })(),
-          fullAddress: d.address || d.address_text || 'Endereço não informado'
+          fullAddress: d.address || d.address_text || 'Endereço não informado',
+          isPickup: d.delivery === 'loja',
+          paymentType: d.payment_type || null,
+          isPaid: ['paid', 'preparing', 'driver_assigned', 'out_for_delivery', 'delivered'].includes(String(d.status)),
+          paymentStatus: d.payment_status || null
        };
       });
       setDeliveries(formatted);
