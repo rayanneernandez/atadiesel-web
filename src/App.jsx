@@ -4713,6 +4713,8 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   const [error, setError] = useState(null);
   const [roleFilter, setRoleFilter] = useState('all');
   const [toasts, setToasts] = useState([]);
+  const notifiedPickupRef = React.useRef(new Set());   // pedidos de retirada que já foram avisados
+  const notifiedPickupReady = React.useRef(false);      // só avisa depois da primeira carga
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -6946,8 +6948,9 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
   );
 };
 
-const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, onAssignDriver }) => {
+const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, onAssignDriver, onToggleSeparated }) => {
   const [driverPickFor, setDriverPickFor] = useState(null);   // pedido que vai receber entregador
+  const [earlyPickup, setEarlyPickup] = useState(null);        // retirada tentada antes do horário marcado
   const [refuseTarget, setRefuseTarget] = useState(null);      // pedido que vai ser recusado (janela de confirmação)
   const [availableDrivers, setAvailableDrivers] = useState([]);
   const [driversLoading, setDriversLoading] = useState(false);
@@ -6998,7 +7001,10 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
     .sort((a, b) => {
       const priorityA = statusPriority[a.status] || 99;
       const priorityB = statusPriority[b.status] || 99;
-      return priorityA - priorityB;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      // retiradas: o horário marcado mais próximo primeiro
+      if (a.pickupAt && b.pickupAt) return new Date(a.pickupAt) - new Date(b.pickupAt);
+      return 0;
     });
 
   // Pedidos encerrados (entregues, cancelados ou com pagamento que falhou) saem dos cards e ficam só no histórico
@@ -7026,6 +7032,11 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
   };
 
   const handleOpenVerification = (delivery) => {
+    // retirada antes do horário marcado: bloqueia e avisa
+    if (delivery.isPickup && delivery.pickupAt && Date.now() < new Date(delivery.pickupAt).getTime()) {
+      setEarlyPickup(delivery);
+      return;
+    }
     setDeliveryToVerify(delivery);
     setVerificationCode('');
     setVerificationError('');
@@ -7052,6 +7063,22 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
 
   return (
     <div className="space-y-8">
+      {/* Retirada antes do horário marcado */}
+      {earlyPickup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setEarlyPickup(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 pt-8 pb-2 text-center">
+              <div className="mx-auto w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center mb-4"><Clock className="text-amber-500" size={28} /></div>
+              <h3 className="text-lg font-bold text-slate-900">Ainda não é a hora da retirada</h3>
+              <p className="text-sm text-slate-500 mt-3">O pedido #{formatOrderNumber(earlyPickup)} está marcado para</p>
+              <p className="text-base font-bold text-blue-700 mt-1">{formatPickupWindow(earlyPickup.pickupAt, earlyPickup.pickupUntil)}</p>
+              <p className="text-sm text-slate-500 mt-3">A retirada só pode ser feita a partir desse horário.</p>
+            </div>
+            <div className="p-6"><button onClick={() => setEarlyPickup(null)} className="w-full py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-blue-800">Entendi</button></div>
+          </div>
+        </div>
+      )}
+
       {/* Confirmar recusa do pedido */}
       {refuseTarget && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setRefuseTarget(null)}>
@@ -7206,9 +7233,20 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                 <p className="text-sm text-slate-600">
                    <span className="font-medium text-slate-700">Itens:</span> <HighlightText text={delivery.items} highlight={globalSearchTerm} />
                 </p>
-                <p className="text-sm text-slate-500">
-                   <span className="font-medium text-slate-700">Distância:</span> {delivery.distance}
-                </p>
+                {delivery.isPickup ? (
+                  <p className="text-sm text-blue-700 font-semibold flex items-center gap-1.5 flex-wrap">
+                    <Clock size={14} /> Retirada: {delivery.pickupAt ? formatPickupWindow(delivery.pickupAt, delivery.pickupUntil) : 'sem horário marcado'}
+                    {delivery.status === 'Aguardando Retirada' && (
+                      <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold border ${delivery.separatedAt ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                        {delivery.separatedAt ? 'Separado' : 'Separar'}
+                      </span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                     <span className="font-medium text-slate-700">Distância:</span> {delivery.distance}
+                  </p>
+                )}
               </div>
               
               <div className="mt-4 pt-4 border-t border-slate-50 flex flex-col gap-3">
@@ -7225,6 +7263,14 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                  </div>
                  
                  {/* Action Buttons */}
+                 {delivery.isPickup && delivery.status === 'Aguardando Retirada' && (
+                    <button
+                      onClick={() => onToggleSeparated(delivery)}
+                      className={`w-full py-2 rounded-lg text-sm font-medium border transition-colors ${delivery.separatedAt ? 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
+                    >
+                      {delivery.separatedAt ? 'Desfazer separação' : 'Marcar como separado'}
+                    </button>
+                 )}
                  {(delivery.status === 'Pendente' || delivery.status === 'Em Preparação' || delivery.status === 'Aguardando Retirada') && (
                     <div className="flex gap-2 w-full">
                        <button 
@@ -7420,6 +7466,12 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                        <span className="text-slate-500 text-sm">Distância</span>
                        <span className="font-medium text-slate-900">{selectedDelivery.distance}</span>
                     </div>
+                    {selectedDelivery.isPickup && selectedDelivery.pickupAt && (
+                      <div className="flex justify-between items-center">
+                         <span className="text-slate-500 text-sm">Retirada marcada</span>
+                         <span className="font-semibold text-blue-700">{formatPickupWindow(selectedDelivery.pickupAt, selectedDelivery.pickupUntil)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                        <span className="text-slate-500 text-sm">Entrega</span>
                        <span className="font-medium text-slate-900">{selectedDelivery.isPickup ? 'Retirar na loja' : 'Receber em casa'}</span>
@@ -8679,6 +8731,36 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
 // ---------------------------------------------------------------------------
 // VENDAS: notas e cupons do ERP com recibo em PDF, ligados ao cliente pelo CPF/CNPJ
 // ---------------------------------------------------------------------------
+// Retirada marcada pelo cliente, ex.: "qui., 22/10, 10:00 às 11:00"
+const formatPickupWindow = (startIso, endIso) => {
+  if (!startIso) return '';
+  const tz = 'America/Sao_Paulo';
+  const s = new Date(startIso);
+  const date = s.toLocaleDateString('pt-BR', { timeZone: tz, weekday: 'short', day: '2-digit', month: '2-digit' });
+  const hm = (d) => d.toLocaleTimeString('pt-BR', { timeZone: tz, hour: '2-digit', minute: '2-digit' });
+  return endIso ? `${date}, ${hm(s)} às ${hm(new Date(endIso))}` : `${date}, ${hm(s)}`;
+};
+
+// Aviso sonoro curto quando chega um pedido novo para separar
+const beepNewPickup = () => {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    [0, 0.22].forEach((t, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = i ? 988 : 784;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.2);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.22);
+    });
+    setTimeout(() => ctx.close(), 800);
+  } catch { /* navegador bloqueou o som: segue só com o aviso na tela */ }
+};
+
 const SALE_TYPES = {
   '65': { label: 'Balcão (NFC-e)', short: 'Balcão', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
   '59': { label: 'Balcão (CF-e SAT)', short: 'Balcão', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
@@ -9174,6 +9256,213 @@ const formatWhatsapp = (digits) => {
 };
 
 const hoursText = (h) => (h.closed ? 'Fechado' : `${h.open || '--:--'} - ${h.close || '--:--'}`);
+
+// ---------------------------------------------------------------------------
+// RETIRADA: cadastro da grade de horários que o cliente vê no app e do aviso ao estoque
+// ---------------------------------------------------------------------------
+const PICKUP_DAY_NAMES = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
+const pickupDaysOfLabel = (label) => {
+  const text = String(label || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const found = [];
+  PICKUP_DAY_NAMES.forEach((n, d) => { const at = text.indexOf(n); if (at >= 0) found.push({ d, at }); });
+  found.sort((a, b) => a.at - b.at);
+  if (!found.length) return [];
+  if (found.length >= 2 && /\ba\b|\bate\b/.test(text.slice(found[0].at, found[1].at + 12))) {
+    const out = [];
+    for (let d = found[0].d; ; d = (d + 1) % 7) { out.push(d); if (d === found[1].d) break; }
+    return out;
+  }
+  return found.map(f => f.d);
+};
+const hhmmToMin = (v) => { const m = /^(\d{1,2}):(\d{2})/.exec(v || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+
+const PickupScheduleScreen = ({ logAction, showToast }) => {
+  const [form, setForm] = useState(null);
+  const [original, setOriginal] = useState(null);
+  const [storeHours, setStoreHours] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [newDate, setNewDate] = useState('');
+
+  const load = async () => {
+    setIsLoading(true);
+    setLoadError('');
+    const { data, error } = await supabase.from('store_settings').select('*').eq('id', 1).maybeSingle();
+    if (error || !data) {
+      setLoadError(error?.message || 'Configurações não encontradas.');
+    } else if (!('pickup_slot_minutes' in data)) {
+      setLoadError("Falta rodar o arquivo 'pickup_slots.sql' no Supabase (colunas da grade de retirada).");
+    } else {
+      const f = {
+        pickup_hours: Array.isArray(data.pickup_hours) ? data.pickup_hours : [],
+        pickup_closed_dates: Array.isArray(data.pickup_closed_dates) ? data.pickup_closed_dates : [],
+        pickup_slot_minutes: data.pickup_slot_minutes ?? 60,
+        pickup_lead_minutes: data.pickup_lead_minutes ?? 120,
+        pickup_days_ahead: data.pickup_days_ahead ?? 7,
+        pickup_capacity: data.pickup_capacity ?? 4,
+        pickup_alert_emails: data.pickup_alert_emails || '',
+      };
+      setForm(f);
+      setOriginal(f);
+      setStoreHours(Array.isArray(data.hours) ? data.hours : []);
+    }
+    setIsLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const set = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+  const setHour = (i, field, value) => setForm(prev => ({ ...prev, pickup_hours: prev.pickup_hours.map((h, k) => (k === i ? { ...h, [field]: value } : h)) }));
+  const addHour = () => setForm(prev => ({ ...prev, pickup_hours: [...prev.pickup_hours, { label: '', closed: false, open: '08:00', close: '17:00' }] }));
+  const removeHour = (i) => setForm(prev => ({ ...prev, pickup_hours: prev.pickup_hours.filter((_, k) => k !== i) }));
+  const useStoreHours = () => setForm(prev => ({ ...prev, pickup_hours: storeHours.map(h => ({ ...h })) }));
+  const addClosedDate = () => {
+    if (!newDate) return;
+    if (form.pickup_closed_dates.includes(newDate)) return showToast('Essa data já está na lista.', 'warning');
+    set('pickup_closed_dates', [...form.pickup_closed_dates, newDate].sort());
+    setNewDate('');
+  };
+
+  const effectiveHours = form && form.pickup_hours.length ? form.pickup_hours : storeHours;
+  const slotsPerRow = (h) => {
+    if (h.closed) return 0;
+    const o = hhmmToMin(h.open), c = hhmmToMin(h.close);
+    if (o == null || c == null || c <= o) return 0;
+    return Math.floor((c - o) / (Number(form.pickup_slot_minutes) || 60));
+  };
+
+  const handleSave = async () => {
+    const slot = Number(form.pickup_slot_minutes), lead = Number(form.pickup_lead_minutes), ahead = Number(form.pickup_days_ahead), cap = Number(form.pickup_capacity);
+    if (!(slot >= 15 && slot <= 240)) return showToast('A duração de cada horário deve ficar entre 15 e 240 minutos.', 'warning');
+    if (!(lead >= 0 && lead <= 1440)) return showToast('A antecedência deve ficar entre 0 e 1440 minutos.', 'warning');
+    if (!(ahead >= 1 && ahead <= 30)) return showToast('Os dias à frente devem ficar entre 1 e 30.', 'warning');
+    if (!(cap >= 1 && cap <= 100)) return showToast('A capacidade por horário deve ficar entre 1 e 100.', 'warning');
+    if (form.pickup_hours.some(h => !String(h.label || '').trim())) return showToast('Preencha o nome de todas as linhas de horário.', 'warning');
+    if (form.pickup_hours.some(h => !h.closed && (!h.open || !h.close || hhmmToMin(h.close) <= hhmmToMin(h.open)))) return showToast('Em cada linha, o fechamento precisa ser depois da abertura (ou marque Fechado).', 'warning');
+    const emails = String(form.pickup_alert_emails || '').split(/[,;\s]+/).map(e => e.trim()).filter(Boolean);
+    if (emails.some(e => !/^\S+@\S+\.\S+$/.test(e))) return showToast('Algum e-mail do estoque está inválido.', 'warning');
+
+    const payload = {
+      pickup_hours: form.pickup_hours.map(h => ({ label: h.label.trim(), closed: !!h.closed, open: h.closed ? '' : h.open, close: h.closed ? '' : h.close })),
+      pickup_closed_dates: form.pickup_closed_dates,
+      pickup_slot_minutes: slot, pickup_lead_minutes: lead, pickup_days_ahead: ahead, pickup_capacity: cap,
+      pickup_alert_emails: emails.join(', '),
+      updated_at: new Date().toISOString(),
+    };
+    setIsSaving(true);
+    try {
+      const { data, error } = await supabase.from('store_settings').update(payload).eq('id', 1).select();
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error('Sem permissão para alterar as configurações.');
+      if (logAction) logAction('SETTINGS_CHANGE', 'Grade de retirada', { changes: [{ field: 'Grade de retirada', old: 'anterior', new: `${slot} min por horário, ${cap} por horário, ${ahead} dias, antecedência ${lead} min` }] });
+      showToast('Grade de retirada salva! O app já usa os novos horários.', 'success');
+      setOriginal({ ...payload, pickup_alert_emails: payload.pickup_alert_emails });
+      setForm(f => ({ ...f, pickup_alert_emails: payload.pickup_alert_emails }));
+    } catch (err) {
+      showToast('Erro ao salvar: ' + (err.message || 'erro desconhecido'), 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const inputClass = "w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700";
+  const labelClass = "block text-sm font-bold text-slate-700 mb-1.5";
+  const cardClass = "bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4";
+
+  if (isLoading) return <div className="p-12 text-center text-slate-500">Carregando...</div>;
+  if (loadError) {
+    return (
+      <div className="p-12 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">
+        <p className="font-bold mb-2">Não foi possível carregar a grade de retirada</p>
+        <p className="text-sm mb-4">{loadError}</p>
+        <button onClick={load} className="px-4 py-2 bg-white border border-red-200 rounded-lg text-red-600 hover:bg-red-50 font-bold text-sm">Tentar novamente</button>
+      </div>
+    );
+  }
+  const hasChanges = JSON.stringify(form) !== JSON.stringify(original);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2"><Clock className="text-primary" /> Retirada</h1>
+          <p className="text-sm text-slate-500 mt-1">Horários em que o cliente pode retirar o pedido no estoque. O app só mostra esses horários e o estoque só libera a mercadoria dentro do horário marcado.</p>
+        </div>
+        <button onClick={handleSave} disabled={isSaving || !hasChanges} className="bg-primary text-white font-bold px-5 py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-50 inline-flex items-center gap-2">
+          <Save size={18} /> {isSaving ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
+
+      <div className={cardClass}>
+        <div className="flex justify-between items-center flex-wrap gap-2">
+          <h2 className="font-bold text-slate-800">Dias e horários de retirada</h2>
+          <div className="flex gap-2">
+            <button onClick={useStoreHours} className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Copiar horário da loja</button>
+            <button onClick={addHour} className="text-sm px-3 py-1.5 rounded-lg bg-blue-50 text-primary font-bold inline-flex items-center gap-1"><Plus size={14} /> Adicionar</button>
+          </div>
+        </div>
+        {form.pickup_hours.length === 0 && (
+          <p className="text-sm text-slate-500 bg-slate-50 border border-slate-100 rounded-lg p-3">
+            Nenhum horário próprio cadastrado: a retirada usa o <b>horário de funcionamento da loja</b> ({storeHours.filter(h => !h.closed).map(h => `${h.label} ${h.open}-${h.close}`).join(' · ') || 'não cadastrado'}). Adicione linhas aqui se o estoque tiver horário diferente.
+          </p>
+        )}
+        {form.pickup_hours.map((h, i) => (
+          <div key={i} className="grid grid-cols-12 gap-3 items-end">
+            <div className="col-span-12 md:col-span-4"><label className={labelClass}>Dias</label><input className={inputClass} placeholder="Ex.: Segunda a Sexta" value={h.label} onChange={e => setHour(i, 'label', e.target.value)} /></div>
+            <div className="col-span-5 md:col-span-2"><label className={labelClass}>Abre</label><input type="time" className={inputClass} disabled={h.closed} value={h.open || ''} onChange={e => setHour(i, 'open', e.target.value)} /></div>
+            <div className="col-span-5 md:col-span-2"><label className={labelClass}>Fecha</label><input type="time" className={inputClass} disabled={h.closed} value={h.close || ''} onChange={e => setHour(i, 'close', e.target.value)} /></div>
+            <label className="col-span-6 md:col-span-2 flex items-center gap-2 text-sm text-slate-600 pb-3"><input type="checkbox" checked={!!h.closed} onChange={e => setHour(i, 'closed', e.target.checked)} /> Sem retirada</label>
+            <button onClick={() => removeHour(i)} className="col-span-6 md:col-span-2 text-red-500 hover:bg-red-50 rounded-lg py-2.5 inline-flex items-center justify-center gap-1 text-sm"><Trash2 size={15} /> Remover</button>
+          </div>
+        ))}
+        <p className="text-xs text-slate-400">Use nomes como "Segunda a Sexta", "Sábado" ou "Segunda, Quarta e Sexta". Linhas com nome que não indica dias da semana (como "Feriados") são ignoradas, use a lista de datas abaixo.</p>
+        {effectiveHours.some(h => !h.closed && slotsPerRow(h) > 0) && (
+          <p className="text-sm text-slate-600 bg-blue-50/60 border border-blue-100 rounded-lg p-3">
+            {effectiveHours.filter(h => !h.closed && slotsPerRow(h) > 0).map(h => `${h.label}: ${slotsPerRow(h)} horários de ${form.pickup_slot_minutes} min (${h.open} às ${h.close})`).join(' · ')}
+          </p>
+        )}
+      </div>
+
+      <div className={cardClass}>
+        <h2 className="font-bold text-slate-800">Regras da grade</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div><label className={labelClass}>Duração de cada horário (min)</label><input type="number" min="15" max="240" step="15" className={inputClass} value={form.pickup_slot_minutes} onChange={e => set('pickup_slot_minutes', e.target.value)} /></div>
+          <div><label className={labelClass}>Antecedência mínima (min)</label><input type="number" min="0" max="1440" step="15" className={inputClass} value={form.pickup_lead_minutes} onChange={e => set('pickup_lead_minutes', e.target.value)} /></div>
+          <div><label className={labelClass}>Dias à frente</label><input type="number" min="1" max="30" className={inputClass} value={form.pickup_days_ahead} onChange={e => set('pickup_days_ahead', e.target.value)} /></div>
+          <div><label className={labelClass}>Retiradas por horário</label><input type="number" min="1" max="100" className={inputClass} value={form.pickup_capacity} onChange={e => set('pickup_capacity', e.target.value)} /></div>
+        </div>
+        <p className="text-xs text-slate-400">A antecedência é o tempo que o estoque precisa para separar o pedido: o cliente só vê horários a partir de agora + esse tempo.</p>
+      </div>
+
+      <div className={cardClass}>
+        <h2 className="font-bold text-slate-800">Datas sem retirada (feriados, inventário)</h2>
+        <div className="flex gap-2 flex-wrap">
+          <input type="date" className={inputClass + ' max-w-[220px]'} value={newDate} onChange={e => setNewDate(e.target.value)} />
+          <button onClick={addClosedDate} className="px-4 py-2 rounded-xl bg-blue-50 text-primary font-bold inline-flex items-center gap-1"><Plus size={16} /> Adicionar data</button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {form.pickup_closed_dates.length === 0 && <span className="text-sm text-slate-400">Nenhuma data bloqueada.</span>}
+          {form.pickup_closed_dates.map(d => (
+            <span key={d} className="inline-flex items-center gap-2 bg-slate-100 text-slate-700 rounded-full px-3 py-1 text-sm">
+              {d.split('-').reverse().join('/')}
+              <button onClick={() => set('pickup_closed_dates', form.pickup_closed_dates.filter(x => x !== d))} className="text-slate-400 hover:text-red-500" aria-label="Remover data"><X size={14} /></button>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className={cardClass}>
+        <h2 className="font-bold text-slate-800 flex items-center gap-2"><Mail size={18} className="text-primary" /> Aviso ao estoque</h2>
+        <p className="text-sm text-slate-500">Quando um pedido de retirada é pago, o estoque recebe por e-mail a lista de produtos e o horário previsto. No portal e no app o aviso aparece na hora.</p>
+        <div>
+          <label className={labelClass}>E-mails da equipe do estoque</label>
+          <input className={inputClass} placeholder="estoque@loja.com.br, separacao@loja.com.br" value={form.pickup_alert_emails} onChange={e => set('pickup_alert_emails', e.target.value)} />
+          <p className="text-xs text-slate-400 mt-1">Separe vários e-mails por vírgula.</p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const SettingsScreen = ({ logAction, showToast }) => {
   const [form, setForm] = useState(null);
@@ -9893,6 +10182,9 @@ function App() {
           })(),
           fullAddress: d.address || d.address_text || 'Endereço não informado',
           isPickup: d.delivery === 'loja',
+          pickupAt: d.pickup_at || null,
+          pickupUntil: d.pickup_until || null,
+          separatedAt: d.separated_at || null,
           deliveryCode: d.delivery_code ? String(d.delivery_code) : '',
           paymentType: d.payment_type || null,
           // dinheiro só é pago na hora de retirar/receber
@@ -9902,6 +10194,12 @@ function App() {
        };
       });
       setDeliveries(formatted);
+      // já conhecidos: só pedidos que chegarem depois disparam o aviso
+      // (pedidos ainda pendentes de pagamento ficam de fora, para avisar quando o PIX confirmar)
+      ordersData
+        .filter(o => o.delivery === 'loja' && ['paid', 'preparing', 'driver_assigned', 'out_for_delivery', 'delivered', 'cancelled'].includes(String(o.status)))
+        .forEach(o => notifiedPickupRef.current.add(o.id));
+      notifiedPickupReady.current = true;
     } catch (error) {
        console.error('Erro ao buscar entregas:', error);
     }
@@ -10006,7 +10304,14 @@ function App() {
       
       const channel = supabase
         .channel('entregas_changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+           // pedido de retirada novo (ou que acabou de ser pago): avisa o estoque com som e mensagem
+           const n = payload?.new;
+           if (n && n.delivery === 'loja' && ['paid', 'preparing'].includes(String(n.status)) && !notifiedPickupRef.current.has(n.id) && notifiedPickupReady.current) {
+             notifiedPickupRef.current.add(n.id);
+             beepNewPickup();
+             showToast(`Novo pedido de retirada #${String(n.order_number ?? n.id).slice(0, 6).toUpperCase()}${n.pickup_at ? ' para ' + formatPickupWindow(n.pickup_at, n.pickup_until) : ''}. Separe os produtos.`, 'warning');
+           }
            fetchDeliveries();
         })
         .subscribe();
@@ -10070,6 +10375,22 @@ function App() {
       console.error("Erro ao atualizar status:", error);
       fetchDeliveries(); // Reverte em caso de erro
     }
+  };
+
+  // Estoque marca o pedido de retirada como separado (ou desfaz)
+  const handleToggleSeparated = async (delivery) => {
+    const { data: auth } = await supabase.auth.getUser();
+    const done = !delivery.separatedAt;
+    const { error } = await supabase
+      .from('orders')
+      .update({ separated_at: done ? new Date().toISOString() : null, separated_by: done ? auth?.user?.id ?? null : null })
+      .eq('id', delivery.id);
+    if (error) {
+      showToast(/separated_at/.test(error.message || '') ? "Falta rodar o arquivo 'pickup_slots.sql' no Supabase." : 'Não foi possível atualizar: ' + error.message, 'error');
+    } else {
+      showToast(done ? 'Pedido marcado como separado.' : 'Separação desfeita.', 'success');
+    }
+    fetchDeliveries();
   };
 
   // O admin escolhe o entregador: grava no pedido e passa para "Entregador Atribuído"
@@ -10152,11 +10473,12 @@ function App() {
       case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} />);
       case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
+      case 'Retirada': return renderIfAllowed('Entregas', <PickupScheduleScreen logAction={logAction} showToast={showToast} />);
       case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} />);
       case 'Integrações': return renderIfAllowed('Integrações', <IntegracoesScreen showToast={showToast} session={session} />);
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
-      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} />);
+      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
       default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} userProfile={userProfile} />);
@@ -10208,6 +10530,7 @@ function App() {
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} visible={hasPermission('Usuários')} />
           <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} visible={hasPermission('Logs')} />
           <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
+          <SidebarItem icon={Clock} label="Retirada" active={activeTab === 'Retirada'} onClick={() => setActiveTab('Retirada')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
           <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
           <SidebarItem icon={Plug} label="Integrações" active={activeTab === 'Integrações'} onClick={() => setActiveTab('Integrações')} isOpen={isSidebarOpen} visible={hasPermission('Integrações')} />
