@@ -6948,6 +6948,7 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
 
 const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, onAssignDriver }) => {
   const [driverPickFor, setDriverPickFor] = useState(null);   // pedido que vai receber entregador
+  const [refuseTarget, setRefuseTarget] = useState(null);      // pedido que vai ser recusado (janela de confirmação)
   const [availableDrivers, setAvailableDrivers] = useState([]);
   const [driversLoading, setDriversLoading] = useState(false);
 
@@ -7051,6 +7052,37 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
 
   return (
     <div className="space-y-8">
+      {/* Confirmar recusa do pedido */}
+      {refuseTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setRefuseTarget(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-up" onClick={e => e.stopPropagation()}>
+            <div className="px-6 pt-8 pb-2 text-center">
+              <div className="mx-auto w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                <AlertTriangle className="text-red-500" size={28} />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">Recusar o pedido #{formatOrderNumber(refuseTarget)}?</h3>
+              <p className="text-sm text-slate-500 mt-2">
+                {refuseTarget.client} · R$ {Number(refuseTarget.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+              <p className="text-sm text-slate-500 mt-3">
+                O pedido será cancelado e sai da lista de entregas em andamento. Essa ação não pode ser desfeita por aqui.
+              </p>
+            </div>
+            <div className="p-6 flex gap-3">
+              <button onClick={() => setRefuseTarget(null)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors">
+                Voltar
+              </button>
+              <button
+                onClick={() => { onUpdateStatus(refuseTarget.id, 'Cancelado'); setRefuseTarget(null); }}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-lg shadow-red-500/20 transition-colors"
+              >
+                Sim, recusar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Escolher entregador */}
       {driverPickFor && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setDriverPickFor(null)}>
@@ -7196,11 +7228,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                  {(delivery.status === 'Pendente' || delivery.status === 'Em Preparação' || delivery.status === 'Aguardando Retirada') && (
                     <div className="flex gap-2 w-full">
                        <button 
-                           onClick={() => {
-                             if(window.confirm('Tem certeza que deseja recusar este pedido?')) {
-                               onUpdateStatus(delivery.id, 'Cancelado');
-                             }
-                           }}
+                           onClick={() => setRefuseTarget(delivery)}
                            className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-lg transition-colors shadow-sm text-sm border border-red-100"
                        >
                            Recusar
@@ -7463,12 +7491,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
               {(selectedDelivery.status === 'Pendente' || selectedDelivery.status === 'Em Preparação' || selectedDelivery.status === 'Aguardando Retirada') && (
                 <>
                   <button
-                    onClick={() => {
-                      if (window.confirm('Tem certeza que deseja recusar este pedido?')) {
-                        onUpdateStatus(selectedDelivery.id, 'Cancelado');
-                        setIsDetailsModalOpen(false);
-                      }
-                    }}
+                    onClick={() => { setIsDetailsModalOpen(false); setRefuseTarget(selectedDelivery); }}
                     className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-xl border border-red-100 transition-colors"
                   >
                     Recusar
