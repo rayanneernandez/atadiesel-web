@@ -9324,16 +9324,14 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
   };
 
   const effectiveHours = form && form.pickup_hours.length ? form.pickup_hours : storeHours;
-  const slotsPerRow = (h) => {
-    if (h.closed) return 0;
+  const windowOk = (h) => {
+    if (h.closed) return false;
     const o = hhmmToMin(h.open), c = hhmmToMin(h.close);
-    if (o == null || c == null || c <= o) return 0;
-    return Math.floor((c - o) / (Number(form.pickup_slot_minutes) || 60));
+    return o != null && c != null && c > o;
   };
 
   const handleSave = async () => {
-    const slot = Number(form.pickup_slot_minutes), lead = Number(form.pickup_lead_minutes), ahead = Number(form.pickup_days_ahead), cap = Number(form.pickup_capacity);
-    if (!(slot >= 15 && slot <= 240)) return showToast('A duração de cada horário deve ficar entre 15 e 240 minutos.', 'warning');
+    const lead = Number(form.pickup_lead_minutes), ahead = Number(form.pickup_days_ahead), cap = Number(form.pickup_capacity);
     if (!(lead >= 0 && lead <= 1440)) return showToast('A antecedência deve ficar entre 0 e 1440 minutos.', 'warning');
     if (!(ahead >= 1 && ahead <= 30)) return showToast('Os dias à frente devem ficar entre 1 e 30.', 'warning');
     if (!(cap >= 1 && cap <= 100)) return showToast('A capacidade por horário deve ficar entre 1 e 100.', 'warning');
@@ -9345,7 +9343,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
     const payload = {
       pickup_hours: form.pickup_hours.map(h => ({ label: h.label.trim(), closed: !!h.closed, open: h.closed ? '' : h.open, close: h.closed ? '' : h.close })),
       pickup_closed_dates: form.pickup_closed_dates,
-      pickup_slot_minutes: slot, pickup_lead_minutes: lead, pickup_days_ahead: ahead, pickup_capacity: cap,
+      pickup_lead_minutes: lead, pickup_days_ahead: ahead, pickup_capacity: cap,
       pickup_alert_emails: emails.join(', '),
       updated_at: new Date().toISOString(),
     };
@@ -9354,7 +9352,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
       const { data, error } = await supabase.from('store_settings').update(payload).eq('id', 1).select();
       if (error) throw error;
       if (!data || data.length === 0) throw new Error('Sem permissão para alterar as configurações.');
-      if (logAction) logAction('SETTINGS_CHANGE', 'Grade de retirada', { changes: [{ field: 'Grade de retirada', old: 'anterior', new: `${slot} min por horário, ${cap} por horário, ${ahead} dias, antecedência ${lead} min` }] });
+      if (logAction) logAction('SETTINGS_CHANGE', 'Grade de retirada', { changes: [{ field: 'Grade de retirada', old: 'anterior', new: `${form.pickup_hours.length} horário(s), ${cap} por horário, ${ahead} dias, antecedência ${lead} min` }] });
       showToast('Grade de retirada salva! O app já usa os novos horários.', 'success');
       setOriginal({ ...payload, pickup_alert_emails: payload.pickup_alert_emails });
       setForm(f => ({ ...f, pickup_alert_emails: payload.pickup_alert_emails }));
@@ -9415,28 +9413,21 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
             <button onClick={() => removeHour(i)} className="col-span-6 md:col-span-2 text-red-500 hover:bg-red-50 rounded-lg py-2.5 inline-flex items-center justify-center gap-1 text-sm"><Trash2 size={15} /> Remover</button>
           </div>
         ))}
+        <p className="text-xs text-slate-500">Cada linha é <b>um horário de retirada</b>. Para ter vários horários no mesmo dia, clique em <b>Adicionar</b> e repita o dia (ex.: uma linha "Segunda" 10:00–11:00 e outra "Segunda" 14:00–16:00).</p>
         <p className="text-xs text-slate-400">Use nomes como "Segunda a Sexta", "Sábado" ou "Segunda, Quarta e Sexta". Linhas com nome que não indica dias da semana (como "Feriados") são ignoradas, use a lista de datas abaixo.</p>
-        {effectiveHours.some(h => !h.closed && slotsPerRow(h) > 0) && (
+        {effectiveHours.some(windowOk) && (
           <p className="text-sm text-slate-600 bg-blue-50/60 border border-blue-100 rounded-lg p-3">
-            {effectiveHours.filter(h => !h.closed && slotsPerRow(h) > 0).map(h => `${h.label}: ${slotsPerRow(h)} horários de ${form.pickup_slot_minutes} min (${h.open} às ${h.close})`).join(' · ')}
+            O cliente vai poder escolher: {effectiveHours.filter(windowOk).map(h => `${h.label}, das ${h.open} às ${h.close}`).join(' · ')}
           </p>
         )}
       </div>
 
       <div className={cardClass}>
         <h2 className="font-bold text-slate-800">Regras de retirada</h2>
-        <p className="text-sm text-slate-500">Quatro ajustes simples. Embaixo de cada um está um exemplo do que o cliente vai ver no app.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <p className="text-sm text-slate-500">Três ajustes simples. Embaixo de cada um está um exemplo do que o cliente vai ver no app.</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="rounded-xl border border-slate-100 p-4 space-y-2">
-            <label className={labelClass}>1. De quanto em quanto tempo o cliente pode escolher?</label>
-            <select className={inputClass} value={form.pickup_slot_minutes} onChange={e => set('pickup_slot_minutes', e.target.value)}>
-              {[30, 60, 90, 120].map(m => <option key={m} value={m}>{m === 60 ? 'De 1 em 1 hora' : m === 30 ? 'De meia em meia hora' : m === 90 ? 'De 1h30 em 1h30' : 'De 2 em 2 horas'}</option>)}
-            </select>
-            <p className="text-xs text-slate-500">Exemplo: o cliente vê as opções "08:00 às {String(8 + Math.floor(Number(form.pickup_slot_minutes || 60) / 60)).padStart(2, '0')}:{String(Number(form.pickup_slot_minutes || 60) % 60).padStart(2, '0')}", e a partir daí a próxima.</p>
-          </div>
-
-          <div className="rounded-xl border border-slate-100 p-4 space-y-2">
-            <label className={labelClass}>2. Quanto tempo o estoque precisa para separar o pedido?</label>
+            <label className={labelClass}>1. Quanto tempo o estoque precisa para separar o pedido?</label>
             <select className={inputClass} value={form.pickup_lead_minutes} onChange={e => set('pickup_lead_minutes', e.target.value)}>
               {[0, 30, 60, 120, 180, 240].map(m => <option key={m} value={m}>{m === 0 ? 'Não precisa de tempo' : m < 60 ? `${m} minutos` : `${m / 60} hora${m > 60 ? 's' : ''}`}</option>)}
             </select>
@@ -9444,7 +9435,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
           </div>
 
           <div className="rounded-xl border border-slate-100 p-4 space-y-2">
-            <label className={labelClass}>3. Com quantos dias de antecedência o cliente pode agendar?</label>
+            <label className={labelClass}>2. Com quantos dias de antecedência o cliente pode agendar?</label>
             <div className="flex items-center gap-2">
               <input type="number" min="1" max="30" className={inputClass + ' max-w-[110px]'} value={form.pickup_days_ahead} onChange={e => set('pickup_days_ahead', e.target.value)} />
               <span className="text-sm text-slate-600">dias</span>
@@ -9453,7 +9444,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
           </div>
 
           <div className="rounded-xl border border-slate-100 p-4 space-y-2">
-            <label className={labelClass}>4. Quantos clientes podem retirar no mesmo horário?</label>
+            <label className={labelClass}>3. Quantos clientes podem retirar em cada horário?</label>
             <div className="flex items-center gap-2">
               <input type="number" min="1" max="100" className={inputClass + ' max-w-[110px]'} value={form.pickup_capacity} onChange={e => set('pickup_capacity', e.target.value)} />
               <span className="text-sm text-slate-600">clientes</span>
