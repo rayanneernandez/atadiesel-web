@@ -9333,6 +9333,27 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
     return o != null && c != null && c > o;
   };
 
+  const [testing, setTesting] = useState(false);
+  const sendTestAlert = async () => {
+    // 1) aviso aqui no portal, igual ao de um pedido de verdade
+    beepNewPickup();
+    showToast('TESTE: Novo pedido de retirada #TESTE. Separe os produtos.', 'warning');
+    // 2) e-mail e push (o servidor manda para a lista salva e para os celulares do estoque)
+    setTesting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const base = import.meta.env.VITE_BACKEND_URL || 'https://atadiesel-main.onrender.com';
+      const resp = await fetch(`${base}/pickup/test-alert`, { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` } });
+      const out = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(out?.error || `Servidor respondeu ${resp.status}`);
+      showToast(`Teste enviado: ${out.emails?.length || 0} e-mail(s) e ${out.pushes || 0} celular(es).`, 'success');
+    } catch (err) {
+      showToast('O aviso do portal funcionou, mas o servidor não enviou e-mail/push: ' + (err.message || 'erro'), 'warning');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleSave = async () => {
     const lead = Number(form.pickup_lead_minutes), ahead = Number(form.pickup_days_ahead), cap = Number(form.pickup_capacity);
     if (!(lead >= 0 && lead <= 1440)) return showToast('A antecedência deve ficar entre 0 e 1440 minutos.', 'warning');
@@ -9499,6 +9520,12 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
           <label className={labelClass}>E-mails da equipe do estoque</label>
           <input className={inputClass} placeholder="estoque@loja.com.br, separacao@loja.com.br" value={form.pickup_alert_emails} onChange={e => set('pickup_alert_emails', e.target.value)} />
           <p className="text-xs text-slate-400 mt-1">Separe vários e-mails por vírgula.</p>
+        </div>
+        <div className="border-t border-slate-100 pt-4 space-y-2">
+          <button onClick={sendTestAlert} disabled={testing} className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 font-bold border border-amber-200 hover:bg-amber-100 disabled:opacity-50 inline-flex items-center gap-2">
+            <Bell size={16} /> {testing ? 'Enviando...' : 'Enviar alerta de teste'}
+          </button>
+          <p className="text-xs text-slate-500">Não cria pedido. Toca o som e mostra o aviso aqui no portal, manda um e-mail marcado como TESTE para a lista acima e uma notificação para os celulares do estoque. Salve os e-mails antes de testar.</p>
         </div>
       </div>
     </div>
