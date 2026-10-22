@@ -9284,6 +9284,8 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [newDate, setNewDate] = useState('');
+  const [leadCustom, setLeadCustom] = useState(false); // marca: digitar o tempo de separação
+  const [leadUnit, setLeadUnit] = useState('min');
 
   const load = async () => {
     setIsLoading(true);
@@ -9305,6 +9307,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
       };
       setForm(f);
       setOriginal(f);
+      setLeadCustom(![0, 30, 60, 120, 180, 240].includes(Number(f.pickup_lead_minutes)));
       setStoreHours(Array.isArray(data.hours) ? data.hours : []);
     }
     setIsLoading(false);
@@ -9428,9 +9431,27 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="rounded-xl border border-slate-100 p-4 space-y-2">
             <label className={labelClass}>1. Quanto tempo o estoque precisa para separar o pedido?</label>
-            <select className={inputClass} value={form.pickup_lead_minutes} onChange={e => set('pickup_lead_minutes', e.target.value)}>
-              {[0, 30, 60, 120, 180, 240].map(m => <option key={m} value={m}>{m === 0 ? 'Não precisa de tempo' : m < 60 ? `${m} minutos` : `${m / 60} hora${m > 60 ? 's' : ''}`}</option>)}
-            </select>
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={leadCustom} onChange={e => setLeadCustom(e.target.checked)} />
+              Digitar outro tempo
+            </label>
+            {leadCustom ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min="0" className={inputClass + ' max-w-[110px]'}
+                  value={leadUnit === 'h' ? Number(form.pickup_lead_minutes || 0) / 60 : form.pickup_lead_minutes}
+                  onChange={e => { const n = e.target.value === '' ? '' : Number(e.target.value); set('pickup_lead_minutes', n === '' ? '' : Math.round(leadUnit === 'h' ? n * 60 : n)); }}
+                />
+                <select className={inputClass + ' max-w-[130px]'} value={leadUnit} onChange={e => setLeadUnit(e.target.value)}>
+                  <option value="min">minutos</option>
+                  <option value="h">horas</option>
+                </select>
+              </div>
+            ) : (
+              <select className={inputClass} value={form.pickup_lead_minutes} onChange={e => set('pickup_lead_minutes', e.target.value)}>
+                {[0, 30, 60, 120, 180, 240].map(m => <option key={m} value={m}>{m === 0 ? 'Não precisa de tempo' : m < 60 ? `${m} minutos` : `${m / 60} hora${m > 60 ? 's' : ''}`}</option>)}
+              </select>
+            )}
             <p className="text-xs text-slate-500">Exemplo: se o cliente pedir às 10:00, o primeiro horário que aparece é às {(() => { const t = 10 * 60 + Number(form.pickup_lead_minutes || 0); return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; })()}. Assim ninguém pede para daqui a 5 minutos.</p>
           </div>
 
