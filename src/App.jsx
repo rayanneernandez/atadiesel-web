@@ -9424,14 +9424,43 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
       </div>
 
       <div className={cardClass}>
-        <h2 className="font-bold text-slate-800">Regras da grade</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div><label className={labelClass}>Duração de cada horário (min)</label><input type="number" min="15" max="240" step="15" className={inputClass} value={form.pickup_slot_minutes} onChange={e => set('pickup_slot_minutes', e.target.value)} /></div>
-          <div><label className={labelClass}>Antecedência mínima (min)</label><input type="number" min="0" max="1440" step="15" className={inputClass} value={form.pickup_lead_minutes} onChange={e => set('pickup_lead_minutes', e.target.value)} /></div>
-          <div><label className={labelClass}>Dias à frente</label><input type="number" min="1" max="30" className={inputClass} value={form.pickup_days_ahead} onChange={e => set('pickup_days_ahead', e.target.value)} /></div>
-          <div><label className={labelClass}>Retiradas por horário</label><input type="number" min="1" max="100" className={inputClass} value={form.pickup_capacity} onChange={e => set('pickup_capacity', e.target.value)} /></div>
+        <h2 className="font-bold text-slate-800">Regras de retirada</h2>
+        <p className="text-sm text-slate-500">Quatro ajustes simples. Embaixo de cada um está um exemplo do que o cliente vai ver no app.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="rounded-xl border border-slate-100 p-4 space-y-2">
+            <label className={labelClass}>1. De quanto em quanto tempo o cliente pode escolher?</label>
+            <select className={inputClass} value={form.pickup_slot_minutes} onChange={e => set('pickup_slot_minutes', e.target.value)}>
+              {[30, 60, 90, 120].map(m => <option key={m} value={m}>{m === 60 ? 'De 1 em 1 hora' : m === 30 ? 'De meia em meia hora' : m === 90 ? 'De 1h30 em 1h30' : 'De 2 em 2 horas'}</option>)}
+            </select>
+            <p className="text-xs text-slate-500">Exemplo: o cliente vê as opções "08:00 às {String(8 + Math.floor(Number(form.pickup_slot_minutes || 60) / 60)).padStart(2, '0')}:{String(Number(form.pickup_slot_minutes || 60) % 60).padStart(2, '0')}", e a partir daí a próxima.</p>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 p-4 space-y-2">
+            <label className={labelClass}>2. Quanto tempo o estoque precisa para separar o pedido?</label>
+            <select className={inputClass} value={form.pickup_lead_minutes} onChange={e => set('pickup_lead_minutes', e.target.value)}>
+              {[0, 30, 60, 120, 180, 240].map(m => <option key={m} value={m}>{m === 0 ? 'Não precisa de tempo' : m < 60 ? `${m} minutos` : `${m / 60} hora${m > 60 ? 's' : ''}`}</option>)}
+            </select>
+            <p className="text-xs text-slate-500">Exemplo: se o cliente pedir às 10:00, o primeiro horário que aparece é às {(() => { const t = 10 * 60 + Number(form.pickup_lead_minutes || 0); return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; })()}. Assim ninguém pede para daqui a 5 minutos.</p>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 p-4 space-y-2">
+            <label className={labelClass}>3. Com quantos dias de antecedência o cliente pode agendar?</label>
+            <div className="flex items-center gap-2">
+              <input type="number" min="1" max="30" className={inputClass + ' max-w-[110px]'} value={form.pickup_days_ahead} onChange={e => set('pickup_days_ahead', e.target.value)} />
+              <span className="text-sm text-slate-600">dias</span>
+            </div>
+            <p className="text-xs text-slate-500">Exemplo: com {form.pickup_days_ahead || 7} dias, quem pede hoje só consegue marcar a retirada para os próximos {form.pickup_days_ahead || 7} dias. Depois disso, ainda não aparece.</p>
+          </div>
+
+          <div className="rounded-xl border border-slate-100 p-4 space-y-2">
+            <label className={labelClass}>4. Quantos clientes podem retirar no mesmo horário?</label>
+            <div className="flex items-center gap-2">
+              <input type="number" min="1" max="100" className={inputClass + ' max-w-[110px]'} value={form.pickup_capacity} onChange={e => set('pickup_capacity', e.target.value)} />
+              <span className="text-sm text-slate-600">clientes</span>
+            </div>
+            <p className="text-xs text-slate-500">Exemplo: com {form.pickup_capacity || 4}, o horário das 10:00 aceita {form.pickup_capacity || 4} pedidos. Quando chegar no {Number(form.pickup_capacity || 4) + 1}º, esse horário some do app, e o cliente escolhe outro.</p>
+          </div>
         </div>
-        <p className="text-xs text-slate-400">A antecedência é o tempo que o estoque precisa para separar o pedido: o cliente só vê horários a partir de agora + esse tempo.</p>
       </div>
 
       <div className={cardClass}>
