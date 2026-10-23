@@ -9333,7 +9333,42 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
     return o != null && c != null && c > o;
   };
 
+  // e-mails do aviso: cada um é um item da lista (guardados juntos, separados por vírgula)
+  const [newEmail, setNewEmail] = useState('');
+  const alertEmails = String(form?.pickup_alert_emails || '').split(/[,;\s]+/).map(e => e.trim()).filter(Boolean);
+  const addAlertEmail = () => {
+    const e = newEmail.trim().toLowerCase();
+    if (!e) return;
+    if (!/^\S+@\S+\.\S+$/.test(e)) return showToast('Esse e-mail não parece válido.', 'warning');
+    if (alertEmails.map(x => x.toLowerCase()).includes(e)) return showToast('Esse e-mail já está na lista.', 'warning');
+    set('pickup_alert_emails', [...alertEmails, e].join(', '));
+    setNewEmail('');
+  };
+  const removeAlertEmail = (e) => set('pickup_alert_emails', alertEmails.filter(x => x !== e).join(', '));
+
+  const [testing, setTesting] = useState(false);
+  const sendTestAlert = async () => {
+    // 1) aviso aqui no portal, igual ao de um pedido de verdade
+    beepNewPickup();
+    showToast('TESTE: Novo pedido de retirada #TESTE. Separe os produtos.', 'warning');
+    // 2) e-mail e push (o servidor manda para a lista salva e para os celulares do estoque)
+    setTesting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const base = import.meta.env.VITE_BACKEND_URL || 'https://atadiesel-main.onrender.com';
+      const resp = await fetch(`${base}/pickup/test-alert`, { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` } });
+      const out = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(out?.error || `Servidor respondeu ${resp.status}`);
+      showToast(`Teste enviado: ${out.emails?.length || 0} e-mail(s) e ${out.pushes || 0} celular(es).`, 'success');
+    } catch (err) {
+      showToast('O aviso do portal funcionou, mas o servidor não enviou e-mail/push: ' + (err.message || 'erro'), 'warning');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleSave = async () => {
+    if (newEmail.trim()) return showToast('Clique em "Adicionar" para incluir o e-mail digitado antes de salvar.', 'warning');
     const lead = Number(form.pickup_lead_minutes), ahead = Number(form.pickup_days_ahead), cap = Number(form.pickup_capacity);
     if (!(lead >= 0 && lead <= 1440)) return showToast('A antecedência deve ficar entre 0 e 1440 minutos.', 'warning');
     if (!(ahead >= 1 && ahead <= 30)) return showToast('Os dias à frente devem ficar entre 1 e 30.', 'warning');
@@ -9496,9 +9531,31 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
         <h2 className="font-bold text-slate-800 flex items-center gap-2"><Mail size={18} className="text-primary" /> Aviso ao estoque</h2>
         <p className="text-sm text-slate-500">Quando um pedido de retirada é pago, o estoque recebe por e-mail a lista de produtos e o horário previsto. No portal e no app o aviso aparece na hora.</p>
         <div>
-          <label className={labelClass}>E-mails da equipe do estoque</label>
-          <input className={inputClass} placeholder="estoque@loja.com.br, separacao@loja.com.br" value={form.pickup_alert_emails} onChange={e => set('pickup_alert_emails', e.target.value)} />
-          <p className="text-xs text-slate-400 mt-1">Separe vários e-mails por vírgula.</p>
+          <label className={labelClass}>Quem recebe o aviso de retirada</label>
+          <div className="flex gap-2">
+            <input
+              type="email" className={inputClass} placeholder="email@loja.com.br" value={newEmail}
+              onChange={e => setNewEmail(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlertEmail(); } }}
+            />
+            <button onClick={addAlertEmail} className="px-4 rounded-xl bg-blue-50 text-primary font-bold inline-flex items-center gap-1 whitespace-nowrap"><Plus size={16} /> Adicionar</button>
+          </div>
+          <div className="flex flex-col gap-2 mt-3">
+            {alertEmails.length === 0 && <span className="text-sm text-slate-400">Nenhum e-mail cadastrado. Ninguém receberá o aviso por e-mail.</span>}
+            {alertEmails.map(e => (
+              <div key={e} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5">
+                <span className="inline-flex items-center gap-2 text-sm text-slate-700"><Mail size={15} className="text-slate-400" /> {e}</span>
+                <button onClick={() => removeAlertEmail(e)} className="text-slate-400 hover:text-red-500" aria-label="Remover e-mail"><X size={16} /></button>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">Cada pessoa é um e-mail. Depois de adicionar, clique em Salvar no topo da página.</p>
+        </div>
+        <div className="border-t border-slate-100 pt-4 space-y-2">
+          <button onClick={sendTestAlert} disabled={testing} className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 font-bold border border-amber-200 hover:bg-amber-100 disabled:opacity-50 inline-flex items-center gap-2">
+            <Bell size={16} /> {testing ? 'Enviando...' : 'Enviar alerta de teste'}
+          </button>
+          <p className="text-xs text-slate-500">Não cria pedido. Toca o som e mostra o aviso aqui no portal, manda um e-mail marcado como TESTE para a lista acima e uma notificação para os celulares do estoque. Salve os e-mails antes de testar.</p>
         </div>
       </div>
     </div>
