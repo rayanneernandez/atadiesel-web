@@ -8782,6 +8782,90 @@ const localDate = (offsetDays = 0) => {
   return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 };
 
+// Filtro no título da coluna, como no Excel: lista de valores com caixas de seleção e busca
+const SalesColumnFilter = ({ label, values, selected, onChange, right = false }) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = React.useRef(null);
+  const boxRef = React.useRef(null);
+  const active = selected !== null;
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => {
+      if (boxRef.current?.contains(e.target) || btnRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const closeOnScroll = (e) => { if (!boxRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    window.addEventListener('scroll', closeOnScroll, true);
+    return () => { document.removeEventListener('mousedown', close); window.removeEventListener('scroll', closeOnScroll, true); };
+  }, [open]);
+
+  const toggleOpen = (e) => {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 270)) });
+      setQ('');
+    }
+    setOpen(o => !o);
+  };
+
+  const shown = values.filter(v => v.toLowerCase().includes(q.trim().toLowerCase()));
+  const isOn = (v) => selected === null || selected.has(v);
+  const toggle = (v) => {
+    const next = new Set(selected === null ? values : selected);
+    if (next.has(v)) next.delete(v); else next.add(v);
+    onChange(next.size === values.length ? null : next);
+  };
+  const selectShown = () => {
+    const next = new Set(selected === null ? [] : selected);
+    shown.forEach(v => next.add(v));
+    onChange(next.size === values.length ? null : next);
+  };
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${right ? 'justify-end' : ''}`}>
+      {label}
+      <button ref={btnRef} type="button" onClick={toggleOpen} title={`Filtrar ${label}`}
+        className={`p-1 rounded normal-case ${active ? 'bg-primary text-white' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-200'}`}>
+        <FilterIcon size={12} />
+      </button>
+      {open && (
+        <div ref={boxRef} style={{ position: 'fixed', top: pos.top, left: pos.left, width: 260, zIndex: 60 }}
+          className="bg-white border border-slate-200 rounded-xl shadow-2xl p-3 normal-case font-normal text-slate-700 text-sm">
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Pesquisar..."
+            className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-primary mb-2" />
+          <div className="flex gap-3 text-xs mb-2">
+            <button type="button" className="text-primary hover:underline" onClick={selectShown}>Marcar {q.trim() ? 'resultados' : 'todos'}</button>
+            <button type="button" className="text-primary hover:underline" onClick={() => onChange(new Set(selected === null ? values.filter(v => !shown.includes(v)) : [...selected].filter(v => !shown.includes(v))))}>Desmarcar {q.trim() ? 'resultados' : 'todos'}</button>
+          </div>
+          <div className="max-h-56 overflow-y-auto border border-slate-100 rounded-lg divide-y divide-slate-50">
+            {shown.length === 0 ? <p className="px-3 py-3 text-xs text-slate-400">Nada encontrado.</p> : shown.slice(0, 300).map(v => (
+              <label key={v} className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-slate-50 cursor-pointer">
+                <input type="checkbox" className="accent-[#0047AB] w-4 h-4 shrink-0" checked={isOn(v)} onChange={() => toggle(v)} />
+                <span className="truncate" title={v}>{v}</span>
+              </label>
+            ))}
+          </div>
+          {shown.length > 300 && <p className="text-[11px] text-slate-400 mt-1">Mostrando 300 de {shown.length}. Use a pesquisa.</p>}
+          <div className="flex justify-between mt-2">
+            <button type="button" className="text-xs text-slate-500 hover:text-slate-800" onClick={() => { onChange(null); setOpen(false); }}>Limpar filtro</button>
+            <button type="button" className="text-xs bg-primary text-white rounded-lg px-3 py-1" onClick={() => setOpen(false)}>OK</button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+};
+
+const saleItemNames = (r) => {
+  const names = [...new Set((r.itens || []).map(i => String(i.descricao || '').trim()).filter(Boolean))];
+  return names;
+};
+
 const SalesScreen = ({ globalSearchTerm, showToast }) => {
   const PER_PAGE = 50;
   const [allRows, setAllRows] = useState([]);   // vendas do ERP + pedidos do app, misturadas por data
@@ -8796,6 +8880,12 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
   const [appCustomers, setAppCustomers] = useState(new Map()); // doc -> nome
   const [selected, setSelected] = useState(null);
   const [downloading, setDownloading] = useState(null);
+  const [colFilters, setColFilters] = useState({});   // coluna -> Set de valores marcados (ausente = sem filtro)
+  const setColFilter = (col, set) => setColFilters(prev => {
+    const next = { ...prev };
+    if (set === null) delete next[col]; else next[col] = set;
+    return next;
+  });
 
   // Clientes do app com CPF/CNPJ (para marcar e filtrar as vendas deles)
   useEffect(() => {
@@ -8820,13 +8910,6 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
       const docs = [...appCustomers.keys()];
       q = q.in('cliente_doc', docs.length ? docs : ['-']);
     }
-    if (term) {
-      const digits = term.replace(/\D/g, '');
-      const safe = term.replace(/[,()%]/g, ' ');
-      const ors = [`cliente_nome.ilike.%${safe}%`, `numero.ilike.%${safe}%`];
-      if (digits.length >= 3) ors.push(`cliente_doc.ilike.%${digits}%`);
-      q = q.or(ors.join(','));
-    }
     return q;
   };
 
@@ -8836,7 +8919,7 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
     const out = [];
     for (let off = 0; ; off += 1000) {
       const { data, error } = await applyFilters(
-        supabase.from('erp_sales').select('id, modelo, numero, serie, emitted_at, cliente_nome, cliente_doc, valor_total, status_fiscal, pdf_path')
+        supabase.from('erp_sales').select('id, modelo, numero, serie, emitted_at, cliente_nome, cliente_doc, valor_total, status_fiscal, pdf_path, itens')
       ).order('emitted_at', { ascending: false }).range(off, off + 999);
       if (error) throw error;
       out.push(...(data || []));
@@ -8895,13 +8978,45 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
         pagamentos: [{ forma: payLabel[o.payment_type] || o.payment_type || '-', valor: Number(o.total || 0) }],
         desconto: Number(o.discount_amount || 0),
       };
-    }).filter(r => {
-      if (!term) return true;
-      const t = term.toLowerCase();
-      const digits = term.replace(/\D/g, '');
-      return String(r.cliente_nome).toLowerCase().includes(t) || r.numero.toLowerCase().includes(t) || (digits.length >= 3 && r.cliente_doc.includes(digits));
     });
   };
+
+  // Busca do topo: cliente, CPF/CNPJ, nº da nota ou produto (código ou nome)
+  const matchesTerm = (r) => {
+    if (!term) return true;
+    const t = term.toLowerCase();
+    const digits = term.replace(/\D/g, '');
+    if (String(r.cliente_nome || '').toLowerCase().includes(t)) return true;
+    if (String(r.numero || '').toLowerCase().includes(t)) return true;
+    if (digits.length >= 3 && String(r.cliente_doc || '').includes(digits)) return true;
+    return (r.itens || []).some(i => String(i.descricao || '').toLowerCase().includes(t) || String(i.codigo || '').toLowerCase() === t);
+  };
+
+  // Valor de cada coluna para o filtro (uma venda pode ter vários produtos)
+  const COLS = {
+    data: r => [new Date(r.emitted_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })],
+    numero: r => [String(r.numero ?? '')],
+    tipo: r => [(SALE_TYPES[r.modelo]?.short) || String(r.modelo ?? '')],
+    cliente: r => [r.cliente_nome || 'Consumidor final'],
+    produto: r => { const n = saleItemNames(r); return n.length ? n : ['(sem itens)']; },
+    valor: r => [money(r.valor_total)],
+    situacao: r => [r.status_fiscal || '-'],
+  };
+
+  const colValues = React.useMemo(() => {
+    const out = {};
+    Object.entries(COLS).forEach(([col, get]) => {
+      const set = new Set();
+      allRows.forEach(r => get(r).forEach(v => set.add(v)));
+      out[col] = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+    });
+    return out;
+  }, [allRows]);
+
+  const filteredRows = React.useMemo(() => allRows.filter(r => {
+    if (!matchesTerm(r)) return false;
+    return Object.entries(colFilters).every(([col, set]) => COLS[col](r).some(v => set.has(v)));
+  }), [allRows, colFilters, term]);
 
   const load = async () => {
     setIsLoading(true);
@@ -8919,15 +9034,15 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
     }
   };
 
-  const count = allRows.length;
-  const sales = allRows.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const count = filteredRows.length;
+  const sales = filteredRows.slice((page - 1) * PER_PAGE, page * PER_PAGE);
   const summary = React.useMemo(() => {
-    const valid = allRows.filter(r => r.status_fiscal !== 'Cancelado');
+    const valid = filteredRows.filter(r => r.status_fiscal !== 'Cancelado');
     return { total: valid.reduce((acc, r) => acc + Number(r.valor_total || 0), 0), qtd: valid.length };
-  }, [allRows]);
+  }, [filteredRows]);
 
-  useEffect(() => { setPage(1); }, [from, to, type, onlyApp, showCancelled, term]);
-  useEffect(() => { load(); }, [from, to, type, onlyApp, showCancelled, term, appCustomers]);
+  useEffect(() => { setPage(1); }, [from, to, type, onlyApp, showCancelled, term, colFilters]);
+  useEffect(() => { load(); }, [from, to, type, onlyApp, showCancelled, appCustomers]);
 
   const openDetails = async (sale) => {
     if (sale.source === 'app') { setSelected(sale); return; }
@@ -9041,29 +9156,29 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
             <input type="checkbox" className="accent-[#0047AB] w-4 h-4" checked={showCancelled} onChange={e => setShowCancelled(e.target.checked)} />
             Mostrar canceladas
           </label>
-          <span className="text-xs text-slate-400 ml-auto">Use a busca do topo para procurar por cliente, CPF/CNPJ ou número da nota.</span>
+          <span className="text-xs text-slate-400 ml-auto">Busca do topo: cliente, CPF/CNPJ, nº da nota ou produto. Use o funil nos títulos para filtrar.
+            {Object.keys(colFilters).length > 0 && <button onClick={() => setColFilters({})} className="ml-2 text-primary hover:underline">Limpar filtros</button>}</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-slate-500">
             <thead className="text-xs text-slate-700 uppercase bg-slate-50">
               <tr>
-                <th className="px-6 py-3">Data</th>
-                <th className="px-6 py-3">Nº</th>
-                <th className="px-6 py-3">Tipo</th>
-                <th className="px-6 py-3">Cliente</th>
-                <th className="px-6 py-3 text-right">Valor</th>
-                <th className="px-6 py-3">Situação</th>
+                {[['data', 'Data'], ['numero', 'Nº'], ['tipo', 'Tipo'], ['cliente', 'Cliente'], ['produto', 'Produtos'], ['valor', 'Valor'], ['situacao', 'Situação']].map(([col, label]) => (
+                  <th key={col} className={`px-6 py-3 whitespace-nowrap ${col === 'valor' ? 'text-right' : ''}`}>
+                    <ColumnFilter label={label} right={col === 'valor'} values={colValues[col] || []} selected={colFilters[col] || null} onChange={set => setColFilter(col, set)} />
+                  </th>
+                ))}
                 <th className="px-6 py-3 text-right">Recibo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
-                <tr><td colSpan="7" className="px-6 py-10 text-center text-slate-400">Carregando vendas...</td></tr>
+                <tr><td colSpan="8" className="px-6 py-10 text-center text-slate-400">Carregando vendas...</td></tr>
               ) : loadError ? (
-                <tr><td colSpan="7" className="px-6 py-10 text-center text-red-500">{loadError}</td></tr>
+                <tr><td colSpan="8" className="px-6 py-10 text-center text-red-500">{loadError}</td></tr>
               ) : sales.length === 0 ? (
-                <tr><td colSpan="7" className="px-6 py-10 text-center text-slate-400">Nenhuma venda neste período.</td></tr>
+                <tr><td colSpan="8" className="px-6 py-10 text-center text-slate-400">Nenhuma venda neste período.</td></tr>
               ) : sales.map(sale => {
                 const t = SALE_TYPES[sale.modelo] || { short: sale.modelo, cls: 'bg-slate-50 text-slate-600 border-slate-200' };
                 const appName = sale.cliente_doc ? appCustomers.get(sale.cliente_doc) : null;
@@ -9081,6 +9196,17 @@ const SalesScreen = ({ globalSearchTerm, showToast }) => {
                           {appName && <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 rounded"><UserCheck size={11} /> Cliente do app</span>}
                         </span>
                       </div>
+                    </td>
+                    <td className="px-6 py-3 max-w-[280px]">
+                      {(() => {
+                        const names = saleItemNames(sale);
+                        if (!names.length) return <span className="text-xs text-slate-300">-</span>;
+                        return (
+                          <span className="block truncate text-slate-700" title={names.join(', ')}>
+                            {names[0]}{names.length > 1 && <span className="ml-1 text-xs text-slate-400">+{names.length - 1}</span>}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className={`px-6 py-3 text-right text-slate-700 whitespace-nowrap ${cancelled ? 'line-through' : ''}`}>{money(sale.valor_total)}</td>
                     <td className="px-6 py-3">
@@ -10174,14 +10300,17 @@ function App() {
   // Buscar Entregas (Pedidos) do Supabase
   const fetchDeliveries = async () => {
     try {
-      const { data: ordersData, error: ordersError } = await supabase
+      const { data: allOrders, error: ordersError } = await supabase
         .from('orders')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (ordersError) throw ordersError;
+
+      // pedido só entra no controle depois de pago (quem desiste do PIX/cartão não aparece aqui)
+      const ordersData = (allOrders || []).filter(o => String(o.status) !== 'pending_payment');
       
-      if (!ordersData || ordersData.length === 0) {
+      if (ordersData.length === 0) {
         setDeliveries([]);
         return;
       }
