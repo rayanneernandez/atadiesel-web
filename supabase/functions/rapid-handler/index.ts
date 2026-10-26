@@ -95,6 +95,10 @@ const cleanName = (s: string) => String(s ?? '').replace(/\s+/g, ' ').trim();
 // (Não pega "aditivo para diesel" e outros produtos da loja que só citam a palavra.)
 const isDiesel = (name: unknown) => /(oleo|óleo)\s+diesel|diesel\s+(b\s*)?s\d{2,3}\b|onu\s*1202/i.test(String(name ?? ''));
 
+// Códigos do ERP que SEMPRE entram em Vendas, mesmo sem cadastro no painel e sem aparecer no app.
+// 9500 = ARLA 32: vendido em litros no balcão, com preço variável (não cabe no catálogo).
+const SEMPRE_NAS_VENDAS = new Set(['9500']);
+
 // Mesmas regras usadas na importação da planilha
 function categoryFor(name: string, grupo?: number | null) {
   const up = name.toUpperCase();
@@ -473,7 +477,10 @@ Deno.serve(async (req) => {
             if (!parsed) continue;
 
             // Só itens da loja (produtos cadastrados em Gerenciar Produtos). Diesel a granel fica de fora.
-            const lojaItens = parsed.itens.filter((it) => bySku.has(String(it.codigo).trim()) && !isDiesel(it.descricao));
+            const lojaItens = parsed.itens.filter((it) => {
+              const code = String(it.codigo).trim();
+              return (bySku.has(code) || SEMPRE_NAS_VENDAS.has(code)) && !isDiesel(it.descricao);
+            });
             if (!lojaItens.length) { result.vendas_ignoradas++; continue; }
             const lojaTotal = Math.round(lojaItens.reduce((sum, it) => sum + Number(it.total || 0), 0) * 100) / 100;
             const notaSoDaLoja = lojaItens.length === parsed.itens.length;
