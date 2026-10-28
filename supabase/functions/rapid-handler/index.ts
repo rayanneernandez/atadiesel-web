@@ -24,7 +24,9 @@ const ERP_KEY = Deno.env.get('ERP_INTEGRADOR_KEY') ?? '';
 const ESTAB = Number(Deno.env.get('ERP_ESTAB') ?? '100');
 
 const LOG_EMAIL = 'ERP Viasoft (sincronização automática)';
-const TIME_BUDGET_MS = 140_000;      // para antes do limite da Edge Function
+const TIME_BUDGET_MS = 230_000;      // ← NOVO (era 140_000). A rodada começa de 5 em 5 min; o agendamento aceita até 300 s
+const ERP_CALL_TIMEOUT_MS = 40_000;  // ← NOVO: nenhuma chamada ao ERP fica pendurada mais que isso
+const RESERVA_VENDAS_MS = 110_000;   // ← NOVO: cadastro, estoque e preço só rodam enquanto sobrar esse tempo para as vendas
 // Chamadas sem ser admin respeitam este intervalo. Conta a partir do FIM da última execução
 // (que leva ~1-2 min), por isso fica bem abaixo dos 5 min do agendamento.
 const MIN_INTERVAL_MS = 2 * 60_000;
@@ -48,6 +50,7 @@ async function erpLogin() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ AUser: ERP_USER, APassword: ERP_PASSWORD, IntegradorKey: ERP_KEY }),
+    signal: AbortSignal.timeout(ERP_CALL_TIMEOUT_MS), // ← NOVO
   });
   const data = await res.json().catch(() => ({}));
   if (!data?.Token) throw new Error('Login no ERP falhou: ' + (data?.error?.message ?? res.status));
@@ -62,6 +65,7 @@ async function erpGet(path: string, params: Record<string, string | number | und
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await fetch(url, {
       headers: { Accept: 'application/json', Authorization: `Bearer ${erpToken}`, IntegradorKey: ERP_KEY },
+      signal: AbortSignal.timeout(ERP_CALL_TIMEOUT_MS), // ← NOVO
     });
     if ((res.status === 401 || res.status === 403) && attempt === 0) { await erpLogin(); continue; }
     const data = await res.json().catch(() => ({}));
@@ -365,6 +369,11 @@ Deno.serve(async (req) => {
     logs.push({ id: crypto.randomUUID(), user_id: null, user_email: LOG_EMAIL, action_type, entity_name,
       details: { ...details, source: 'ERP' }, created_at: new Date().toISOString() });
 
+  // Cronômetro por etapa (aparece em last_result.tempos_s), para ver o que demora          // ← NOVO
+  const tempos: Record<string, number> = {};                                                 // ← NOVO
+  let marcaEm = Date.now();                                                                  // ← NOVO
+  const marca = (etapa: string) => { tempos[etapa] = Math.round((Date.now() - marcaEm) / 1000); marcaEm = Date.now(); }; // ← NOVO
+
   try {
     await erpLogin();
 
@@ -385,7 +394,7 @@ Deno.serve(async (req) => {
       : new Date(Date.now() - 24 * 60 * 60_000);
     let skip = 0;
     let cadastroOk = true;
-    while (timeLeft() > 60_000) {
+    while (timeLeft() > RESERVA_VENDAS_MS) { // ← NOVO (era 60_000)
       let page: any[];
       try {
         const data = await erpGet('vshub/v1/produto', { Top: 500, Skip: skip, UltAlt: toErpDate(since) });
@@ -475,10 +484,11 @@ Deno.serve(async (req) => {
       skip += 500;
     }
     if (cadastroOk) patch.last_ult_alt = cadastroStart.toISOString();
+    marca('cadastro'); // ← NOVO
 
     // ---------------------------------------------------- 2. estoque
     const skus = [...bySku.keys()];
-    for (let i = 0; i < skus.length && timeLeft() > 20_000; i += STOCK_BATCH) {
+    for (let i = 0; i < skus.length && timeLeft() > RESERVA_VENDAS_MS; i += STOCK_BATCH) { // ← NOVO (era 20_000)
       const batch = skus.slice(i, i + STOCK_BATCH);
       let items: any[] = [];
       try {
@@ -517,11 +527,14 @@ Deno.serve(async (req) => {
       }
     }
 
+    marca('estoque'); // ← NOVO
+
     // ----------------------------------------------------- 3. preço
     const priceCheckDue = !state?.price_checked_at || Date.now() - new Date(state.price_checked_at).getTime() > 60 * 60_000;
-    if (timeLeft() > 20_000 && (state?.price_available || priceCheckDue)) {
+    // ← NOVO: consulta de preço só 1 vez por hora (antes, com o endpoint liberado, rodava a cada rodada e gastava o tempo das vendas)
+    if (timeLeft() > RESERVA_VENDAS_MS && priceCheckDue) {
       try {
-        for (let i = 0; i < skus.length && timeLeft() > 15_000; i += STOCK_BATCH) {
+        for (let i = 0; i < skus.length && timeLeft() > RESERVA_VENDAS_MS; i += STOCK_BATCH) {
           const batch = skus.slice(i, i + STOCK_BATCH);
           const data = await erpGet('vshub/produto-preco', { Estabs: ESTAB, Itens: batch.join(','), Top: 1000 });
           patch.price_available = true;
@@ -562,6 +575,8 @@ Deno.serve(async (req) => {
       }
       patch.price_checked_at = new Date().toISOString();
     }
+
+    marca('preco'); // ← NOVO
 
     // ----------------------------------------- 4. vendas + recibos
     // Notas do ERP em ordem de Id. docs_skip = quantas já foram lidas.
@@ -612,7 +627,7 @@ Deno.serve(async (req) => {
             }
             if (!parsed) continue;
 
-            // Só itens da loja (produtos cadastrados em Gerenciar Produtos). Diesel a granel fica de fora.
+            // Só itens da loja (produtos cadastrados em Gerenciar Produtos + códigos em SEMPRE_NAS_VENDAS). Diesel a granel fica de fora.
             const lojaItens = parsed.itens.filter((it) => {
               const code = String(it.codigo).trim();
               return (bySku.has(code) || SEMPRE_NAS_VENDAS.has(code)) && !isDiesel(it.descricao);
@@ -679,6 +694,8 @@ Deno.serve(async (req) => {
         result.erros.push('Vendas: ' + (e as Error).message);
       }
     }
+
+    marca('vendas'); // ← NOVO
 
     // ------------------------ 5. lista de códigos existentes (1ª vez)
     // Guarda todos os códigos que já existem no ERP para não puxar os antigos como "novos".
@@ -749,8 +766,8 @@ Deno.serve(async (req) => {
 
   await db.from('erp_sync_state').upsert({
     id: 1, ...patch, running_since: null, last_run_at: new Date().toISOString(),
-    last_result: { ...result, duracao_s: Math.round((Date.now() - started) / 1000) },
+    last_result: { ...result, tempos_s: tempos, duracao_s: Math.round((Date.now() - started) / 1000) }, // ← NOVO: tempos_s
   });
 
-  return json({ ok: result.erros.length === 0, ...result });
+  return json({ ok: result.erros.length === 0, ...result, tempos_s: tempos });
 });
