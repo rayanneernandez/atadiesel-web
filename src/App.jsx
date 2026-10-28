@@ -1439,12 +1439,17 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
       const { data: sim, error } = await supabase.functions.invoke('rapid-handler', { body: { action: 'import_missing', dry_run: true } });
       if (error) throw error;
       if (sim?.error) throw new Error(sim.error);
-      if (!sim?.a_importar) { showToast('Nenhum produto do ERP com estoque está faltando no painel.', 'info'); return; }
+      const resumo =
+        `Lidos no ERP: ${sim?.lidos_no_erp ?? 0} · já no painel: ${sim?.ja_no_painel ?? 0}\n` +
+        `Candidatos ativos: ${sim?.candidatos_ativos ?? 0} · com estoque: ${sim?.com_estoque ?? 0} · a importar: ${sim?.a_importar ?? 0}\n` +
+        `Com preço pela API: ${sim?.com_preco_pela_api ?? 0} · sem preço: ${sim?.sem_preco_pela_api ?? 0}` +
+        (sim?.erros?.length ? `\n\nAvisos:\n- ${sim.erros.join('\n- ')}` : '');
+      if (!sim?.a_importar) { window.alert('Simulação do ERP (nada foi importado)\n\n' + resumo); return; }
       const precoTxt = sim.preco_api_disponivel === false
         ? 'A API de preço não respondeu: eles entram com preço zerado.'
         : `${sim.com_preco_pela_api} têm preço pela API e ${sim.sem_preco_pela_api} ainda não têm.`;
       const ok = window.confirm(
-        `O ERP tem ${sim.a_importar} produtos com estoque que ainda não estão no painel.\n${precoTxt}\n\n` +
+        `O ERP tem ${sim.a_importar} produtos com estoque que ainda não estão no painel.\n${precoTxt}\n\n${resumo}\n\n` +
         `Importar agora? Eles entram em "Arquivados" (escondidos do app) até você completar foto e descrição.`
       );
       if (!ok) return;
