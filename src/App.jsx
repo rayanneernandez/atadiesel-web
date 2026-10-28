@@ -6152,6 +6152,127 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
   );
 };
 
+// ---------------------------------------------------------------- Logs: fluxo da venda
+// Mostra, para cada pedido, o passo a passo: criado -> pago -> enviado à Viasoft -> Viasoft emitiu -> retorno.
+const SALE_EVENT_LABELS = {
+  pedido_criado: 'Pedido criado',
+  pagamento_confirmado: 'Pagamento confirmado',
+  enviado_viasoft: 'Enviado para a Viasoft',
+  viasoft_emitiu: 'Viasoft emitiu a nota/cupom',
+  viasoft_retorno: 'Retorno recebido da Viasoft',
+  entregue_retirado: 'Entregue / retirado',
+  cancelado: 'Pedido cancelado',
+  status_alterado: 'Status alterado',
+  erro: 'Erro',
+};
+
+const SaleFlowLogs = () => {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error: err } = await supabase
+        .from('order_events')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(3000);
+      if (!alive) return;
+      if (err) setError(err.message);
+      else setEvents(data || []);
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const orders = React.useMemo(() => {
+    const map = new Map();
+    for (const ev of events) {
+      if (!map.has(ev.order_id)) map.set(ev.order_id, { id: ev.order_id, number: ev.order_number, events: [] });
+      const o = map.get(ev.order_id);
+      if (!o.number && ev.order_number) o.number = ev.order_number;
+      o.events.push(ev);
+    }
+    const list = [...map.values()].map((o) => {
+      const sorted = [...o.events].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const last = sorted[sorted.length - 1];
+      return { ...o, events: sorted, last, hasError: sorted.some((e) => e.status === 'erro') };
+    });
+    list.sort((a, b) => new Date(b.last.created_at) - new Date(a.last.created_at));
+    const q = search.trim().toLowerCase();
+    return q ? list.filter((o) => String(o.number || '').toLowerCase().includes(q) || String(o.id).toLowerCase().includes(q)) : list;
+  }, [events, search]);
+
+  const fmt = (d) => new Date(d).toLocaleString('pt-BR');
+
+  if (loading) return <div className="px-6 py-8 text-center text-slate-400">Carregando fluxo das vendas...</div>;
+  if (error) return <div className="px-6 py-8 text-center text-red-600 text-sm">Não consegui carregar o fluxo das vendas: {error}</div>;
+
+  return (
+    <div className="p-4 md:p-6 space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-xs w-full">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar pelo número do pedido"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+        <span className="text-xs text-slate-500">{orders.length} pedido(s)</span>
+      </div>
+
+      {orders.length === 0 ? (
+        <div className="py-8 text-center text-slate-400">Nenhum pedido registrado ainda.</div>
+      ) : (
+        <div className="divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden">
+          {orders.map((o) => (
+            <div key={o.id} className="bg-white">
+              <button
+                onClick={() => setOpen(open === o.id ? null : o.id)}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  {o.hasError
+                    ? <AlertTriangle size={18} className="text-red-500 shrink-0" />
+                    : <CheckCircle size={18} className="text-emerald-500 shrink-0" />}
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-800">Pedido {o.number ? `#${o.number}` : String(o.id).slice(0, 8)}</div>
+                    <div className="text-xs text-slate-500 truncate">
+                      Último passo: {SALE_EVENT_LABELS[o.last.event] || o.last.event} · {fmt(o.last.created_at)}
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${open === o.id ? 'rotate-180' : ''}`} />
+              </button>
+              {open === o.id && (
+                <ol className="px-6 pb-4 pt-1 space-y-3 border-l-2 border-slate-100 ml-6 mb-2">
+                  {o.events.map((ev) => (
+                    <li key={ev.id} className="relative pl-4">
+                      <span className={`absolute -left-[9px] top-1.5 w-3 h-3 rounded-full ${ev.status === 'erro' ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                      <div className="text-sm font-medium text-slate-800">
+                        {SALE_EVENT_LABELS[ev.event] || ev.event}
+                        {ev.status === 'erro' && <span className="ml-2 text-xs text-red-600 font-semibold">ERRO</span>}
+                      </div>
+                      <div className="text-xs text-slate-500 flex items-center gap-1"><Clock size={12} /> {fmt(ev.created_at)}</div>
+                      {ev.detail && <div className="text-xs text-slate-600 mt-0.5">{ev.detail}</div>}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const LogsScreen = ({ globalSearchTerm, session }) => {
   const [logs, setLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('products'); // products | stock | loyalty | highlights | users
@@ -6162,6 +6283,7 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
   }, [activeTab]);
 
   const fetchLogs = async () => {
+    if (activeTab === 'saleflow') { setLoading(false); return; }
     setLoading(true);
     let types = [];
     if (activeTab === 'products') types = ['PRODUCT_CHANGE', 'PRICE_CHANGE'];
@@ -6361,9 +6483,17 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
             >
                 Configurações
             </button>
+            <button
+                onClick={() => setActiveTab('saleflow')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'saleflow' ? 'border-primary text-primary bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+                Vendas
+            </button>
         </div>
 
         {/* Content */}
+        {activeTab === 'saleflow' ? <SaleFlowLogs /> : (
+        <>
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left text-slate-500">
                 <thead className="text-xs text-slate-700 uppercase bg-slate-50">
@@ -6575,6 +6705,8 @@ const LogsScreen = ({ globalSearchTerm, session }) => {
               </div>
             )}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>
