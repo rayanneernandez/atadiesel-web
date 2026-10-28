@@ -180,6 +180,130 @@ function parseFiscalXml(xml: string) {
 const brl = (cents: number | null | undefined) =>
   cents == null ? '-' : (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+// ------------------------------------------------------------ importar o que falta ---
+// Traz do ERP os produtos que já existiam quando a integração começou e nunca entraram no painel
+// (a sincronização normal só traz produto NOVO). dry_run = só conta e mostra, sem gravar nada.
+// Os produtos entram ARQUIVADOS (escondidos do app) com o saldo e, se a API devolver, o preço do ERP.
+async function importMissing(db: any, dryRun: boolean, onlyWithStock: boolean, timeLeft: () => number) {
+  await erpLogin();
+  const { data: ours, error: oursErr } = await db.from('products').select('sku').not('sku', 'is', null);
+  if (oursErr) throw oursErr;
+  const have = new Set((ours ?? []).map((p: any) => String(p.sku).trim()));
+
+  const erros: string[] = [];
+  const cand = new Map<string, { code: string; name: string; category: string }>();
+  let lidos = 0;
+  const take = (page: any[]) => {
+    for (const p of page) {
+      const code = codeOf(p);
+      const name = cleanName(p.Descricao || p.DescricaoReduzida);
+      if (!code || !name || have.has(code) || isDiesel(name) || isInactive(p)) continue;
+      cand.set(code, { code, name, category: categoryFor(name, p.Grupo?.GrupoNivel_1) });
+    }
+  };
+
+  let skip = 0;
+  while (timeLeft() > 60_000) {
+    let page: any[];
+    try {
+      page = (await erpGet('vshub/v1/produto', { Top: 500, Skip: skip }))?.value ?? [];
+    } catch {
+      // algum registro do ERP quebra a página: lê de 1 em 1 e pula só o registro com problema
+      page = [];
+      for (let k = 0; k < 500 && timeLeft() > 60_000; k++) {
+        try {
+          const one = (await erpGet('vshub/v1/produto', { Top: 1, Skip: skip + k }))?.value ?? [];
+          if (!one.length) break;
+          page.push(...one);
+        } catch { /* registro com defeito no ERP */ }
+      }
+    }
+    lidos += page.length;
+    take(page);
+    if (page.length < 500) break;
+    skip += 500;
+  }
+
+  const codes = [...cand.keys()];
+  const saldo = new Map<string, number>();
+  for (let i = 0; i < codes.length && timeLeft() > 30_000; i += STOCK_BATCH) {
+    try {
+      const data = await erpGet('vshub/v1/estoque', { Estabs: ESTAB, Itens: codes.slice(i, i + STOCK_BATCH).join(','), Top: 1000 });
+      for (const it of data?.value ?? []) {
+        const latest = new Map<string, any>();
+        for (const e of it.Estoques ?? []) {
+          if (Number(e.Estab) !== ESTAB) continue;
+          const key = `${e.LocalEstoque}|${e.TipoEstoque}`;
+          if (!latest.has(key) || String(e.Data) > String(latest.get(key).Data)) latest.set(key, e);
+        }
+        saldo.set(String(it.Item).trim(), Math.max(0, Math.floor([...latest.values()].reduce((s, e) => s + Number(e.Saldo || 0), 0))));
+      }
+    } catch (e) { erros.push('Estoque: ' + (e as Error).message); break; }
+  }
+
+  const alvo = codes.filter((c) => !onlyWithStock || (saldo.get(c) ?? 0) > 0);
+
+  const preco = new Map<string, number>();
+  let precoApi: boolean | null = null;
+  for (let i = 0; i < alvo.length && timeLeft() > 15_000; i += STOCK_BATCH) {
+    try {
+      const data = await erpGet('vshub/produto-preco', { Estabs: ESTAB, Itens: alvo.slice(i, i + STOCK_BATCH).join(','), Top: 1000 });
+      precoApi = true;
+      for (const it of data?.value ?? []) {
+        const precos = it.Precos ?? [];
+        const p = precos.find((x: any) => x.Tipo === 'PrecoVigente') ?? precos.find((x: any) => x.Tipo === 'PrecoNormal');
+        if (p?.Preco > 0) preco.set(String(it.Item).trim(), Math.round(Number(p.Preco) * 100));
+      }
+    } catch (e) {
+      precoApi = false;
+      erros.push('Preço: ' + (e as Error).message);
+      break;
+    }
+  }
+
+  const resumo = {
+    lidos_no_erp: lidos,
+    ja_no_painel: have.size,
+    candidatos_ativos: cand.size,
+    com_estoque: codes.filter((c) => (saldo.get(c) ?? 0) > 0).length,
+    a_importar: alvo.length,
+    com_preco_pela_api: alvo.filter((c) => preco.has(c)).length,
+    sem_preco_pela_api: alvo.filter((c) => !preco.has(c)).length,
+    preco_api_disponivel: precoApi,
+    amostra: alvo.slice(0, 25).map((c) => ({ codigo: c, nome: cand.get(c)!.name, estoque: saldo.get(c) ?? 0, preco: preco.has(c) ? preco.get(c)! / 100 : null })),
+    erros,
+  };
+  if (dryRun) return { ok: erros.length === 0, dry_run: true, ...resumo };
+
+  let criados = 0;
+  const nowIso = new Date().toISOString();
+  for (let i = 0; i < alvo.length; i += 100) {
+    const rows = alvo.slice(i, i + 100).map((c) => {
+      const cents = preco.get(c) ?? 0;
+      return {
+        id: crypto.randomUUID(), sku: c, title: cand.get(c)!.name, description: '',
+        price_cents: cents, erp_preco_cents: cents || null, stock: saldo.get(c) ?? 0,
+        category: cand.get(c)!.category, image_url: '',
+        // escondido do app até alguém completar foto/descrição e liberar
+        is_active: false, archived: true,
+        erp_descricao: cand.get(c)!.name, erp_synced_at: nowIso, created_at: nowIso, updated_at: nowIso,
+      };
+    });
+    const { error } = await db.from('products').insert(rows);
+    if (error) { erros.push(`Importação (lote ${i / 100 + 1}): ${error.message}`); continue; }
+    await db.from('erp_known_codes').upsert(rows.map((r) => ({ code: r.sku })), { ignoreDuplicates: true });
+    criados += rows.length;
+  }
+  if (criados) {
+    await db.from('audit_logs').insert({
+      id: crypto.randomUUID(), user_id: null, user_email: LOG_EMAIL, action_type: 'PRODUCT_CHANGE',
+      entity_name: 'Importação do ERP', created_at: nowIso,
+      details: { source: 'ERP', action: 'Importação', details: `${criados} produtos que já existiam no ERP foram importados como Arquivados.` },
+    });
+  }
+  return { ok: erros.length === 0, dry_run: false, criados, ...resumo, erros };
+}
+
 // ------------------------------------------------------------ handler ---
 
 Deno.serve(async (req) => {
@@ -204,6 +328,18 @@ Deno.serve(async (req) => {
     if (data?.user) {
       const { data: prof } = await db.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
       forced = ['admin', 'administrador'].includes(String(prof?.role ?? '').toLowerCase());
+    }
+  }
+
+  // Importar o que falta no painel (só administrador): simula primeiro (dry_run) e depois grava
+  let reqBody: any = {};
+  try { reqBody = await req.json(); } catch { /* sem corpo */ }
+  if (reqBody?.action === 'import_missing') {
+    if (!forced) return json({ ok: false, error: 'Só administrador pode importar produtos do ERP.' }, 403);
+    try {
+      return json(await importMissing(db, reqBody.dry_run !== false, reqBody.only_with_stock !== false, timeLeft));
+    } catch (e) {
+      return json({ ok: false, error: (e as Error).message }, 500);
     }
   }
 

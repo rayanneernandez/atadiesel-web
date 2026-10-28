@@ -1431,6 +1431,36 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
     return () => clearInterval(timer);
   }, []);
 
+  const [isImportingErp, setIsImportingErp] = useState(false);
+  // Traz do ERP os produtos que existem lá e ainda não estão no painel: primeiro simula, depois (se confirmar) importa
+  const handleImportErp = async () => {
+    setIsImportingErp(true);
+    try {
+      const { data: sim, error } = await supabase.functions.invoke('rapid-handler', { body: { action: 'import_missing', dry_run: true } });
+      if (error) throw error;
+      if (sim?.error) throw new Error(sim.error);
+      if (!sim?.a_importar) { showToast('Nenhum produto do ERP com estoque está faltando no painel.', 'info'); return; }
+      const precoTxt = sim.preco_api_disponivel === false
+        ? 'A API de preço não respondeu: eles entram com preço zerado.'
+        : `${sim.com_preco_pela_api} têm preço pela API e ${sim.sem_preco_pela_api} ainda não têm.`;
+      const ok = window.confirm(
+        `O ERP tem ${sim.a_importar} produtos com estoque que ainda não estão no painel.\n${precoTxt}\n\n` +
+        `Importar agora? Eles entram em "Arquivados" (escondidos do app) até você completar foto e descrição.`
+      );
+      if (!ok) return;
+      const { data: res, error: err2 } = await supabase.functions.invoke('rapid-handler', { body: { action: 'import_missing', dry_run: false } });
+      if (err2) throw err2;
+      if (res?.error) throw new Error(res.error);
+      showToast(`${res.criados} produto(s) importado(s) do ERP em Arquivados.`, res.ok ? 'success' : 'warning');
+      onRefresh && onRefresh();
+    } catch (err) {
+      console.error('Erro ao importar do ERP:', err);
+      showToast('Não foi possível importar do ERP: ' + (err.message || 'erro desconhecido'), 'error');
+    } finally {
+      setIsImportingErp(false);
+    }
+  };
+
   const handleSyncErp = async () => {
     setIsSyncingErp(true);
     try {
@@ -2071,6 +2101,15 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
             >
                 <RefreshCw size={18} className={`text-primary ${isSyncingErp ? 'animate-spin' : ''}`} />
                 {isSyncingErp ? 'Sincronizando...' : 'Sincronizar ERP'}
+            </button>
+            <button
+                onClick={handleImportErp}
+                disabled={isImportingErp}
+                title="Traz do ERP os produtos com estoque que ainda não estão no painel (simula antes de importar)"
+                className="bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-sm text-sm font-medium disabled:opacity-60"
+            >
+                <Download size={18} className="text-primary" />
+                {isImportingErp ? 'Conferindo o ERP...' : 'Importar do ERP'}
             </button>
             <button 
                 onClick={handleExportProducts} 
