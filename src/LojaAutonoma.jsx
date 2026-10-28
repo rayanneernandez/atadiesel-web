@@ -18,8 +18,8 @@ const DAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 const fmtDate = (s) => (s ? new Date(s).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '—');
 const METHODS = { pix: 'Pix', apple_pay: 'Apple Pay', google_pay: 'Google Pay', samsung_pay: 'Samsung Pay', card: 'Cartão' };
 
-async function callFn(action) {
-  const { data, error } = await supabase.functions.invoke('loja-autonoma', { body: { action } });
+async function callFn(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('loja-autonoma', { body: { action, ...extra } });
   if (error) {
     let msg = error.message;
     try { const body = await error.context?.json?.(); if (body?.error) msg = body.error; } catch { /* sem corpo */ }
@@ -427,8 +427,98 @@ function SalesTab({ showToast }) {
   );
 }
 
+// ---------------------------------------------------------------- Pagamento
+// Valor reservado no cartão do cliente na entrada (igual para todos) e gateway de pagamento da loja autônoma.
+const PAYER_FIELDS = [['client_id', 'Client ID'], ['username', 'Usuário'], ['password', 'Senha'], ['account_id', 'Account ID'], ['company_id', 'Company ID'], ['store_id', 'Store ID'], ['terminal_id', 'Terminal ID']];
+
+function PaymentTab({ showToast }) {
+  const empty = Object.fromEntries(PAYER_FIELDS.map(([k]) => [k, '']));
+  const [loaded, setLoaded] = useState(false);
+  const [hold, setHold] = useState('5.00');
+  const [gateway, setGateway] = useState('mock');
+  const [hasCredentials, setHasCredentials] = useState(false);
+  const [creds, setCreds] = useState(empty);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const apply = (d) => {
+    setHold((Number(d.hold_amount_cents) / 100).toFixed(2));
+    setGateway(d.gateway_type || 'mock');
+    setHasCredentials(!!d.has_credentials);
+  };
+
+  useEffect(() => {
+    callFn('pay_get').then((d) => { apply(d); setLoaded(true); }).catch((e) => setError(e.message));
+  }, []);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const d = await callFn('pay_save', { hold_amount_cents: Math.round(Number(String(hold).replace(',', '.')) * 100), gateway_type: gateway, credentials: creds });
+      apply(d); setCreds(empty);
+      showToast('Configuração de pagamento salva.', 'success');
+    } catch (e) { showToast(e.message, 'error'); } finally { setBusy(false); }
+  };
+
+  if (error) return <div className={`${card} p-5 text-sm text-red-600`}>{error}</div>;
+  if (!loaded) return <div className={`${card} p-5 text-sm text-slate-500`}>Carregando…</div>;
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      {gateway === 'mock' ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 text-red-700 p-4 text-sm">
+          <b>Modo de teste:</b> a entrada e a saída <b>não cobram nem reservam nada</b> no cartão do cliente. Escolha Payer e preencha os dados para cobrar de verdade.
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 p-4 text-sm">
+          <b>Payer ativa:</b> a entrada reserva o valor no cartão e a saída cobra o total da compra{hasCredentials ? '.' : ' — mas ainda não há credenciais salvas.'}
+        </div>
+      )}
+
+      <div className={`${card} p-5 space-y-3`}>
+        <h3 className="font-bold text-slate-800">Valor reservado no cartão na entrada</h3>
+        <p className="text-sm text-slate-600">
+          É o mesmo valor para todos os clientes. Na saída o sistema desfaz a reserva e cobra só o total da compra; se o cliente não pegar nada, a reserva é devolvida.
+        </p>
+        <label className="block max-w-xs">
+          <span className="text-xs text-slate-500">Valor (R$)</span>
+          <input className={input} type="number" min="1" max="1000" step="0.01" value={hold} onChange={(e) => setHold(e.target.value)} />
+        </label>
+      </div>
+
+      <div className={`${card} p-5 space-y-3`}>
+        <h3 className="font-bold text-slate-800">Gateway de pagamento</h3>
+        <label className="block max-w-xs">
+          <span className="text-xs text-slate-500">Gateway</span>
+          <select className={input} value={gateway} onChange={(e) => setGateway(e.target.value)}>
+            <option value="mock">Mock (teste, sem cobrança real)</option>
+            <option value="payer">Payer (cobrança real)</option>
+          </select>
+        </label>
+        {gateway === 'payer' && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {PAYER_FIELDS.map(([key, label]) => (
+                <label key={key} className="block">
+                  <span className="text-xs text-slate-500">{label}</span>
+                  <input className={input} type={key === 'password' ? 'password' : 'text'} autoComplete="off" value={creds[key]} onChange={(e) => setCreds({ ...creds, [key]: e.target.value })} />
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500">
+              {hasCredentials ? 'Já existem credenciais salvas. Deixe tudo em branco para mantê-las; para trocar, preencha os 7 campos.' : 'Preencha os 7 campos com os dados fornecidos pela Payer.'}
+            </p>
+          </>
+        )}
+      </div>
+
+      <button className={btnPrimary} onClick={save} disabled={busy}>{busy ? 'Salvando…' : 'Salvar'}</button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Tela
-const TABS = [['qr', 'QR da loja', QrTab], ['funcionarios', 'Funcionários', StaffTab], ['vendas', 'Vendas', SalesTab], ['sync', 'Sincronização', SyncTab]];
+const TABS = [['qr', 'QR da loja', QrTab], ['funcionarios', 'Funcionários', StaffTab], ['vendas', 'Vendas', SalesTab], ['pagamento', 'Pagamento', PaymentTab], ['sync', 'Sincronização', SyncTab]];
 
 export default function LojaAutonomaScreen({ showToast }) {
   const [tab, setTab] = useState('qr');
