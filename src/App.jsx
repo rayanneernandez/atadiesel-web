@@ -7967,6 +7967,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
     minRedemption: 3,
     maxRedemption: 100,
     maxRedemptionsPerDay: 1,
+    maxRedeemPercent: 100,
     enableAvailabilityDelay: false,
     availabilityDelayUnit: 'immediate', // 'immediate' | 'hours' | 'days'
     availabilityDelayValue: 0,
@@ -8571,6 +8572,19 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
                   />
                   <p className="text-xs text-slate-400 mt-2">Valor máximo de cashback por resgate</p>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Máximo do pedido pago com pontos/cashback (%)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={config.maxRedeemPercent}
+                    onChange={(e) => setConfig({...config, maxRedeemPercent: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-slate-400 mt-2">Quanto do valor dos produtos o cliente pode pagar com o saldo. 100 = pode pagar tudo; 30 = no máximo 30% do pedido.</p>
+                </div>
               </div>
             </section>
 
@@ -8733,7 +8747,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enableRetentionProgram ? 'left-7' : 'left-1'}`} />
                   </button>
                 </div>
-                <p className="text-slate-500 text-sm">Ofereça multiplicadores de cashback para clientes que se comprometerem com sua rede</p>
+                <p className="text-slate-500 text-sm">Clientes cadastrados há 6, 9 ou 12 meses ganham mais pontos (ou cashback) em cada compra, pelo percentual definido abaixo.</p>
 
                 {config.enableRetentionProgram && (
                   <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-300">
@@ -8780,7 +8794,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
                    <div className="p-1 rounded-full bg-blue-500/20 text-blue-500">
                       <FileText size={16} />
                    </div>
-                   <h3 className="text-lg font-bold text-slate-800">Benefícios de Renovação</h3>
+                   <h3 className="text-lg font-bold text-slate-800">Benefícios de Renovação</h3><span className="ml-2 text-[11px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Ainda não ativo no app</span>
                    <span className="inline-flex items-center" title="Defina bônus extras para clientes que renovarem o compromisso no programa de retenção.">
                      <Info size={16} className="text-slate-400 cursor-help" />
                    </span>
@@ -8844,7 +8858,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform shadow-sm ${config.enableReferralProgram ? 'left-7' : 'left-1'}`} />
                   </button>
                 </div>
-                <p className="text-slate-500 text-sm">Recompense clientes que indicarem novos usuários</p>
+                <p className="text-slate-500 text-sm">Cada cliente tem um código no app. Quando o indicado faz a primeira compra paga, os dois ganham o bônus (em R$, convertido em pontos).</p>
 
                 {config.enableReferralProgram && (
                   <div className="mt-6 animate-in fade-in slide-in-from-top-4 duration-300 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -8880,7 +8894,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
                    <div className="p-1 rounded-full bg-blue-500/20 text-blue-500">
                       <Star size={16} />
                    </div>
-                   <h3 className="text-lg font-bold text-slate-800">Bonificação por Avaliação</h3>
+                   <h3 className="text-lg font-bold text-slate-800">Bonificação por Avaliação</h3><span className="ml-2 text-[11px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Ainda não ativo no app</span>
                 </div>
                 <p className="text-slate-500 text-sm mb-6">Recompense seus clientes por deixarem avaliações</p>
                 
