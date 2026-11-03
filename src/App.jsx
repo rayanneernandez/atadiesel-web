@@ -1615,6 +1615,14 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
     }
   };
 
+  // Remove a foto escolhida (ou a que já estava cadastrada) para o produto ficar sem foto
+  const handleRemoveProductImage = (e) => {
+    e.stopPropagation();
+    setNewProduct(prev => ({ ...prev, image: null, imageFile: null }));
+    const input = document.getElementById('product-image-upload');
+    if (input) input.value = '';
+  };
+
   const handleSaveProduct = async () => {
     try {
       if (!newProduct.name || !newProduct.price) {
@@ -1891,6 +1899,15 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                         </>
                       )}
                    </label>
+                   {newProduct.image && (
+                      <button
+                         type="button"
+                         onClick={handleRemoveProductImage}
+                         className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 hover:text-red-700 hover:underline"
+                      >
+                         <Trash2 size={15} /> Remover imagem
+                      </button>
+                   )}
                 </div>
 
                 {/* Name */}
@@ -2385,6 +2402,14 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
     }
   };
 
+  // Remove a foto do banner (o destaque fica só com a cor azul e o título)
+  const handleRemoveHighlightImage = (e) => {
+    e.stopPropagation();
+    setNewHighlight(prev => ({ ...prev, image: null, imageFile: null }));
+    const input = document.getElementById('highlight-image-upload');
+    if (input) input.value = '';
+  };
+
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   const showToastMessage = (message, type = 'success') => {
@@ -2714,6 +2739,15 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                         </>
                       )}
                    </label>
+                   {newHighlight.image && (
+                      <button
+                         type="button"
+                         onClick={handleRemoveHighlightImage}
+                         className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 hover:text-red-700 hover:underline"
+                      >
+                         <Trash2 size={15} /> Remover imagem
+                      </button>
+                   )}
                 </div>
 
                 <div>
