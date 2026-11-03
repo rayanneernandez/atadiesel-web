@@ -153,44 +153,82 @@ export const ProductAppPreview = ({ product }) => {
   );
 };
 
-export const HighlightAppPreview = ({ highlight }) => {
-  const h = highlight || {};
-  const title = h.title || 'Título da promoção';
-  const subtitle = h.description || 'Descrição da promoção';
-  return (
+const HomePhone = ({ banner, total = 1, index = 0 }) => (
+  <PhoneFrame>
     <div>
-      <p className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Como fica no app</p>
-      <PhoneFrame>
-        <div>
-          <div className="flex items-center justify-between px-4 py-4 text-white rounded-b-3xl" style={{ background: BLUE }}>
-            <span className="font-bold italic text-[18px]">Atadiesel</span>
-            <span className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center"><ShoppingCart size={15} /></span>
-          </div>
-          <div className="mx-3 mt-3 rounded-2xl text-white px-3 py-2.5 flex items-center gap-2" style={{ background: RED }}>
-            <span className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center"><Star size={14} /></span>
-            <div className="flex-1">
-              <p className="font-bold text-[12px]">Programa de Fidelidade</p>
-              <p className="text-[10px] opacity-90">Acumule pontos e ganhe prêmios!</p>
-            </div>
-            <ChevronRight size={14} />
-          </div>
+      <div className="flex items-center justify-between px-4 py-4 text-white rounded-b-3xl" style={{ background: BLUE }}>
+        <span className="font-bold italic text-[18px]">Atadiesel</span>
+        <span className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center"><ShoppingCart size={15} /></span>
+      </div>
+      <div className="mx-3 mt-3 rounded-2xl text-white px-3 py-2.5 flex items-center gap-2" style={{ background: RED }}>
+        <span className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center"><Star size={14} /></span>
+        <div className="flex-1">
+          <p className="font-bold text-[12px]">Programa de Fidelidade</p>
+          <p className="text-[10px] opacity-90">Acumule pontos e ganhe prêmios!</p>
+        </div>
+        <ChevronRight size={14} />
+      </div>
+      {banner ? (
+        <>
           <p className="font-bold text-[13px] mx-3 mt-4 mb-2">Parceiros em Destaque</p>
           <div className="mx-3 rounded-[20px] overflow-hidden relative flex items-end" style={{ height: 160, background: '#1E3A8A' }}>
-            {h.image ? <img src={h.image} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
-            {h.image ? <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} /> : null}
+            {banner.image ? <img src={banner.image} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
+            {banner.image ? <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} /> : null}
             <div className="relative p-4 text-white w-full">
-              <p className="font-bold text-[15px] leading-5 break-words">{title}</p>
-              <p className="text-[12px] mt-1 break-words line-clamp-3">{subtitle}</p>
+              <p className="font-bold text-[15px] leading-5 break-words">{banner.title}</p>
+              <p className="text-[12px] mt-1 break-words line-clamp-3">{banner.description}</p>
             </div>
           </div>
           <div className="flex justify-center items-center gap-1.5 mt-2">
-            <span className="h-2 w-5 rounded-full bg-slate-400" />
-            <span className="h-2 w-2 rounded-full bg-slate-300" />
+            {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
+              <span key={i} className={`h-2 rounded-full ${i === index ? 'w-5 bg-slate-400' : 'w-2 bg-slate-300'}`} />
+            ))}
           </div>
-        </div>
-      </PhoneFrame>
+        </>
+      ) : (
+        <p className="text-[11px] text-slate-400 text-center mx-4 mt-8">
+          Sem destaques ativos: a seção "Parceiros em Destaque" não aparece na tela inicial do app.
+        </p>
+      )}
+    </div>
+  </PhoneFrame>
+);
+
+// Destaque sendo criado/editado (celular ao lado do formulário)
+export const HighlightAppPreview = ({ highlight }) => {
+  const h = highlight || {};
+  const banner = { title: h.title || 'Título da promoção', description: h.description || 'Descrição da promoção', image: h.image || null };
+  return (
+    <div>
+      <p className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Como fica no app</p>
+      <HomePhone banner={banner} />
       <p className="text-[11px] text-slate-400 text-center mt-2 max-w-[270px] mx-auto">
         No banner, a foto preenche o espaço (pode cortar as bordas). Use uma imagem larga, na proporção de 2:1.
+      </p>
+    </div>
+  );
+};
+
+// Tela inicial do app como está hoje, com os destaques ativos passando um por um
+export const HomeHighlightsPreview = ({ highlights }) => {
+  const list = highlights || [];
+  const [i, setI] = useState(0);
+  const idx = list.length ? Math.min(i, list.length - 1) : 0;
+  const cur = list[idx];
+  const banner = cur ? { title: cur.title, description: cur.description, image: cur.image } : null;
+  return (
+    <div>
+      <p className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Como está hoje no app</p>
+      <HomePhone banner={banner} total={list.length} index={idx} />
+      {list.length > 1 ? (
+        <div className="flex items-center justify-center gap-3 mt-3 text-sm">
+          <button type="button" onClick={() => setI((idx - 1 + list.length) % list.length)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">‹</button>
+          <span className="text-xs text-slate-500">{idx + 1} de {list.length}</span>
+          <button type="button" onClick={() => setI((idx + 1) % list.length)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">›</button>
+        </div>
+      ) : null}
+      <p className="text-[11px] text-slate-400 text-center mt-2 max-w-[270px] mx-auto">
+        {list.length ? 'Mostra os destaques ativos, na ordem em que aparecem no app.' : 'Crie um destaque para ele aparecer aqui.'}
       </p>
     </div>
   );

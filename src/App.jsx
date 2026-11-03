@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient';
 import IntegracoesScreen from './Integracoes';
 import UserDetailTabs from './UserDetail';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
-import { ProductAppPreview, HighlightAppPreview } from './AppPreview';
+import { ProductAppPreview, HighlightAppPreview, HomeHighlightsPreview } from './AppPreview';
 import logoSmall from './assets/logoso.png';
 import logoFull from './assets/logo-atadiesel-branco.png';
 import { 
@@ -2569,6 +2569,9 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
 
   const archivedHighlights = filteredHighlights.filter(h => h.archived);
 
+  // o que está no ar hoje no app (sem depender da busca): destaques ativos, não arquivados e não vencidos
+  const liveHighlights = highlights.filter(h => !h.archived && !isExpired(h));
+
   const displayHighlights = 
     activeTab === 'active' ? activeHighlights : 
     activeTab === 'inactive' ? inactiveHighlights : 
@@ -2811,6 +2814,8 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
         </button>
       </div>
 
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
+      <div className="flex-1 min-w-0 w-full">
       {displayHighlights.length === 0 ? (
         <div className="col-span-full flex flex-col items-center justify-center py-16 text-center bg-white rounded-xl border border-dashed border-slate-300">
           <div className="bg-slate-50 p-4 rounded-full mb-4">
@@ -2838,7 +2843,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6">
            {displayHighlights.map(highlight => (
              <div key={highlight.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden group hover:shadow-md transition-shadow">
                 <div className="h-40 bg-slate-200 flex items-center justify-center text-slate-400 overflow-hidden relative">
@@ -2886,6 +2891,11 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
            ))}
         </div>
       )}
+      </div>
+      <div className="hidden xl:block w-[310px] shrink-0 sticky top-4 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <HomeHighlightsPreview highlights={liveHighlights} />
+      </div>
+      </div>
     </div>
   );
 };
