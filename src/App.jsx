@@ -10354,18 +10354,6 @@ const SettingsScreen = ({ logAction, showToast }) => {
                   </div>
                 ))}
               </div>
-              <div className="bg-white rounded-xl p-3">
-                <p className="font-bold text-slate-800 flex items-center gap-1 mb-1"><Truck size={14} className="text-primary" /> Frete por distância</p>
-                {form.delivery.tiers.map((t, i) => (
-                  <div key={i} className="flex justify-between py-1 border-b border-slate-50 last:border-0">
-                    <span className="text-slate-500">até {t.maxKm || '-'} km</span>
-                    <span className="text-slate-700 font-medium">{isNaN(toNum(t.fee)) ? '-' : brlText(toNum(t.fee))}</span>
-                  </div>
-                ))}
-                {form.delivery.freeShipping.enabled && toNum(form.delivery.freeShipping.minOrder) > 0 && (
-                  <p className="text-[11px] text-emerald-700 mt-1.5">Frete grátis acima de {brlText(toNum(form.delivery.freeShipping.minOrder))}</p>
-                )}
-              </div>
               {form.autonomous_enabled && (
                 <div className="bg-[#1E3A8A] text-white rounded-xl p-3">
                   <p className="font-bold">{form.autonomous_title}</p>
