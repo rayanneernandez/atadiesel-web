@@ -6177,7 +6177,7 @@ const SaleFlowLogs = () => {
     let alive = true;
     (async () => {
       const { data, error: err } = await supabase
-        .from('order_events')
+        .from('order_flow_events')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(3000);
