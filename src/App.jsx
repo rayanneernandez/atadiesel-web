@@ -1418,7 +1418,9 @@ const DashboardScreen = ({ globalSearchTerm, deliveries = [], products = [], tot
   );
 };
 
-const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, showToast }) => {
+const NO_PERM_MSG = 'Você não tem permissão para esta ação';
+
+const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, showToast, canEdit = true, canDelete = true }) => {
   // --- Integração ERP ---
   const [erpState, setErpState] = useState(null);
   const [isSyncingErp, setIsSyncingErp] = useState(false);
@@ -1437,6 +1439,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   const [isImportingErp, setIsImportingErp] = useState(false);
   // Traz do ERP os produtos que existem lá e ainda não estão no painel: primeiro simula, depois (se confirmar) importa
   const handleImportErp = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setIsImportingErp(true);
     try {
       const { data: sim, error } = await supabase.functions.invoke('rapid-handler', { body: { action: 'import_missing', dry_run: true } });
@@ -1470,6 +1473,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const handleSyncErp = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setIsSyncingErp(true);
     try {
       const { data, error } = await supabase.functions.invoke('rapid-handler', { body: { source: 'painel' } });
@@ -1626,6 +1630,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const handleSaveProduct = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     try {
       if (!newProduct.name || !newProduct.price) {
         showToast("Nome e Preço são obrigatórios!", 'error');
@@ -1738,6 +1743,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const handleImportProducts = (e) => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
@@ -1768,6 +1774,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const handleEditProduct = (product) => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setNewProduct(product);
     setOriginalProduct(product);
     setIsEditing(true);
@@ -1775,11 +1782,13 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const handleDeleteProduct = (product) => {
+    if (!canDelete) return showToast(NO_PERM_MSG, 'warning');
     setProductToDelete(product);
     setIsDeleteProductModalOpen(true);
   };
 
   const confirmDeleteProduct = async () => {
+    if (!canDelete) return showToast(NO_PERM_MSG, 'warning');
     if (!productToDelete) return;
     
     try {
@@ -1801,11 +1810,13 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const handleToggleArchiveProduct = (product) => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setProductToArchive(product);
     setIsArchiveModalOpen(true);
   };
 
   const confirmArchiveProduct = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     if (!productToArchive) return;
     
     const newStatus = !productToArchive.archived;
@@ -1828,6 +1839,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const handleNewProduct = () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setIsEditing(false);
     setNewProduct({
         name: '',
@@ -2120,7 +2132,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
           </p>
         </div>
         <div className="flex gap-2">
-            <div className="relative">
+            {canEdit && <div className="relative">
               <input 
                 type="file" 
                 accept=".xlsx, .xls" 
@@ -2134,8 +2146,8 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
               >
                 <Upload size={18} /> Importar
               </label>
-            </div>
-            <button
+            </div>}
+            {canEdit && <button
                 onClick={handleSyncErp}
                 disabled={isSyncingErp}
                 title={erpState?.last_run_at ? `Última sincronização: ${new Date(erpState.last_run_at).toLocaleString('pt-BR')}` : 'Sincroniza automaticamente a cada 5 minutos'}
@@ -2143,8 +2155,8 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
             >
                 <RefreshCw size={18} className={`text-primary ${isSyncingErp ? 'animate-spin' : ''}`} />
                 {isSyncingErp ? 'Sincronizando...' : 'Sincronizar ERP'}
-            </button>
-            <button
+            </button>}
+            {canEdit && <button
                 onClick={handleImportErp}
                 disabled={isImportingErp}
                 title="Traz do ERP os produtos com estoque que ainda não estão no painel (simula antes de importar)"
@@ -2152,19 +2164,19 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
             >
                 <Download size={18} className="text-primary" />
                 {isImportingErp ? 'Conferindo o ERP...' : 'Importar do ERP'}
-            </button>
+            </button>}
             <button 
                 onClick={handleExportProducts} 
                 className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/30 text-sm font-medium"
             >
                 <Download size={18} /> Exportar
             </button>
-            <button 
+            {canEdit && <button 
                 onClick={handleNewProduct}
                 className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium"
             >
                 <Plus size={18} /> Novo Produto
-            </button>
+            </button>}
         </div>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-slate-100">
@@ -2275,15 +2287,15 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                     </span>
                 </td>
                 <td className="px-6 py-4 flex gap-2">
-                  <button 
+                  {canEdit && <button 
                       onClick={() => handleToggleArchiveProduct(product)} 
                       className="text-slate-400 hover:text-slate-700"
                       title={product.archived ? "Desarquivar" : "Arquivar"}
                   >
                       {product.archived ? <Upload size={18} /> : <Archive size={18} />}
-                  </button>
-                  <button onClick={() => handleEditProduct(product)} className="text-blue-600 hover:text-blue-900"><Edit size={18} /></button>
-                  <button onClick={() => handleDeleteProduct(product)} className="text-red-600 hover:text-red-900"><Trash2 size={18} /></button>
+                  </button>}
+                  {canEdit && <button onClick={() => handleEditProduct(product)} className="text-blue-600 hover:text-blue-900"><Edit size={18} /></button>}
+                  {canDelete && <button onClick={() => handleDeleteProduct(product)} className="text-red-600 hover:text-red-900"><Trash2 size={18} /></button>}
                 </td>
               </tr>
             ))}
@@ -2335,7 +2347,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   );
 };
 
-const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
+const HighlightsScreen = ({ globalSearchTerm, products, logAction, canEdit = true, canDelete = true }) => {
   const [activeTab, setActiveTab] = useState('active'); // 'active' | 'inactive'
   const [highlights, setHighlights] = useState([]);
 
@@ -2359,6 +2371,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   };
 
   const handleToggleArchiveHighlight = async (highlight) => {
+    if (!canEdit) return showToastMessage(NO_PERM_MSG, 'error');
     const newStatus = !highlight.archived;
     const action = newStatus ? 'arquivar' : 'desarquivar';
     
@@ -2420,6 +2433,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   };
 
   const handleSaveHighlight = async () => {
+    if (!canEdit) return showToastMessage(NO_PERM_MSG, 'error');
     setIsSaving(true);
     try {
       let imageUrl = newHighlight.image;
@@ -2544,11 +2558,13 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   };
 
   const handleDeleteHighlight = (id) => {
+    if (!canDelete) return showToastMessage(NO_PERM_MSG, 'error');
     setHighlightToDelete(id);
     setIsDeleteModalOpen(true);
   };
 
   const confirmDelete = async () => {
+    if (!canDelete) return showToastMessage(NO_PERM_MSG, 'error');
     if (highlightToDelete) {
       const deletedItem = highlights.find(h => h.id === highlightToDelete);
       const { error } = await supabase.from('highlights').delete().eq('id', highlightToDelete);
@@ -2564,6 +2580,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
   };
 
   const openModal = (highlight = null) => {
+    if (!canEdit) return showToastMessage(NO_PERM_MSG, 'error');
     if (highlight) {
       setNewHighlight({
         id: highlight.id,
@@ -2815,12 +2832,12 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
 
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Destaques da Loja</h1>
-        <button 
+        {canEdit && <button 
           onClick={() => openModal()}
           className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
         >
           <Plus size={20} /> Adicionar Destaque
-        </button>
+        </button>}
       </div>
 
       <div className="flex border-b border-slate-200 overflow-x-auto bg-white rounded-t-xl px-2 pt-2">
@@ -2875,7 +2892,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                 ? 'Destaques expirados aparecerão aqui automaticamente.'
                 : 'Destaques arquivados aparecerão aqui.'}
           </p>
-          {activeTab === 'active' && (
+          {activeTab === 'active' && canEdit && (
              <button 
                 onClick={() => openModal()}
                 className="mt-6 text-primary font-medium hover:underline"
@@ -2911,26 +2928,26 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                      </div>
                    )}
                    <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
-                      <button 
+                      {canEdit && <button 
                         onClick={() => handleToggleArchiveHighlight(highlight)}
                         className="text-sm font-medium text-slate-500 hover:text-slate-700 hover:underline flex items-center gap-1"
                         title={highlight.archived ? "Desarquivar" : "Arquivar"}
                       >
                         {highlight.archived ? <Upload size={14} /> : <Archive size={14} />} 
                         {highlight.archived ? 'Desarquivar' : 'Arquivar'}
-                      </button>
-                      <button 
+                      </button>}
+                      {canEdit && <button 
                         onClick={() => openModal(highlight)}
                         className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
                       >
                         <Edit size={14} /> Editar
-                      </button>
-                      <button 
+                      </button>}
+                      {canDelete && <button 
                         onClick={() => handleDeleteHighlight(highlight.id)}
                         className="text-sm font-medium text-red-600 hover:text-red-800 hover:underline flex items-center gap-1"
                       >
                         <Trash2 size={14} /> Remover
-                      </button>
+                      </button>}
                    </div>
                 </div>
              </div>
@@ -4830,7 +4847,7 @@ const ChecklistScreen = ({ session, showToast }) => {
   );
 };
 
-const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
+const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, canDelete = true }) => {
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -4957,6 +4974,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   ];
 
   const handleCreateRole = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     if (!newRoleDefinition.name) return showToast("Nome do cargo é obrigatório", "warning");
     
     const roleId = newRoleDefinition.name.toLowerCase().replace(/\s+/g, '_');
@@ -5002,6 +5020,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   };
 
   const handleOpenPermissionsModal = (user) => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setSelectedUser(user);
     // permissão antiga (true) = acesso total ao módulo; vira Ver + Editar + Excluir marcados
     const normalized = {};
@@ -5034,6 +5053,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   };
 
   const handleSavePermissions = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     if (!selectedUser) return;
     try {
         const { error } = await supabase
@@ -5075,6 +5095,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   const [staffAccess, setStaffAccess] = useState({ ...EMPTY_STAFF_ACCESS }); // acesso à loja autônoma (cargo Funcionário)
 
   const openNewUserModal = () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setNewUser({ name: '', email: '', password: '', role: 'admin' });
     setStaffAccess({ ...EMPTY_STAFF_ACCESS });
     setShowNewUserPassword(false);
@@ -5090,6 +5111,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   };
 
   const handleSaveUser = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     const email = newUser.email.trim().toLowerCase();
     const password = newUser.password.trim();
     const name = newUser.name.trim();
@@ -5211,6 +5233,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   };
 
   const handleOpenChangeRoleModal = (user) => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setSelectedUser(user);
     setNewRoleSelection(normalizeRoleKey(user.role) || 'cliente');
     setIsChangeRoleModalOpen(true);
@@ -5218,6 +5241,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   };
 
   const handleOpenChangePasswordModal = (user) => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setSelectedUser(user);
     setPasswordDraft('');
     setPasswordDraftConfirm('');
@@ -5228,6 +5252,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
   };
 
   const handleChangePassword = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     if (!selectedUser) return;
 
     const pwd = (passwordDraft || '').trim();
@@ -5269,6 +5294,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
   // Obriga o usuário a criar uma senha nova no próximo login (a senha atual continua valendo até lá)
   const handleRequestPasswordReset = async (user) => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     setActiveMenuId(null);
     if (!window.confirm(`Pedir para ${user.name} criar uma nova senha?
 
@@ -5340,6 +5366,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
   };
 
   const handleChangeRole = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     if (!selectedUser) return;
     const ok = await updateUserRole(selectedUser, newRoleSelection);
     if (ok) setIsChangeRoleModalOpen(false);
@@ -5348,6 +5375,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
   const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
 
   const handleDeleteUser = async () => {
+    if (!canDelete) return showToast(NO_PERM_MSG, 'warning');
     if (!selectedUser) return;
 
     try {
@@ -5698,7 +5726,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                    </div>
                 </div>
 
-                <UserDetailTabs user={selectedUser} initialTab={detailsInit.tab} startEditing={!!detailsInit.edit} onUserUpdated={(updated, fields, note) => {
+                <UserDetailTabs user={selectedUser} canEdit={canEdit} initialTab={detailsInit.tab} startEditing={!!detailsInit.edit && canEdit} onUserUpdated={(updated, fields, note) => {
                   setSelectedUser(prev => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
                   setUsers(prev => prev.map(u => (u.id === updated.id ? { ...u, ...updated } : u)));
                   if (note) showToast(note, 'warning'); else showToast('Dados do usuário atualizados!', 'success');
@@ -6081,18 +6109,18 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
       <div className="flex justify-between items-center flex-wrap gap-4">
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans">Gestão de Usuários</h1>
           <div className="flex gap-2">
-            <button 
+            {canEdit && <button 
               onClick={() => setIsCreateRoleModalOpen(true)}
               className="bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-50 transition-colors shadow-sm"
             >
                 <ShieldPlus size={20} className="text-primary" /> Criar Cargo
-            </button>
-            <button 
+            </button>}
+            {canEdit && <button 
               onClick={openNewUserModal}
               className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
             >
                 <Plus size={20} /> Novo Usuário
-            </button>
+            </button>}
           </div>
       </div>
 
@@ -6195,42 +6223,42 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                                         <Eye size={16} className="text-slate-400" /> 
                                         Ver Detalhes
                                      </button>
-                                     <button
+                                     {canEdit && <button
                                        onClick={() => handleViewDetails(user, { tab: 'cadastro', edit: true })}
                                        className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
                                      >
                                         <Pencil size={16} className="text-slate-400" />
                                         Editar Dados
-                                     </button>
-                                     <button
+                                     </button>}
+                                     {canEdit && <button
                                        onClick={() => handleOpenPermissionsModal(user)}
                                        className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
                                      >
                                         <Lock size={16} className="text-slate-400" /> 
                                         Permissões
-                                     </button>
-                                     <button
+                                     </button>}
+                                     {canEdit && <button
                                        onClick={() => handleOpenChangeRoleModal(user)}
                                        className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
                                      >
                                         <UserCog size={16} className="text-slate-400" /> 
                                         Alterar Cargo
-                                     </button>
-                                     <button
+                                     </button>}
+                                     {canEdit && <button
                                        onClick={() => handleOpenChangePasswordModal(user)}
                                        className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
                                      >
                                         <KeyRound size={16} className="text-slate-400" /> 
                                         Alterar Senha
-                                     </button>
-                                     <button
+                                     </button>}
+                                     {canEdit && <button
                                        onClick={() => handleRequestPasswordReset(user)}
                                        className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors border-t border-slate-50"
                                      >
                                         <RefreshCw size={16} className="text-slate-400" /> 
                                         Pedir Nova Senha
-                                     </button>
-                                     <button
+                                     </button>}
+                                     {canDelete && <button
                                        onClick={() => {
                                            setSelectedUser(user);
                                            setIsDeleteUserModalOpen(true);
@@ -6240,7 +6268,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                                      >
                                         <Trash2 size={16} className="text-red-400" /> 
                                         Excluir Usuário
-                                     </button>
+                                     </button>}
                                   </div>
                                </div>
                              </>
@@ -6956,7 +6984,7 @@ const ColumnFilter = ({ label, values, selected, onChange, onSort, sortDir, alig
   );
 };
 
-const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
+const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction, showToast, canEdit = true }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [adjustment, setAdjustment] = useState({ type: 'add', value: '' });
@@ -7019,12 +7047,14 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
   })();
 
   const handleOpenEdit = (product) => {
+    if (!canEdit) return showToast?.(NO_PERM_MSG, 'warning');
     setSelectedProduct(product);
     setAdjustment({ type: 'add', value: '' });
     setIsEditModalOpen(true);
   };
 
   const handleSaveStock = async () => {
+    if (!canEdit) return showToast?.(NO_PERM_MSG, 'warning');
     if (!selectedProduct) return;
     
     const currentStock = parseInt(selectedProduct.stock) || 0;
@@ -7192,12 +7222,12 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                    <button 
+                                    {canEdit && <button 
                                         onClick={() => handleOpenEdit(product)}
                                         className="text-primary hover:text-blue-700 font-medium text-sm bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1"
                                     >
                                         <Edit size={14} /> Ajustar
-                                    </button>
+                                    </button>}
                                 </td>
                             </tr>
                         ))}
@@ -7231,7 +7261,12 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction }) => {
   );
 };
 
-const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, onAssignDriver, onToggleSeparated }) => {
+const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: onUpdateStatusRaw, onAssignDriver: onAssignDriverRaw, onToggleSeparated: onToggleSeparatedRaw, canEdit = true, showToast }) => {
+  // sem permissão de editar: nenhuma ação muda pedido (os botões também ficam escondidos)
+  const denyEdit = () => showToast?.(NO_PERM_MSG, 'warning');
+  const onUpdateStatus = (...args) => (canEdit ? onUpdateStatusRaw(...args) : denyEdit());
+  const onAssignDriver = (...args) => (canEdit ? onAssignDriverRaw(...args) : denyEdit());
+  const onToggleSeparated = (...args) => (canEdit ? onToggleSeparatedRaw(...args) : denyEdit());
   const [driverPickFor, setDriverPickFor] = useState(null);   // pedido que vai receber entregador
   const [earlyPickup, setEarlyPickup] = useState(null);        // retirada tentada antes do horário marcado
   const [refuseTarget, setRefuseTarget] = useState(null);      // pedido que vai ser recusado (janela de confirmação)
@@ -7546,7 +7581,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                  </div>
                  
                  {/* Action Buttons */}
-                 {delivery.isPickup && delivery.status === 'Aguardando Retirada' && (
+                 {canEdit && delivery.isPickup && delivery.status === 'Aguardando Retirada' && (
                     <button
                       onClick={() => onToggleSeparated(delivery)}
                       className={`w-full py-2 rounded-lg text-sm font-medium border transition-colors ${delivery.separatedAt ? 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
@@ -7554,7 +7589,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                       {delivery.separatedAt ? 'Desfazer separação' : 'Marcar como separado'}
                     </button>
                  )}
-                 {(delivery.status === 'Pendente' || delivery.status === 'Em Preparação' || delivery.status === 'Aguardando Retirada') && (
+                 {canEdit && (delivery.status === 'Pendente' || delivery.status === 'Em Preparação' || delivery.status === 'Aguardando Retirada') && (
                     <div className="flex gap-2 w-full">
                        <button 
                            onClick={() => setRefuseTarget(delivery)}
@@ -7584,7 +7619,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                         <div className="w-full py-2 bg-orange-50 text-orange-700 text-xs font-medium rounded-lg text-center border border-orange-100">
                             Entregador: {delivery.driver?.name || 'atribuído'}
                         </div>
-                        <div className="flex gap-2 w-full">
+                        {canEdit && <div className="flex gap-2 w-full">
                           <button
                               onClick={() => openDriverPicker(delivery)}
                               className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors text-sm border border-slate-200"
@@ -7597,7 +7632,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                           >
                               Enviar para Entrega
                           </button>
-                        </div>
+                        </div>}
                     </div>
                  )}
                  {delivery.status === 'Em Trânsito' && (
@@ -7605,12 +7640,12 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                         <div className="w-full py-2 bg-slate-100 text-slate-500 text-xs font-medium rounded-lg text-center italic border border-slate-200">
                             Aguardando confirmação do cliente...
                         </div>
-                        <button 
+                        {canEdit && <button 
                            onClick={() => handleOpenVerification(delivery)}
                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm flex items-center justify-center gap-2"
                        >
                            <CheckCircle size={16} /> Confirmar Entrega
-                       </button>
+                       </button>}
                     </div>
                  )}
                  {delivery.status === 'Cancelado' && (
@@ -7823,7 +7858,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-wrap justify-end shrink-0 gap-3">
-              {(selectedDelivery.status === 'Pendente' || selectedDelivery.status === 'Em Preparação' || selectedDelivery.status === 'Aguardando Retirada') && (
+              {canEdit && (selectedDelivery.status === 'Pendente' || selectedDelivery.status === 'Em Preparação' || selectedDelivery.status === 'Aguardando Retirada') && (
                 <>
                   <button
                     onClick={() => { setIsDetailsModalOpen(false); setRefuseTarget(selectedDelivery); }}
@@ -7848,7 +7883,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                   )}
                 </>
               )}
-              {selectedDelivery.status === 'Entregador Atribuído' && (
+              {canEdit && selectedDelivery.status === 'Entregador Atribuído' && (
                 <>
                   <button
                     onClick={() => { setIsDetailsModalOpen(false); openDriverPicker(selectedDelivery); }}
@@ -7864,7 +7899,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus, o
                   </button>
                 </>
               )}
-              {selectedDelivery.status === 'Em Trânsito' && (
+              {canEdit && selectedDelivery.status === 'Em Trânsito' && (
                 <button
                   onClick={() => { setIsDetailsModalOpen(false); handleOpenVerification(selectedDelivery); }}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl transition-colors"
@@ -7981,7 +8016,7 @@ const HelpTooltip = ({ title, text, importantTitle, importantText }) => {
   );
 };
 
-const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
+const LoyaltyScreen = ({ globalSearchTerm, logAction, canEdit = true }) => {
   const [fidelityType, setFidelityType] = useState('cashback'); // 'cashback' | 'points'
   const [initialFidelityType, setInitialFidelityType] = useState('cashback');
   const [activeTab, setActiveTab] = useState('config'); // 'config' | 'limits' | 'incentives'
@@ -8101,6 +8136,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
   };
 
   const handleConfirmReset = async () => {
+    if (!canEdit) { setToastMessage(NO_PERM_MSG); setShowToast(true); return; }
       console.log('Usuário confirmou reset. Iniciando zeramento...');
       // Resetar saldos dos clientes
       try {
@@ -8124,6 +8160,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
   };
 
   const handleSave = async () => {
+    if (!canEdit) { setToastMessage(NO_PERM_MSG); setShowToast(true); return; }
     console.log('=== DEBUG SAVE ===');
     console.log('Current Type:', fidelityType);
     console.log('Initial Type:', initialFidelityType);
@@ -8201,7 +8238,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
       {/* Type Selector */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <button 
-          onClick={() => setFidelityType('cashback')}
+          onClick={() => canEdit && setFidelityType('cashback')}
           className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-4 ${
             fidelityType === 'cashback' 
               ? 'bg-blue-50 border-blue-500 text-blue-600' 
@@ -8218,7 +8255,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
         </button>
 
         <button 
-          onClick={() => setFidelityType('points')}
+          onClick={() => canEdit && setFidelityType('points')}
           className={`p-6 rounded-2xl border-2 transition-all flex flex-col items-center gap-4 ${
             fidelityType === 'points' 
               ? 'bg-blue-50 border-blue-500 text-blue-600' 
@@ -8256,7 +8293,7 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
       </div>
 
       {/* Content */}
-      <div className="space-y-6 animate-in fade-in duration-300">
+      <fieldset disabled={!canEdit} className="space-y-6 animate-in fade-in duration-300 min-w-0 border-0 p-0 m-0">
         
         {/* Configurações Tab */}
         {activeTab === 'config' && fidelityType === 'cashback' && (
@@ -8982,24 +9019,24 @@ const LoyaltyScreen = ({ globalSearchTerm, logAction }) => {
                     <p className="text-xs text-slate-500 mt-2">Bonificação será aplicada para {config.evaluationMinStars === 'any' ? 'qualquer avaliação' : `avaliações com ${config.evaluationMinStars} ou mais estrelas`}, independente das estrelas</p>
                   </div>
 
-                  <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold text-sm transition-colors w-full md:w-auto">
+                  {canEdit && <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold text-sm transition-colors w-full md:w-auto">
                     Salvar Configuração
-                  </button>
+                  </button>}
                 </div>
               </section>
            </div>
         )}
-      </div>
+      </fieldset>
 
       {/* Footer Actions */}
-      <div className="flex justify-end pt-4 border-t border-slate-200">
+      {canEdit && <div className="flex justify-end pt-4 border-t border-slate-200">
         <button 
           onClick={handleSave}
           className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center gap-2"
         >
              <CheckCircle size={24} /> Salvar Alterações
         </button>
-      </div>
+      </div>}
 
       {/* Toast */}
        {showToast && (
@@ -9699,7 +9736,7 @@ const pickupDaysOfLabel = (label) => {
 };
 const hhmmToMin = (v) => { const m = /^(\d{1,2}):(\d{2})/.exec(v || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
 
-const PickupScheduleScreen = ({ logAction, showToast }) => {
+const PickupScheduleScreen = ({ logAction, showToast, canEdit = true }) => {
   const [form, setForm] = useState(null);
   const [original, setOriginal] = useState(null);
   const [storeHours, setStoreHours] = useState([]);
@@ -9771,6 +9808,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
 
   const [testing, setTesting] = useState(false);
   const sendTestAlert = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     // 1) aviso aqui no portal, igual ao de um pedido de verdade
     beepNewPickup();
     showToast('TESTE: Novo pedido de retirada #TESTE. Separe os produtos.', 'warning');
@@ -9791,6 +9829,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
   };
 
   const handleSave = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     if (newEmail.trim()) return showToast('Clique em "Adicionar" para incluir o e-mail digitado antes de salvar.', 'warning');
     const lead = Number(form.pickup_lead_minutes), ahead = Number(form.pickup_days_ahead), cap = Number(form.pickup_capacity);
     if (!(lead >= 0 && lead <= 1440)) return showToast('A antecedência deve ficar entre 0 e 1440 minutos.', 'warning');
@@ -9847,17 +9886,18 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
           <h1 className="text-2xl font-bold text-slate-900 font-parkinsans flex items-center gap-2"><Clock className="text-primary" /> Retirada</h1>
           <p className="text-sm text-slate-500 mt-1">Horários em que o cliente pode retirar o pedido no estoque. O app só mostra esses horários e o estoque só libera a mercadoria dentro do horário marcado.</p>
         </div>
-        <button onClick={handleSave} disabled={isSaving || !hasChanges} className="bg-primary text-white font-bold px-5 py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-50 inline-flex items-center gap-2">
+        {canEdit && <button onClick={handleSave} disabled={isSaving || !hasChanges} className="bg-primary text-white font-bold px-5 py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-50 inline-flex items-center gap-2">
           <Save size={18} /> {isSaving ? 'Salvando...' : 'Salvar'}
-        </button>
+        </button>}
       </div>
 
+      <fieldset disabled={!canEdit} className="space-y-6 min-w-0 border-0 p-0 m-0">
       <div className={cardClass}>
         <div className="flex justify-between items-center flex-wrap gap-2">
           <h2 className="font-bold text-slate-800">Dias e horários de retirada</h2>
           <div className="flex gap-2">
-            <button onClick={useStoreHours} className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Copiar horário da loja</button>
-            <button onClick={addHour} className="text-sm px-3 py-1.5 rounded-lg bg-blue-50 text-primary font-bold inline-flex items-center gap-1"><Plus size={14} /> Adicionar</button>
+            {canEdit && <button onClick={useStoreHours} className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Copiar horário da loja</button>}
+            {canEdit && <button onClick={addHour} className="text-sm px-3 py-1.5 rounded-lg bg-blue-50 text-primary font-bold inline-flex items-center gap-1"><Plus size={14} /> Adicionar</button>}
           </div>
         </div>
         {form.pickup_hours.length === 0 && (
@@ -9871,7 +9911,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
             <div className="col-span-5 md:col-span-2"><label className={labelClass}>Abre</label><input type="time" className={inputClass} disabled={h.closed} value={h.open || ''} onChange={e => setHour(i, 'open', e.target.value)} /></div>
             <div className="col-span-5 md:col-span-2"><label className={labelClass}>Fecha</label><input type="time" className={inputClass} disabled={h.closed} value={h.close || ''} onChange={e => setHour(i, 'close', e.target.value)} /></div>
             <label className="col-span-6 md:col-span-2 flex items-center gap-2 text-sm text-slate-600 pb-3"><input type="checkbox" checked={!!h.closed} onChange={e => setHour(i, 'closed', e.target.checked)} /> Sem retirada</label>
-            <button onClick={() => removeHour(i)} className="col-span-6 md:col-span-2 text-red-500 hover:bg-red-50 rounded-lg py-2.5 inline-flex items-center justify-center gap-1 text-sm"><Trash2 size={15} /> Remover</button>
+            {canEdit && <button onClick={() => removeHour(i)} className="col-span-6 md:col-span-2 text-red-500 hover:bg-red-50 rounded-lg py-2.5 inline-flex items-center justify-center gap-1 text-sm"><Trash2 size={15} /> Remover</button>}
           </div>
         ))}
         <p className="text-xs text-slate-500">Cada linha é <b>um horário de retirada</b>. Para ter vários horários no mesmo dia, clique em <b>Adicionar</b> e repita o dia (ex.: uma linha "Segunda" 10:00–11:00 e outra "Segunda" 14:00–16:00).</p>
@@ -9937,7 +9977,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
         <h2 className="font-bold text-slate-800">Datas sem retirada (feriados, inventário)</h2>
         <div className="flex gap-2 flex-wrap">
           <input type="date" className={inputClass + ' max-w-[220px]'} value={newDate} onChange={e => setNewDate(e.target.value)} />
-          <button onClick={addClosedDate} className="px-4 py-2 rounded-xl bg-blue-50 text-primary font-bold inline-flex items-center gap-1"><Plus size={16} /> Adicionar data</button>
+          {canEdit && <button onClick={addClosedDate} className="px-4 py-2 rounded-xl bg-blue-50 text-primary font-bold inline-flex items-center gap-1"><Plus size={16} /> Adicionar data</button>}
         </div>
         <div className="flex flex-wrap gap-2">
           {form.pickup_closed_dates.length === 0 && <span className="text-sm text-slate-400">Nenhuma data bloqueada.</span>}
@@ -9961,7 +10001,7 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
               onChange={e => setNewEmail(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addAlertEmail(); } }}
             />
-            <button onClick={addAlertEmail} className="px-4 rounded-xl bg-blue-50 text-primary font-bold inline-flex items-center gap-1 whitespace-nowrap"><Plus size={16} /> Adicionar</button>
+            {canEdit && <button onClick={addAlertEmail} className="px-4 rounded-xl bg-blue-50 text-primary font-bold inline-flex items-center gap-1 whitespace-nowrap"><Plus size={16} /> Adicionar</button>}
           </div>
           <div className="flex flex-col gap-2 mt-3">
             {alertEmails.length === 0 && <span className="text-sm text-slate-400">Nenhum e-mail cadastrado. Ninguém receberá o aviso por e-mail.</span>}
@@ -9975,12 +10015,13 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
           <p className="text-xs text-slate-400 mt-2">Cada pessoa é um e-mail. Depois de adicionar, clique em Salvar no topo da página.</p>
         </div>
         <div className="border-t border-slate-100 pt-4 space-y-2">
-          <button onClick={sendTestAlert} disabled={testing} className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 font-bold border border-amber-200 hover:bg-amber-100 disabled:opacity-50 inline-flex items-center gap-2">
+          {canEdit && <button onClick={sendTestAlert} disabled={testing} className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 font-bold border border-amber-200 hover:bg-amber-100 disabled:opacity-50 inline-flex items-center gap-2">
             <Bell size={16} /> {testing ? 'Enviando...' : 'Enviar alerta de teste'}
-          </button>
+          </button>}
           <p className="text-xs text-slate-500">Não cria pedido. Toca o som e mostra o aviso aqui no portal, manda um e-mail marcado como TESTE para a lista acima e uma notificação para os celulares do estoque. Salve os e-mails antes de testar.</p>
         </div>
       </div>
+      </fieldset>
     </div>
   );
 };
@@ -9998,7 +10039,7 @@ const normalizeDelivery = (d) => ({
 const toNum = (v) => (v === '' || v == null ? NaN : Number(String(v).replace(',', '.')));
 const brlText = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const SettingsScreen = ({ logAction, showToast }) => {
+const SettingsScreen = ({ logAction, showToast, canEdit = true }) => {
   const [form, setForm] = useState(null);
   const [original, setOriginal] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -10049,6 +10090,7 @@ const SettingsScreen = ({ logAction, showToast }) => {
   });
 
   const handleSave = async () => {
+    if (!canEdit) return showToast(NO_PERM_MSG, 'warning');
     const whatsappDigits = onlyDigits(form.whatsappDisplay);
     if (whatsappDigits && whatsappDigits.length < 10) return showToast('WhatsApp inválido. Informe DDD + número.', 'warning');
     if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) return showToast('E-mail inválido.', 'warning');
@@ -10174,21 +10216,21 @@ const SettingsScreen = ({ logAction, showToast }) => {
           </p>
         </div>
         <div className="flex gap-2">
-          {hasChanges && (
+          {canEdit && hasChanges && (
             <button onClick={() => setForm(original)} disabled={isSaving}
               className="bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors text-sm font-medium">
               Descartar
             </button>
           )}
-          <button onClick={handleSave} disabled={isSaving || !hasChanges}
+          {canEdit && <button onClick={handleSave} disabled={isSaving || !hasChanges}
             className="bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
             <Save size={18} /> {isSaving ? 'Salvando...' : 'Salvar alterações'}
-          </button>
+          </button>}
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        <div className="xl:col-span-2 space-y-6">
+        <fieldset disabled={!canEdit} className="xl:col-span-2 space-y-6 min-w-0 border-0 p-0 m-0">
           {/* Endereço */}
           <div className={cardClass}>
             <h3 className="font-bold text-slate-800 flex items-center gap-2"><MapPin size={18} className="text-red-600" /> Endereço</h3>
@@ -10243,7 +10285,7 @@ const SettingsScreen = ({ logAction, showToast }) => {
           <div className={cardClass}>
             <div className="flex justify-between items-center">
               <h3 className="font-bold text-slate-800 flex items-center gap-2"><Clock size={18} className="text-primary" /> Horário de Funcionamento</h3>
-              <button onClick={addHour} className="text-sm text-primary hover:bg-blue-50 px-3 py-1.5 rounded-lg inline-flex items-center gap-1"><Plus size={16} /> Adicionar linha</button>
+              {canEdit && <button onClick={addHour} className="text-sm text-primary hover:bg-blue-50 px-3 py-1.5 rounded-lg inline-flex items-center gap-1"><Plus size={16} /> Adicionar linha</button>}
             </div>
             <div className="space-y-2">
               {form.hours.map((h, i) => (
@@ -10258,9 +10300,9 @@ const SettingsScreen = ({ logAction, showToast }) => {
                   <input type="time" disabled={h.closed} className={inputClass + ' bg-white col-span-4 md:col-span-2 disabled:opacity-40'} value={h.open || ''} onChange={e => setHour(i, 'open', e.target.value)} />
                   <input type="time" disabled={h.closed} className={inputClass + ' bg-white col-span-4 md:col-span-2 disabled:opacity-40'} value={h.close || ''} onChange={e => setHour(i, 'close', e.target.value)} />
                   <div className="col-span-12 md:col-span-2 flex justify-end gap-1">
-                    <button onClick={() => moveHour(i, -1)} disabled={i === 0} title="Subir" className="p-2 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowUpRight size={16} className="-rotate-45" /></button>
-                    <button onClick={() => moveHour(i, 1)} disabled={i === form.hours.length - 1} title="Descer" className="p-2 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowDownRight size={16} className="rotate-45" /></button>
-                    <button onClick={() => removeHour(i)} title="Remover" className="p-2 text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
+                    {canEdit && <button onClick={() => moveHour(i, -1)} disabled={i === 0} title="Subir" className="p-2 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowUpRight size={16} className="-rotate-45" /></button>}
+                    {canEdit && <button onClick={() => moveHour(i, 1)} disabled={i === form.hours.length - 1} title="Descer" className="p-2 text-slate-400 hover:text-slate-700 disabled:opacity-30"><ArrowDownRight size={16} className="rotate-45" /></button>}
+                    {canEdit && <button onClick={() => removeHour(i)} title="Remover" className="p-2 text-red-400 hover:text-red-600"><Trash2 size={16} /></button>}
                   </div>
                 </div>
               ))}
@@ -10284,10 +10326,10 @@ const SettingsScreen = ({ logAction, showToast }) => {
                 <div key={i} className="grid grid-cols-12 gap-2 items-center bg-slate-50 border border-slate-100 rounded-xl p-2">
                   <input className={inputClass + ' bg-white col-span-5'} inputMode="decimal" value={t.maxKm} onChange={e => setTier(i, 'maxKm', e.target.value)} placeholder="Ex: 5" />
                   <input className={inputClass + ' bg-white col-span-5'} inputMode="decimal" value={t.fee} onChange={e => setTier(i, 'fee', e.target.value)} placeholder="Ex: 9,00" />
-                  <button onClick={() => removeTier(i)} disabled={form.delivery.tiers.length <= 1} title="Remover faixa" className="col-span-2 p-2 text-red-400 hover:text-red-600 disabled:opacity-30 justify-self-end"><Trash2 size={16} /></button>
+                  {canEdit && <button onClick={() => removeTier(i)} disabled={form.delivery.tiers.length <= 1} title="Remover faixa" className="col-span-2 p-2 text-red-400 hover:text-red-600 disabled:opacity-30 justify-self-end"><Trash2 size={16} /></button>}
                 </div>
               ))}
-              <button onClick={addTier} className="text-sm text-primary hover:bg-blue-50 px-3 py-1.5 rounded-lg inline-flex items-center gap-1"><Plus size={16} /> Adicionar faixa</button>
+              {canEdit && <button onClick={addTier} className="text-sm text-primary hover:bg-blue-50 px-3 py-1.5 rounded-lg inline-flex items-center gap-1"><Plus size={16} /> Adicionar faixa</button>}
             </div>
             <div className="max-w-xs">
               <label className={labelClass}>Tempo de separação do pedido (min)</label>
@@ -10349,7 +10391,7 @@ const SettingsScreen = ({ logAction, showToast }) => {
               <textarea rows={3} className={inputClass + ' resize-none'} disabled={!form.autonomous_enabled} value={form.autonomous_text || ''} onChange={e => set('autonomous_text', e.target.value)} />
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {/* Pré-visualização do app */}
         <div className="xl:sticky xl:top-4">
@@ -11110,19 +11152,19 @@ function App() {
 
     switch (activeTab) {
       case 'Dashboard': return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} userProfile={userProfile} />);
-      case 'Produtos': return renderIfAllowed('Produtos', <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} />);
-      case 'Estoque': return renderIfAllowed('Estoque', <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} />);
-      case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} />);
-      case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} />);
+      case 'Produtos': return renderIfAllowed('Produtos', <ProductsScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} canEdit={can('Produtos', 'edit')} canDelete={can('Produtos', 'delete')} />);
+      case 'Estoque': return renderIfAllowed('Estoque', <StockScreen globalSearchTerm={globalSearchTerm} products={products} onRefresh={fetchProducts} logAction={logAction} showToast={showToast} canEdit={can('Estoque', 'edit')} canDelete={can('Estoque', 'delete')} />);
+      case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} canEdit={can('Destaques', 'edit')} canDelete={can('Destaques', 'delete')} />);
+      case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} canEdit={can('Usuários', 'edit')} canDelete={can('Usuários', 'delete')} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
-      case 'Retirada': return renderIfAllowed('Entregas', <PickupScheduleScreen logAction={logAction} showToast={showToast} />);
-      case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} />);
+      case 'Retirada': return renderIfAllowed('Entregas', <PickupScheduleScreen logAction={logAction} showToast={showToast} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} canEdit={can('Configurações', 'edit')} canDelete={can('Configurações', 'delete')} />);
       case 'Integrações': return renderIfAllowed('Integrações', <IntegracoesScreen showToast={showToast} session={session} />);
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
-      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} />);
+      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Cupons': return renderIfAllowed('Cupons', <CuponsScreen canEdit={can('Cupons', 'edit')} canDelete={can('Cupons', 'delete')} currentUser={{ id: session?.user?.id, name: userProfile?.name || session?.user?.email }} showToast={showToast} logAction={logAction} />);
-      case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
+      case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} canEdit={can('Fidelidade', 'edit')} canDelete={can('Fidelidade', 'delete')} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
       default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} userProfile={userProfile} />);
     }
