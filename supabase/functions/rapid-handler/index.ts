@@ -530,11 +530,15 @@ Deno.serve(async (req) => {
     marca('estoque'); // ← NOVO
 
     // ----------------------------------------------------- 3. preço
-    const priceCheckDue = !state?.price_checked_at || Date.now() - new Date(state.price_checked_at).getTime() > 60 * 60_000;
-    // ← NOVO: consulta de preço só 1 vez por hora (antes, com o endpoint liberado, rodava a cada rodada e gastava o tempo das vendas)
-    if (timeLeft() > RESERVA_VENDAS_MS && priceCheckDue) {
+    // Preço conferido a CADA rodada (5 min), para a troca de preço no ERP chegar logo. Os lotes de 100 produtos
+    // começam por um lugar diferente a cada rodada: se o tempo acabar antes de conferir todos, todos acabam
+    // sendo conferidos por igual. Para sempre que sobrar pouco tempo para as vendas (RESERVA_VENDAS_MS).
+    if (timeLeft() > RESERVA_VENDAS_MS) {
       try {
-        for (let i = 0; i < skus.length && timeLeft() > RESERVA_VENDAS_MS; i += STOCK_BATCH) {
+        const nLotes = Math.ceil(skus.length / STOCK_BATCH);
+        const inicio = Math.floor(Date.now() / (5 * 60_000)) % Math.max(1, nLotes);
+        for (let n = 0; n < nLotes && timeLeft() > RESERVA_VENDAS_MS; n++) {
+          const i = ((inicio + n) % nLotes) * STOCK_BATCH;
           const batch = skus.slice(i, i + STOCK_BATCH);
           const data = await erpGet('vshub/produto-preco', { Estabs: ESTAB, Itens: batch.join(','), Top: 1000 });
           patch.price_available = true;
