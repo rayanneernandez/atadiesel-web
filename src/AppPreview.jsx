@@ -171,9 +171,9 @@ const HomePhone = ({ banner, total = 1, index = 0 }) => (
       {banner ? (
         <>
           <p className="font-bold text-[13px] mx-3 mt-4 mb-2">Parceiros em Destaque</p>
-          <div className="mx-3 rounded-[20px] overflow-hidden relative flex items-end" style={{ height: 190, background: '#1E3A8A' }}>
+          <div className="mx-3 rounded-[20px] overflow-hidden relative flex items-end" style={{ aspectRatio: '2 / 1', background: '#1E3A8A' }}>
             {banner.image ? <img src={banner.image} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
-            {banner.image ? <div className="absolute left-0 right-0 bottom-0" style={{ height: 90, background: 'linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.6))' }} /> : null}
+            {banner.image ? <div className="absolute left-0 right-0 bottom-0" style={{ height: '55%', background: 'linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.6))' }} /> : null}
             <div className="relative p-5 text-white w-full">
               <p className="font-bold text-[16px] leading-5 break-words line-clamp-2">{banner.title}</p>
             </div>
@@ -202,7 +202,7 @@ export const HighlightAppPreview = ({ highlight }) => {
       <p className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Como fica no app</p>
       <HomePhone banner={banner} />
       <p className="text-[11px] text-slate-400 text-center mt-2 max-w-[270px] mx-auto">
-        {h.link ? 'Ao tocar, o cliente abre o link cadastrado. ' : 'Sem link: o toque não faz nada. '}A foto preenche o espaço (pode cortar as bordas): use imagem larga, 2:1.
+        {h.link ? 'Ao tocar, o cliente abre o link cadastrado. ' : 'Sem link: o toque não faz nada. '}O banner tem proporção 2:1 (largura:altura), igual ao app: use imagem de 1200 x 600 para não cortar.
       </p>
     </div>
   );
