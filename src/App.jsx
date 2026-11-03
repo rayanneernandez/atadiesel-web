@@ -9941,6 +9941,19 @@ const PickupScheduleScreen = ({ logAction, showToast }) => {
   );
 };
 
+const DEFAULT_DELIVERY = {
+  tiers: [{ maxKm: 2, fee: 6 }, { maxKm: 5, fee: 9 }, { maxKm: 8, fee: 13 }, { maxKm: 12, fee: 18 }],
+  prepMinutes: 15,
+  freeShipping: { enabled: false, minOrder: '', maxKm: '' },
+};
+const normalizeDelivery = (d) => ({
+  tiers: Array.isArray(d?.tiers) && d.tiers.length ? d.tiers.map(t => ({ maxKm: t.maxKm ?? '', fee: t.fee ?? '' })) : DEFAULT_DELIVERY.tiers,
+  prepMinutes: d?.prepMinutes ?? DEFAULT_DELIVERY.prepMinutes,
+  freeShipping: { enabled: !!d?.freeShipping?.enabled, minOrder: d?.freeShipping?.minOrder ?? '', maxKm: d?.freeShipping?.maxKm ?? '' },
+});
+const toNum = (v) => (v === '' || v == null ? NaN : Number(String(v).replace(',', '.')));
+const brlText = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 const SettingsScreen = ({ logAction, showToast }) => {
   const [form, setForm] = useState(null);
   const [original, setOriginal] = useState(null);
@@ -9957,7 +9970,7 @@ const SettingsScreen = ({ logAction, showToast }) => {
         ? "A tabela de configurações ainda não existe. Rode o arquivo 'configuracoes_loja.sql' no Supabase."
         : (error?.message || 'Configurações não encontradas.'));
     } else {
-      const normalized = { ...data, hours: Array.isArray(data.hours) ? data.hours : [], whatsappDisplay: formatWhatsapp(data.whatsapp) };
+      const normalized = { ...data, hours: Array.isArray(data.hours) ? data.hours : [], delivery: normalizeDelivery(data.delivery_config), whatsappDisplay: formatWhatsapp(data.whatsapp) };
       setForm(normalized);
       setOriginal(normalized);
     }
@@ -9972,6 +9985,14 @@ const SettingsScreen = ({ logAction, showToast }) => {
     ...prev,
     hours: prev.hours.map((h, i) => (i === index ? { ...h, [field]: value } : h)),
   }));
+
+  const setDelivery = (patch) => setForm(prev => ({ ...prev, delivery: { ...prev.delivery, ...patch } }));
+  const setTier = (i, field, value) => setDelivery({ tiers: form.delivery.tiers.map((t, j) => (j === i ? { ...t, [field]: value } : t)) });
+  const addTier = () => {
+    const last = form.delivery.tiers[form.delivery.tiers.length - 1];
+    setDelivery({ tiers: [...form.delivery.tiers, { maxKm: last ? (toNum(last.maxKm) || 0) + 3 : 3, fee: last ? toNum(last.fee) || '' : '' }] });
+  };
+  const removeTier = (i) => setDelivery({ tiers: form.delivery.tiers.filter((_, j) => j !== i) });
 
   const addHour = () => setForm(prev => ({ ...prev, hours: [...prev.hours, { label: '', closed: false, open: '08:00', close: '18:00' }] }));
   const removeHour = (index) => setForm(prev => ({ ...prev, hours: prev.hours.filter((_, i) => i !== index) }));
@@ -9994,8 +10015,26 @@ const SettingsScreen = ({ logAction, showToast }) => {
     const lng = form.longitude === '' || form.longitude == null ? null : Number(String(form.longitude).replace(',', '.'));
     if ((lat != null && isNaN(lat)) || (lng != null && isNaN(lng))) return showToast('Latitude e longitude devem ser números.', 'warning');
 
+    const tiersClean = form.delivery.tiers.map(t => ({ maxKm: toNum(t.maxKm), fee: toNum(t.fee) }));
+    if (tiersClean.length === 0) return showToast('Cadastre ao menos uma faixa de frete.', 'warning');
+    if (tiersClean.some(t => !(t.maxKm > 0) || isNaN(t.fee) || t.fee < 0)) return showToast('Preencha o km e o valor de todas as faixas de frete.', 'warning');
+    tiersClean.sort((a, b) => a.maxKm - b.maxKm);
+    if (tiersClean.some((t, i) => i > 0 && t.maxKm === tiersClean[i - 1].maxKm)) return showToast('Há duas faixas de frete com o mesmo km.', 'warning');
+    const prep = toNum(form.delivery.prepMinutes);
+    if (isNaN(prep) || prep < 0) return showToast('Informe o tempo de separação do pedido em minutos.', 'warning');
+    const fsOn = !!form.delivery.freeShipping.enabled;
+    const fsMin = toNum(form.delivery.freeShipping.minOrder);
+    const fsKm = toNum(form.delivery.freeShipping.maxKm);
+    if (fsOn && !(fsMin > 0)) return showToast('Informe a partir de quanto a compra tem frete grátis.', 'warning');
+    const deliveryConfig = {
+      tiers: tiersClean,
+      prepMinutes: prep,
+      freeShipping: { enabled: fsOn, minOrder: isNaN(fsMin) ? 0 : fsMin, maxKm: isNaN(fsKm) || fsKm <= 0 ? null : fsKm },
+    };
+
     const { data: { user } } = await supabase.auth.getUser();
     const payload = {
+      delivery_config: deliveryConfig,
       address_line1: (form.address_line1 || '').trim(),
       address_line2: (form.address_line2 || '').trim(),
       zip: (form.zip || '').trim(),
@@ -10029,6 +10068,11 @@ const SettingsScreen = ({ logAction, showToast }) => {
       const oldHours = (original.hours || []).map(h => `${h.label}: ${hoursText(h)}`).join(' | ');
       const newHours = payload.hours.map(h => `${h.label}: ${hoursText(h)}`).join(' | ');
       cmp('Horário', oldHours, newHours);
+      const tierText = (d) => (d?.tiers || []).map(t => `até ${t.maxKm} km: ${brlText(toNum(t.fee))}`).join(' | ');
+      cmp('Frete por km', tierText(original.delivery), tiersClean.map(t => `até ${t.maxKm} km: ${brlText(t.fee)}`).join(' | '));
+      cmp('Tempo de separação (min)', original.delivery?.prepMinutes, prep);
+      const fsText = (f) => (f?.enabled ? `acima de ${brlText(toNum(f.minOrder))}${toNum(f.maxKm) > 0 ? ` até ${f.maxKm} km` : ''}` : 'Desativado');
+      cmp('Frete grátis', fsText(original.delivery?.freeShipping), fsText({ enabled: fsOn, minOrder: fsMin, maxKm: fsKm }));
       cmp('Loja Autônoma', original.autonomous_enabled ? 'Exibida' : 'Oculta', payload.autonomous_enabled ? 'Exibida' : 'Oculta');
       cmp('Título Loja Autônoma', original.autonomous_title, payload.autonomous_title);
       cmp('Texto Loja Autônoma', original.autonomous_text, payload.autonomous_text);
@@ -10036,7 +10080,7 @@ const SettingsScreen = ({ logAction, showToast }) => {
       if (changes.length && logAction) logAction('SETTINGS_CHANGE', 'Nossa Loja (app)', { changes });
 
       showToast(changes.length ? 'Configurações salvas! O app já mostra as novas informações.' : 'Nada foi alterado.', 'success');
-      const normalized = { ...data[0], hours: data[0].hours || [], whatsappDisplay: formatWhatsapp(data[0].whatsapp) };
+      const normalized = { ...data[0], hours: data[0].hours || [], delivery: normalizeDelivery(data[0].delivery_config), whatsappDisplay: formatWhatsapp(data[0].whatsapp) };
       setForm(normalized);
       setOriginal(normalized);
     } catch (err) {
@@ -10180,6 +10224,66 @@ const SettingsScreen = ({ logAction, showToast }) => {
             </div>
           </div>
 
+          {/* Entrega e frete */}
+          <div className={cardClass}>
+            <h3 className="font-bold text-slate-800 flex items-center gap-2"><Truck size={18} className="text-primary" /> Entrega e frete</h3>
+            <p className="text-xs text-slate-500">
+              O app calcula a distância (de carro) entre a loja, no endereço acima, e o endereço do cliente, e cobra o valor da faixa correspondente.
+              Acima da última faixa a loja não entrega.
+            </p>
+            <div className="space-y-2">
+              <div className="grid grid-cols-12 gap-2 text-xs font-bold text-slate-500 px-2">
+                <span className="col-span-5">Distância até (km)</span>
+                <span className="col-span-5">Frete (R$)</span>
+              </div>
+              {form.delivery.tiers.map((t, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-center bg-slate-50 border border-slate-100 rounded-xl p-2">
+                  <input className={inputClass + ' bg-white col-span-5'} inputMode="decimal" value={t.maxKm} onChange={e => setTier(i, 'maxKm', e.target.value)} placeholder="Ex: 5" />
+                  <input className={inputClass + ' bg-white col-span-5'} inputMode="decimal" value={t.fee} onChange={e => setTier(i, 'fee', e.target.value)} placeholder="Ex: 9,00" />
+                  <button onClick={() => removeTier(i)} disabled={form.delivery.tiers.length <= 1} title="Remover faixa" className="col-span-2 p-2 text-red-400 hover:text-red-600 disabled:opacity-30 justify-self-end"><Trash2 size={16} /></button>
+                </div>
+              ))}
+              <button onClick={addTier} className="text-sm text-primary hover:bg-blue-50 px-3 py-1.5 rounded-lg inline-flex items-center gap-1"><Plus size={16} /> Adicionar faixa</button>
+            </div>
+            <div className="max-w-xs">
+              <label className={labelClass}>Tempo de separação do pedido (min)</label>
+              <input className={inputClass} inputMode="numeric" value={form.delivery.prepMinutes} onChange={e => setDelivery({ prepMinutes: e.target.value })} />
+              <p className="text-xs text-slate-400 mt-1">Somado ao tempo de viagem para mostrar ao cliente o prazo de entrega.</p>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <p className="font-bold text-slate-800 text-sm">Frete grátis</p>
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  Ativar
+                  <div onClick={() => setDelivery({ freeShipping: { ...form.delivery.freeShipping, enabled: !form.delivery.freeShipping.enabled } })}
+                    className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${form.delivery.freeShipping.enabled ? 'bg-primary' : 'bg-slate-300'}`}>
+                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${form.delivery.freeShipping.enabled ? 'translate-x-5' : ''}`}></div>
+                  </div>
+                </label>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Compras a partir de (R$)</label>
+                  <input className={inputClass} disabled={!form.delivery.freeShipping.enabled} inputMode="decimal" value={form.delivery.freeShipping.minOrder}
+                    onChange={e => setDelivery({ freeShipping: { ...form.delivery.freeShipping, minOrder: e.target.value } })} placeholder="Ex: 200,00" />
+                  <p className="text-xs text-slate-400 mt-1">Vale sobre o valor dos produtos (sem o frete).</p>
+                </div>
+                <div>
+                  <label className={labelClass}>Só para entregas até (km) <span className="font-normal text-slate-400">- opcional</span></label>
+                  <input className={inputClass} disabled={!form.delivery.freeShipping.enabled} inputMode="decimal" value={form.delivery.freeShipping.maxKm}
+                    onChange={e => setDelivery({ freeShipping: { ...form.delivery.freeShipping, maxKm: e.target.value } })} placeholder="Vazio = qualquer distância" />
+                </div>
+              </div>
+              {form.delivery.freeShipping.enabled && toNum(form.delivery.freeShipping.minOrder) > 0 && (
+                <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                  O cliente verá: "Frete grátis em compras acima de {brlText(toNum(form.delivery.freeShipping.minOrder))}
+                  {toNum(form.delivery.freeShipping.maxKm) > 0 ? ` para entregas até ${form.delivery.freeShipping.maxKm} km` : ''}" e, enquanto não atingir, quanto falta.
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Loja Autônoma */}
           <div className={cardClass}>
             <div className="flex justify-between items-center">
@@ -10235,6 +10339,18 @@ const SettingsScreen = ({ logAction, showToast }) => {
                     <span className={h.closed ? 'text-red-600 font-medium' : 'text-slate-700 font-medium'}>{hoursText(h)}</span>
                   </div>
                 ))}
+              </div>
+              <div className="bg-white rounded-xl p-3">
+                <p className="font-bold text-slate-800 flex items-center gap-1 mb-1"><Truck size={14} className="text-primary" /> Frete por distância</p>
+                {form.delivery.tiers.map((t, i) => (
+                  <div key={i} className="flex justify-between py-1 border-b border-slate-50 last:border-0">
+                    <span className="text-slate-500">até {t.maxKm || '-'} km</span>
+                    <span className="text-slate-700 font-medium">{isNaN(toNum(t.fee)) ? '-' : brlText(toNum(t.fee))}</span>
+                  </div>
+                ))}
+                {form.delivery.freeShipping.enabled && toNum(form.delivery.freeShipping.minOrder) > 0 && (
+                  <p className="text-[11px] text-emerald-700 mt-1.5">Frete grátis acima de {brlText(toNum(form.delivery.freeShipping.minOrder))}</p>
+                )}
               </div>
               {form.autonomous_enabled && (
                 <div className="bg-[#1E3A8A] text-white rounded-xl p-3">
