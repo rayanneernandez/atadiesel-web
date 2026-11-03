@@ -22,6 +22,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const API_URL = (Deno.env.get('LOJA_AUTONOMA_API_URL') ?? '').replace(/\/$/, '');
 const API_KEY = Deno.env.get('LOJA_AUTONOMA_KEY') ?? '';
 const CRON_SECRET = Deno.env.get('LOJA_AUTONOMA_CRON_SECRET') ?? '';
+// Portal da loja autônoma (valor reservado no cartão e gateway de pagamento): o login de dono fica só aqui, nunca no painel.
+const PORTAL_URL = (Deno.env.get('LOJA_AUTONOMA_PORTAL_URL') ?? 'https://autonoma-store-portal.onrender.com').replace(/\/$/, '');
+const OWNER_EMAIL = Deno.env.get('LOJA_AUTONOMA_OWNER_EMAIL') ?? '';
+const OWNER_PASSWORD = Deno.env.get('LOJA_AUTONOMA_OWNER_PASSWORD') ?? '';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -70,6 +74,48 @@ async function lojaApi(path: string, init: RequestInit = {}) {
     throw new HttpError(502, typeof detail === 'string' && detail ? detail : `Erro ${res.status} na loja autônoma`);
   }
   return res;
+}
+
+async function portalApi(path: string, init: RequestInit = {}) {
+  if (!OWNER_EMAIL || !OWNER_PASSWORD) {
+    throw new HttpError(500, 'Faltam os secrets LOJA_AUTONOMA_OWNER_EMAIL e LOJA_AUTONOMA_OWNER_PASSWORD (login de dono da loja autônoma).');
+  }
+  let login: Response;
+  try {
+    login = await fetch(`${PORTAL_URL}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD }),
+    });
+  } catch {
+    throw new HttpError(502, 'Não consegui falar com o portal da loja autônoma. Tente de novo em instantes.');
+  }
+  if (!login.ok) throw new HttpError(502, 'O portal da loja autônoma recusou o login de dono. Confira os secrets LOJA_AUTONOMA_OWNER_EMAIL e LOJA_AUTONOMA_OWNER_PASSWORD.');
+  const { access_token } = await login.json();
+  let res: Response;
+  try {
+    res = await fetch(`${PORTAL_URL}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${access_token}`, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+    });
+  } catch {
+    throw new HttpError(502, 'Não consegui falar com o portal da loja autônoma. Tente de novo em instantes.');
+  }
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.json())?.detail ?? ''; } catch { /* sem corpo */ }
+    throw new HttpError(502, typeof detail === 'string' && detail ? detail : `Erro ${res.status} no portal da loja autônoma`);
+  }
+  return res;
+}
+
+async function paymentSettings() {
+  const settings = await (await portalApi('/settings')).json();
+  const pay = await (await portalApi('/settings/payment-config')).json();
+  return {
+    hold_amount_cents: settings.hold_amount_cents,
+    gateway_type: pay.gateway_type ?? 'mock',
+    has_credentials: !!pay.has_credentials,
+  };
 }
 
 const toBase64 = (buf: ArrayBuffer) => {
@@ -146,7 +192,8 @@ Deno.serve(async (req) => {
   try {
     if (req.method !== 'POST') throw new HttpError(405, 'Use POST');
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-    const { action } = await req.json().catch(() => ({ action: '' }));
+    const body = await req.json().catch(() => ({ action: '' }));
+    const { action } = body;
 
     // Agendamento automático: sem usuário, só com o segredo, e só a sincronização.
     const cron = req.headers.get('x-cron-secret');
@@ -179,6 +226,25 @@ Deno.serve(async (req) => {
     if (action === 'rotate_qr') {
       const r = await (await lojaApi('/rotate-qr', { method: 'POST' })).json();
       return json({ qr_url: r.qr_url });
+    }
+    if (action === 'pay_get') return json(await paymentSettings());
+    if (action === 'pay_save') {
+      const { hold_amount_cents, gateway_type, credentials } = body as {
+        hold_amount_cents?: number; gateway_type?: string; credentials?: Record<string, string>;
+      };
+      const hold = Math.round(Number(hold_amount_cents));
+      if (!Number.isFinite(hold) || hold < 100 || hold > 100000) throw new HttpError(400, 'O valor reservado deve ficar entre R$ 1,00 e R$ 1.000,00.');
+      if (gateway_type !== 'mock' && gateway_type !== 'payer') throw new HttpError(400, 'Gateway inválido.');
+      const c = credentials ?? {};
+      const keys = ['client_id', 'username', 'password', 'account_id', 'company_id', 'store_id', 'terminal_id'];
+      const filled = keys.filter((k) => String(c[k] ?? '').trim());
+      if (filled.length && filled.length < keys.length) throw new HttpError(400, 'Para trocar as credenciais da Payer, preencha todos os 7 campos.');
+      await portalApi('/settings', { method: 'PUT', body: JSON.stringify({ hold_amount_cents: hold }) });
+      await portalApi('/settings/payment-config', {
+        method: 'PUT',
+        body: JSON.stringify({ gateway_type, ...Object.fromEntries(keys.map((k) => [k, String(c[k] ?? '').trim()])) }),
+      });
+      return json(await paymentSettings());
     }
     if (action === 'sync_products') return json(await syncProducts(admin));
     if (action === 'sync_staff') return json(await syncStaff(admin));
