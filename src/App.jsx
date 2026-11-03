@@ -11,6 +11,7 @@ import {
   LayoutDashboard, 
   Package, 
   Star, 
+  Ticket, 
   Users, 
   Truck, 
   Bell, 
@@ -74,6 +75,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import LoginScreen from './login';
+import CuponsScreen from './Cupons';
 
 // --- CARGOS ---
 // No banco os cargos aparecem com variações (admin, client, cliente, driver...).
@@ -4942,9 +4944,10 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
     { id: 'Estoque', label: 'Estoque' },
     { id: 'Destaques', label: 'Destaques' },
     { id: 'Fidelidade', label: 'Fidelidade' },
+    { id: 'Cupons', label: 'Cupons' },
     { id: 'Checklist', label: 'Checklist' },
-    { id: 'checklist_view_only_responses', label: 'Checklist: Apenas Respostas' },
-    { id: 'checklist_dashboard_view', label: 'Checklist: Dashboard' },
+    { id: 'checklist_view_only_responses', label: 'Checklist: Apenas Respostas', simple: true },
+    { id: 'checklist_dashboard_view', label: 'Checklist: Dashboard', simple: true },
     { id: 'Usuários', label: 'Usuários' },
     { id: 'Logs', label: 'Logs' },
     { id: 'Entregas', label: 'Entregas' },
@@ -5000,16 +5003,34 @@ const UsersScreen = ({ globalSearchTerm, session, logAction }) => {
 
   const handleOpenPermissionsModal = (user) => {
     setSelectedUser(user);
-    setEditingPermissions(user.permissions || {});
+    // permissão antiga (true) = acesso total ao módulo; vira Ver + Editar + Excluir marcados
+    const normalized = {};
+    Object.entries(user.permissions || {}).forEach(([k, v]) => {
+      if (v === true && !SIMPLE_PERMS.includes(k)) normalized[k] = { view: true, edit: true, delete: true };
+      else if (v) normalized[k] = v;
+    });
+    setEditingPermissions(normalized);
     setIsPermissionsModalOpen(true);
     setActiveMenuId(null);
   };
 
+  const SIMPLE_PERMS = ['checklist_view_only_responses', 'checklist_dashboard_view'];
+
+  // liga/desliga o acesso ao módulo (ligar já libera "Ver"; Editar e Excluir são marcados à parte)
   const handleTogglePermission = (moduleId) => {
-    setEditingPermissions(prev => ({
-      ...prev,
-      [moduleId]: !prev[moduleId]
-    }));
+    setEditingPermissions(prev => {
+      const next = { ...prev };
+      if (next[moduleId]) delete next[moduleId];
+      else next[moduleId] = SIMPLE_PERMS.includes(moduleId) ? true : { view: true, edit: false, delete: false };
+      return next;
+    });
+  };
+
+  const handleToggleLevel = (moduleId, level) => {
+    setEditingPermissions(prev => {
+      const cur = prev[moduleId] && typeof prev[moduleId] === 'object' ? prev[moduleId] : { view: true, edit: false, delete: false };
+      return { ...prev, [moduleId]: { ...cur, [level]: !cur[level] } };
+    });
   };
 
   const handleSavePermissions = async () => {
@@ -5761,7 +5782,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
              <div className="p-6 space-y-4">
                 <div className="text-center mb-4">
                    <h2 className="text-lg font-bold text-slate-900">{selectedUser.name}</h2>
-                   <p className="text-sm text-slate-500">Selecione os módulos que este usuário pode acessar.</p>
+                   <p className="text-sm text-slate-500">Ligue os módulos que este usuário pode acessar e marque o que ele pode fazer em cada um: ver, editar e excluir.</p>
                    {selectedUser.role === 'admin' && (
                      <p className="text-xs text-amber-600 mt-2 font-bold bg-amber-50 inline-block px-2 py-1 rounded">
                        Administradores têm acesso total por padrão.
@@ -5771,29 +5792,38 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto p-1">
                    {ALL_MODULES.map((module) => {
-                     const isAllowed = !!editingPermissions[module.id];
+                     const perm = editingPermissions[module.id];
+                     const isAllowed = !!perm;
+                     const levels = perm && typeof perm === 'object' ? perm : {};
                      return (
-                       <label 
+                       <div
                          key={module.id}
-                         className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                           isAllowed
-                             ? 'border-primary bg-blue-50/50' 
-                             : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50'
+                         className={`p-3 rounded-xl border-2 transition-all ${
+                           isAllowed ? 'border-primary bg-blue-50/50' : 'border-slate-100'
                          }`}
                        >
-                          <span className={`font-bold text-sm ${isAllowed ? 'text-primary' : 'text-slate-700'}`}>
-                            {module.label}
-                          </span>
-                          <div className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${isAllowed ? 'bg-primary' : 'bg-slate-300'}`}>
-                            <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isAllowed ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                          </div>
-                          <input 
-                             type="checkbox" 
-                             checked={isAllowed}
-                             onChange={() => handleTogglePermission(module.id)}
-                             className="hidden"
-                          />
-                       </label>
+                         <label className="flex items-center justify-between cursor-pointer">
+                           <span className={`font-bold text-sm ${isAllowed ? 'text-primary' : 'text-slate-700'}`}>
+                             {module.label}
+                           </span>
+                           <div className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${isAllowed ? 'bg-primary' : 'bg-slate-300'}`}>
+                             <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isAllowed ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                           </div>
+                           <input
+                              type="checkbox"
+                              checked={isAllowed}
+                              onChange={() => handleTogglePermission(module.id)}
+                              className="hidden"
+                           />
+                         </label>
+                         {isAllowed && !module.simple && (
+                           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-blue-100 text-xs font-semibold text-slate-600">
+                             <span className="flex items-center gap-1 text-slate-400"><input type="checkbox" checked readOnly disabled /> Ver</span>
+                             <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={!!levels.edit} onChange={() => handleToggleLevel(module.id, 'edit')} /> Editar</label>
+                             <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={!!levels.delete} onChange={() => handleToggleLevel(module.id, 'delete')} /> Excluir</label>
+                           </div>
+                         )}
+                       </div>
                      );
                    })}
                   </div>
@@ -10553,7 +10583,9 @@ function App() {
         if (moduleId === 'Dashboard' && userProfile.permissions['checklist_dashboard_view']) {
             return true;
         }
-        return !!userProfile.permissions[moduleId];
+        const perm = userProfile.permissions[moduleId];
+        if (perm && typeof perm === 'object') return perm.view !== false;
+        return !!perm;
     }
     
     // Identifica roles restritas (clientes, entregadores)
@@ -10566,6 +10598,18 @@ function App() {
 
     // Fallback para restritos sem permissão explícita
     return false;
+  };
+
+  // O que o usuário pode fazer num módulo: 'view' | 'edit' | 'delete'.
+  // Permissão antiga (true) vale como acesso total; admin sempre pode tudo.
+  const can = (moduleId, action) => {
+    if (!hasPermission(moduleId)) return false;
+    if (action === 'view') return true;
+    const role = userProfile?.role?.toLowerCase() || '';
+    if (role === 'admin' || role === 'administrador') return true;
+    const perm = userProfile?.permissions?.[moduleId];
+    if (perm && typeof perm === 'object') return !!perm[action];
+    return true;
   };
 
   // Autenticação Supabase
@@ -11077,6 +11121,7 @@ function App() {
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} />);
+      case 'Cupons': return renderIfAllowed('Cupons', <CuponsScreen canEdit={can('Cupons', 'edit')} canDelete={can('Cupons', 'delete')} currentUser={{ id: session?.user?.id, name: userProfile?.name || session?.user?.email }} showToast={showToast} logAction={logAction} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
       default: return renderIfAllowed('Dashboard', <DashboardScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} products={products} totalClients={totalClients} userProfile={userProfile} />);
@@ -11124,6 +11169,7 @@ function App() {
           <SidebarItem icon={Boxes} label="Estoque" active={activeTab === 'Estoque'} onClick={() => setActiveTab('Estoque')} isOpen={isSidebarOpen} visible={hasPermission('Estoque')} />
           <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} visible={hasPermission('Destaques')} />
           <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} visible={hasPermission('Fidelidade')} />
+          <SidebarItem icon={Ticket} label="Cupons" active={activeTab === 'Cupons'} onClick={() => setActiveTab('Cupons')} isOpen={isSidebarOpen} visible={hasPermission('Cupons')} />
           <SidebarItem icon={ClipboardList} label="Checklist" active={activeTab === 'Checklist'} onClick={() => setActiveTab('Checklist')} isOpen={isSidebarOpen} visible={hasPermission('Checklist')} />
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} visible={hasPermission('Usuários')} />
           <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} visible={hasPermission('Logs')} />
