@@ -50,7 +50,7 @@ const maskPhone = (v) => {
 
 // Cadastro do usuário, com edição. Só aparecem para editar as colunas que existem em profiles.
 // O e-mail não é editado aqui (ele é o login e mudaria na conta de acesso, não só no perfil).
-function RegisterPanel({ user, onUserUpdated, autoEdit = false }) {
+function RegisterPanel({ user, onUserUpdated, autoEdit = false, canEdit = true }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -73,7 +73,7 @@ function RegisterPanel({ user, onUserUpdated, autoEdit = false }) {
     setEditing(true);
   };
 
-  useEffect(() => { if (autoEdit) start(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (autoEdit && canEdit) start(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async (e) => {
     e.preventDefault();
@@ -157,7 +157,7 @@ function RegisterPanel({ user, onUserUpdated, autoEdit = false }) {
         <Field label="Cadastrado em">{user._created_at ? fmtDate(user._created_at) : null}</Field>
         <Field label="Origem do cadastro">{user._origin || 'Não identificada'}</Field>
       </dl>
-      <div className="flex justify-end"><button className="px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50" onClick={start}>Editar dados</button></div>
+      <div className="flex justify-end">{canEdit && <button className="px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50" onClick={start}>Editar dados</button>}</div>
     </div>
   );
 }
@@ -285,7 +285,7 @@ function CpfPanel({ user }) {
   );
 }
 
-export default function UserDetailTabs({ user: baseUser, summary, onUserUpdated, initialTab = 'resumo', startEditing = false }) {
+export default function UserDetailTabs({ user: baseUser, summary, onUserUpdated, initialTab = 'resumo', startEditing = false, canEdit = true }) {
   const [tab, setTab] = useState(initialTab);
   const [staff, setStaff] = useState(null);
   const [creation, setCreation] = useState(null); // registro de criação no log (quando o usuário foi criado pelo painel)
@@ -331,7 +331,7 @@ export default function UserDetailTabs({ user: baseUser, summary, onUserUpdated,
         ))}
       </div>
       {tab === 'resumo' && summary}
-      {tab === 'cadastro' && <RegisterPanel key={`${user.id}-${staff ? 's' : 'n'}`} user={user} onUserUpdated={onUserUpdated} autoEdit={startEditing} />}
+      {tab === 'cadastro' && <RegisterPanel key={`${user.id}-${staff ? 's' : 'n'}`} user={user} onUserUpdated={onUserUpdated} autoEdit={startEditing} canEdit={canEdit} />}
       {tab === 'cpf' && <CpfPanel user={user} />}
       {tab === 'funcionarios' && <EmployeesPanel user={user} />}
     </div>
