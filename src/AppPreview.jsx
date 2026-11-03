@@ -171,12 +171,11 @@ const HomePhone = ({ banner, total = 1, index = 0 }) => (
       {banner ? (
         <>
           <p className="font-bold text-[13px] mx-3 mt-4 mb-2">Parceiros em Destaque</p>
-          <div className="mx-3 rounded-[20px] overflow-hidden relative flex items-end" style={{ height: 160, background: '#1E3A8A' }}>
+          <div className="mx-3 rounded-[20px] overflow-hidden relative flex items-end" style={{ height: 190, background: '#1E3A8A' }}>
             {banner.image ? <img src={banner.image} alt="" className="absolute inset-0 w-full h-full object-cover" /> : null}
-            {banner.image ? <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} /> : null}
-            <div className="relative p-4 text-white w-full">
-              <p className="font-bold text-[15px] leading-5 break-words">{banner.title}</p>
-              <p className="text-[12px] mt-1 break-words line-clamp-3">{banner.description}</p>
+            {banner.image ? <div className="absolute left-0 right-0 bottom-0" style={{ height: 90, background: 'linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.6))' }} /> : null}
+            <div className="relative p-5 text-white w-full">
+              <p className="font-bold text-[16px] leading-5 break-words line-clamp-2">{banner.title}</p>
             </div>
           </div>
           <div className="flex justify-center items-center gap-1.5 mt-2">
@@ -197,13 +196,13 @@ const HomePhone = ({ banner, total = 1, index = 0 }) => (
 // Destaque sendo criado/editado (celular ao lado do formulário)
 export const HighlightAppPreview = ({ highlight }) => {
   const h = highlight || {};
-  const banner = { title: h.title || 'Título da promoção', description: h.description || 'Descrição da promoção', image: h.image || null };
+  const banner = { title: h.title || 'Título da promoção', image: h.image || null, link: h.link || '' };
   return (
     <div>
       <p className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Como fica no app</p>
       <HomePhone banner={banner} />
       <p className="text-[11px] text-slate-400 text-center mt-2 max-w-[270px] mx-auto">
-        No banner, a foto preenche o espaço (pode cortar as bordas). Use uma imagem larga, na proporção de 2:1.
+        {h.link ? 'Ao tocar, o cliente abre o link cadastrado. ' : 'Sem link: o toque não faz nada. '}A foto preenche o espaço (pode cortar as bordas): use imagem larga, 2:1.
       </p>
     </div>
   );
@@ -215,7 +214,7 @@ export const HomeHighlightsPreview = ({ highlights }) => {
   const [i, setI] = useState(0);
   const idx = list.length ? Math.min(i, list.length - 1) : 0;
   const cur = list[idx];
-  const banner = cur ? { title: cur.title, description: cur.description, image: cur.image } : null;
+  const banner = cur ? { title: cur.title, image: cur.image, link: cur.link } : null;
   return (
     <div>
       <p className="text-xs font-bold text-slate-500 uppercase mb-2 text-center">Como está hoje no app</p>

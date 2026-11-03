@@ -2331,6 +2331,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
         id: h.id,
         title: h.title,
         description: h.subtitle,
+        link: h.link_url || '',
         expiration: h.expires_at,
         image: h.image_url,
         archived: h.archived || false
@@ -2367,6 +2368,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
     id: null,
     title: '',
     description: '',
+    link: '',
     expiration: '',
     image: null,
     imageFile: null
@@ -2416,7 +2418,8 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
 
       const highlightData = {
         title: newHighlight.title || '',
-        subtitle: newHighlight.description || '',
+        subtitle: '',
+        link_url: String(newHighlight.link || '').trim() || null,
         expires_at: expiration ? `${expiration}T23:59:59-03:00` : null,
         image_url: imageUrl,
         updated_at: new Date().toISOString()
@@ -2539,13 +2542,14 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
         id: highlight.id,
         title: highlight.title,
         description: highlight.description,
+        link: highlight.link || '',
         expiration: highlight.expiration ? new Date(highlight.expiration).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) : '',
         image: highlight.image,
         imageFile: null
       });
       setIsEditing(true);
     } else {
-      setNewHighlight({ id: null, title: '', description: '', expiration: '', image: null });
+      setNewHighlight({ id: null, title: '', description: '', link: '', expiration: '', image: null });
       setIsEditing(false);
     }
     setIsModalOpen(true);
@@ -2553,7 +2557,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setNewHighlight({ id: null, title: '', description: '', expiration: '', image: null });
+    setNewHighlight({ id: null, title: '', description: '', link: '', expiration: '', image: null });
   };
 
   const filteredHighlights = highlights.filter(h => 
@@ -2670,7 +2674,6 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                              setNewHighlight(prev => ({
                                  ...prev,
                                  title: product.name,
-                                 description: product.description || '',
                                  image: product.image || null
                              }));
                          }
@@ -2725,14 +2728,17 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                 </div>
 
                 <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Descrição</label>
-                   <textarea 
-                      value={newHighlight.description}
-                      onChange={(e) => setNewHighlight({...newHighlight, description: e.target.value})}
-                      placeholder="Detalhes da promoção..."
-                      rows="3"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 resize-none placeholder:text-slate-400"
+                   <label className="block text-sm font-bold text-slate-700 mb-1.5">Link ao tocar no destaque (opcional)</label>
+                   <input
+                      type="url"
+                      value={newHighlight.link || ''}
+                      onChange={(e) => setNewHighlight({...newHighlight, link: e.target.value})}
+                      placeholder="Cole aqui o link copiado do produto no app"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                    />
+                   <p className="text-xs text-slate-500 mt-1.5">
+                      No app, abra o produto, toque em <b>Copiar link</b> e cole aqui. Ao tocar no destaque, o cliente vai direto para esse produto. Pode ser também outro link (site, WhatsApp).
+                   </p>
                 </div>
 
                 <div>
@@ -2857,7 +2863,11 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                    <h3 className="font-bold text-slate-900 line-clamp-1">
                      <HighlightText text={highlight.title} highlight={globalSearchTerm} />
                    </h3>
-                   <p className="text-xs text-slate-500 mt-1 mb-2 line-clamp-2">{highlight.description}</p>
+                   {highlight.link ? (
+                     <p className="text-xs text-primary mt-1 mb-2 truncate" title={highlight.link}>Link: {highlight.link}</p>
+                   ) : (
+                     <p className="text-xs text-slate-400 mt-1 mb-2">Sem link ao tocar</p>
+                   )}
                    {highlight.expiration && (
                      <div className="flex items-center gap-1 text-xs text-slate-500 mt-2">
                        <Calendar size={12} />
