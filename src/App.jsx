@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient';
 import IntegracoesScreen from './Integracoes';
 import UserDetailTabs from './UserDetail';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
+import { ProductAppPreview, HighlightAppPreview } from './AppPreview';
 import logoSmall from './assets/logoso.png';
 import logoFull from './assets/logo-atadiesel-branco.png';
 import { 
@@ -1494,6 +1495,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   };
 
   const [isCreateProductModalOpen, setIsCreateProductModalOpen] = useState(false);
+  const [showProductPreview, setShowProductPreview] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
@@ -1838,6 +1840,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
           onClick={() => setIsCreateProductModalOpen(false)}
         >
+          <div className="flex items-start justify-center gap-5 w-full max-h-[90vh]">
           <div 
             className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-up max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
@@ -1846,9 +1849,18 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                    {isEditing ? 'Editar Produto' : 'Cadastro de Produto'}
                 </h3>
-                <button onClick={() => setIsCreateProductModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
-                   <X size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                   <button
+                      type="button"
+                      onClick={() => setShowProductPreview(v => !v)}
+                      className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors ${showProductPreview ? 'bg-primary text-white border-primary' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                   >
+                      <Eye size={16} /> Pré-visualizar no app
+                   </button>
+                   <button onClick={() => setIsCreateProductModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
+                      <X size={20} />
+                   </button>
+                </div>
              </div>
              
              <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
@@ -1989,6 +2001,12 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                    Salvar Produto
                 </button>
              </div>
+          </div>
+          {showProductPreview && (
+            <div className="hidden lg:block w-[310px] shrink-0 bg-white rounded-2xl shadow-2xl p-4 overflow-y-auto max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+              <ProductAppPreview product={newProduct} />
+            </div>
+          )}
           </div>
         </div>
       )}
@@ -2624,6 +2642,7 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"
           onClick={closeModal}
         >
+          <div className="flex items-start justify-center gap-5 w-full max-h-[90vh]">
           <div 
             className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-scale-up"
             onClick={(e) => e.stopPropagation()}
@@ -2741,6 +2760,10 @@ const HighlightsScreen = ({ globalSearchTerm, products, logAction }) => {
                    )}
                 </button>
              </div>
+          </div>
+          <div className="hidden lg:block w-[310px] shrink-0 bg-white rounded-2xl shadow-2xl p-4 overflow-y-auto max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <HighlightAppPreview highlight={newHighlight} />
+          </div>
           </div>
         </div>
       )}
