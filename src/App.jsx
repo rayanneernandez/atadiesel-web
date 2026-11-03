@@ -11047,6 +11047,39 @@ function App() {
       statusTimestamp: newStatus === 'Em Trânsito' ? Date.now() : d.statusTimestamp 
     } : d));
 
+    // Cancelamento passa pelo servidor: ele cancela e devolve pontos usados, cupom e (se pago) avisa do estorno do dinheiro
+    if (dbStatus === 'cancelled') {
+      try {
+        const { data: { session: sess } } = await supabase.auth.getSession();
+        const base = import.meta.env.VITE_BACKEND_URL || 'https://atadiesel-main.onrender.com';
+        const resp = await fetch(`${base}/orders/${encodeURIComponent(id)}/cancel`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sess?.access_token}` },
+          body: JSON.stringify({}),
+        });
+        if (resp.status !== 404) {
+          const out = await resp.json().catch(() => ({}));
+          if (resp.status === 403) { showToast(out?.error || 'Sem permissão para cancelar pedidos.', 'error'); fetchDeliveries(); return; }
+          if (!resp.ok && resp.status !== 202) { showToast(out?.error || 'Não foi possível cancelar o pedido.', 'error'); fetchDeliveries(); return; }
+          const r = out?.refund || {};
+          if (resp.status === 202) {
+            showToast('Pedido cancelado, mas a devolução de pontos/cupom falhou. Tente cancelar de novo para repetir a devolução.', 'warning');
+          } else if (r.moneyStatus === 'manual_required') {
+            const val = Number(r.moneyAmount || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            showToast(`Pedido cancelado. Pontos e cupom devolvidos. ATENÇÃO: devolva ${val} ao cliente no portal da Payer.`, 'warning');
+          } else {
+            showToast('Pedido cancelado. Pontos e cupom devolvidos ao cliente.', 'success');
+          }
+          fetchDeliveries();
+          return;
+        }
+        // 404: servidor ainda sem a rota nova, cai no cancelamento antigo abaixo
+      } catch (err) {
+        console.error('Erro ao cancelar pelo servidor:', err);
+        showToast('Servidor indisponível: o pedido foi cancelado, mas pontos/cupom NÃO foram devolvidos.', 'warning');
+      }
+    }
+
     const { error } = await supabase
       .from('orders')
       .update({ 
