@@ -1505,6 +1505,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
   const [isEditing, setIsEditing] = useState(false);
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
+  const [deliveryFilter, setDeliveryFilter] = useState('all'); // 'all' | 'yes' | 'no'
   const [activeTab, setActiveTab] = useState('active'); // 'active' | 'archived'
   const [originalProduct, setOriginalProduct] = useState(null);
   
@@ -1526,6 +1527,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
     stock: '',
     category: '',
     sku: '',
+    deliveryAllowed: false,
     image: null,
     imageFile: null
   });
@@ -1550,8 +1552,9 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
       (product.sku || '').toLowerCase().includes(term);
 
     const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(product.category);
+    const matchesDelivery = deliveryFilter === 'all' || (deliveryFilter === 'yes' ? !!product.deliveryAllowed : !product.deliveryAllowed);
 
-    return matchesSearch && matchesCategory;
+    return matchesSearch && matchesCategory && matchesDelivery;
   });
 
   // --- Paginação (50 por página) ---
@@ -1667,6 +1670,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
         stock: parseInt(newProduct.stock),
         category: newProduct.category,
         sku: newProduct.sku,
+        delivery_allowed: !!newProduct.deliveryAllowed,
         image_url: imageUrl,
         updated_at: new Date().toISOString(), // Envia explicitamente para evitar erro de banco
         is_active: true // Força o produto como ativo
@@ -1677,7 +1681,13 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
       }
 
       if (isEditing) {
-        const { error } = await supabase.from('products').update(productData).eq('id', newProduct.id);
+        let { error } = await supabase.from('products').update(productData).eq('id', newProduct.id);
+        if (error && /delivery_allowed/i.test(error.message || '')) {
+          // coluna nova ainda não existe no banco: salva sem ela e avisa
+          const { delivery_allowed, ...semEntrega } = productData;
+          ({ error } = await supabase.from('products').update(semEntrega).eq('id', newProduct.id));
+          showToast("Falta rodar o SQL da coluna 'delivery_allowed' no Supabase: o campo Permite entrega não foi salvo.", 'warning');
+        }
         if (error) throw error;
 
         // Log Product Changes
@@ -1695,6 +1705,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
             if (originalProduct.category !== newProduct.category) changes.push({ field: 'Categoria', old: originalProduct.category, new: newProduct.category });
             if (originalProduct.stock != newProduct.stock) changes.push({ field: 'Estoque', old: originalProduct.stock, new: newProduct.stock });
             if (originalProduct.sku !== newProduct.sku) changes.push({ field: 'SKU', old: originalProduct.sku, new: newProduct.sku });
+            if (!!originalProduct.deliveryAllowed !== !!newProduct.deliveryAllowed) changes.push({ field: 'Permite entrega', old: originalProduct.deliveryAllowed ? 'Sim' : 'Não', new: newProduct.deliveryAllowed ? 'Sim' : 'Não' });
             if (originalProduct.image !== imageUrl) changes.push({ field: 'Imagem', old: 'Anterior', new: 'Nova' });
             
             if (changes.length > 0) {
@@ -1704,11 +1715,20 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
 
         showToast("Produto atualizado com sucesso!", 'success');
       } else {
-        const { error } = await supabase.from('products').insert([productData]);
+        let { error } = await supabase.from('products').insert([productData]);
+        if (error && /delivery_allowed/i.test(error.message || '')) {
+          const { delivery_allowed, ...semEntrega } = productData;
+          ({ error } = await supabase.from('products').insert([semEntrega]));
+          showToast("Falta rodar o SQL da coluna 'delivery_allowed' no Supabase: o campo Permite entrega não foi salvo.", 'warning');
+        }
         if (error) throw error;
-        
+
         if (logAction) {
-             logAction('PRODUCT_CHANGE', newProduct.name, { action: 'Criação', details: 'Novo produto cadastrado' });
+             logAction('PRODUCT_CHANGE', newProduct.name, {
+               action: 'Criação',
+               details: 'Novo produto cadastrado',
+               ...(newProduct.deliveryAllowed ? { changes: [{ field: 'Permite entrega', old: '—', new: 'Sim' }] } : {}),
+             });
         }
         
         showToast("Produto cadastrado com sucesso!", 'success');
@@ -1725,6 +1745,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
           stock: '',
           category: '',
           sku: '',
+          deliveryAllowed: false,
           image: null,
           imageFile: null
       });
@@ -1849,6 +1870,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
         stock: '',
         category: '',
         sku: '',
+        deliveryAllowed: false,
         image: null
     });
     setIsCreateProductModalOpen(true);
@@ -2021,6 +2043,24 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400"
                       />
                    </div>
+                </div>
+
+                {/* Permite entrega */}
+                <div className="flex items-start justify-between gap-4 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                   <div>
+                      <p className="text-sm font-bold text-slate-700">Permite entrega</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Se desligado, o produto só pode ser retirado na loja ou na loja autônoma.</p>
+                   </div>
+                   <button
+                      type="button"
+                      role="switch"
+                      aria-checked={!!newProduct.deliveryAllowed}
+                      disabled={!canEdit}
+                      onClick={() => setNewProduct(prev => ({ ...prev, deliveryAllowed: !prev.deliveryAllowed }))}
+                      className={`w-11 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors disabled:opacity-50 ${newProduct.deliveryAllowed ? 'bg-primary' : 'bg-slate-300'}`}
+                   >
+                      <span className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${newProduct.deliveryAllowed ? 'translate-x-5' : 'translate-x-0'}`}></span>
+                   </button>
                 </div>
              </div>
 
@@ -2212,7 +2252,7 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                    e.stopPropagation();
                    setIsFilterMenuOpen(!isFilterMenuOpen);
                 }}
-                className={`p-2 border rounded-lg hover:bg-slate-50 transition-colors ${isFilterMenuOpen || selectedCategories.length > 0 ? 'border-primary text-primary bg-blue-50' : 'border-slate-200 text-slate-600'}`}
+                className={`p-2 border rounded-lg hover:bg-slate-50 transition-colors ${isFilterMenuOpen || selectedCategories.length > 0 || deliveryFilter !== 'all' ? 'border-primary text-primary bg-blue-50' : 'border-slate-200 text-slate-600'}`}
              >
                 <FilterIcon size={20} />
              </button>
@@ -2224,13 +2264,26 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
                 >
                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                       <h4 className="font-bold text-slate-700">Filtrar por</h4>
-                      {selectedCategories.length > 0 && (
-                        <button onClick={() => setSelectedCategories([])} className="text-xs text-red-500 hover:underline">
+                      {(selectedCategories.length > 0 || deliveryFilter !== 'all') && (
+                        <button onClick={() => { setSelectedCategories([]); setDeliveryFilter('all'); }} className="text-xs text-red-500 hover:underline">
                            Limpar
                         </button>
                       )}
                    </div>
                    <div className="p-2 max-h-64 overflow-y-auto custom-scrollbar">
+                      <p className="px-2 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Permite entrega</p>
+                      <div className="flex gap-1 px-2 pb-2">
+                         {[['all', 'Todos'], ['yes', 'Sim'], ['no', 'Não']].map(([k, label]) => (
+                            <button
+                               key={k}
+                               type="button"
+                               onClick={() => setDeliveryFilter(k)}
+                               className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${deliveryFilter === k ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            >
+                               {label}
+                            </button>
+                         ))}
+                      </div>
                       <p className="px-2 py-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">Categorias</p>
                       {uniqueCategories.length === 0 ? (
                         <div className="p-3 text-sm text-slate-500 text-center">Nenhuma categoria encontrada</div>
@@ -2267,7 +2320,10 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
           <tbody>
             {pagedProducts.map((product) => (
               <tr key={product.id} className="bg-white border-b hover:bg-slate-50">
-                <td className="px-6 py-4 font-medium text-slate-900"><HighlightText text={product.name} highlight={globalSearchTerm} /></td>
+                <td className="px-6 py-4 font-medium text-slate-900">
+                  <HighlightText text={product.name} highlight={globalSearchTerm} />
+                  {product.deliveryAllowed && <span className="ml-2 align-middle text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Entrega</span>}
+                </td>
                 <td className="px-6 py-4"><HighlightText text={product.category} highlight={globalSearchTerm} /></td>
                 <td className="px-6 py-4">
                     <div className="flex flex-col">
@@ -10926,6 +10982,7 @@ function App() {
           sku: p.sku,
           image: p.image_url,
           archived: p.archived || false,
+          deliveryAllowed: p.delivery_allowed === true, // só Arla é entregue; o resto é retirada
           // Mantemos os valores originais para referência se necessário
           rawPriceCents: priceCents,
           rawOldPriceCents: oldPriceCents
