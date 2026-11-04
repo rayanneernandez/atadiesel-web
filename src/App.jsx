@@ -11064,9 +11064,11 @@ function App() {
           const r = out?.refund || {};
           if (resp.status === 202) {
             showToast('Pedido cancelado, mas a devolução de pontos/cupom falhou. Tente cancelar de novo para repetir a devolução.', 'warning');
+          } else if (r.moneyStatus === 'refunded_auto') {
+            showToast('Pedido cancelado. Pontos, cupom e dinheiro devolvidos ao cliente.', 'success');
           } else if (r.moneyStatus === 'manual_required') {
             const val = Number(r.moneyAmount || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-            showToast(`Pedido cancelado. Pontos e cupom devolvidos. ATENÇÃO: devolva ${val} ao cliente no portal da Payer.`, 'warning');
+            showToast(`Pedido cancelado. Pontos e cupom devolvidos. ATENÇÃO: devolva ${val} ao cliente no site do adquirente (a Payer só estorna por API no mesmo dia do pagamento).`, 'warning');
           } else {
             showToast('Pedido cancelado. Pontos e cupom devolvidos ao cliente.', 'success');
           }
