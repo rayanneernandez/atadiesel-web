@@ -207,6 +207,12 @@ const Toast = ({ message, type, onClose }) => {
   );
 };
   
+// Zoom atual da página (escala do painel). Posições calculadas com getBoundingClientRect precisam dividir por ele.
+const uiZoom = () => {
+  const z = parseFloat(getComputedStyle(document.documentElement).zoom);
+  return Number.isFinite(z) && z > 0 ? z : 1;
+};
+
 const ToastContainer = ({ toasts, removeToast }) => {
   return createPortal(
     <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
@@ -6928,9 +6934,10 @@ const ColumnFilter = ({ label, values, selected, onChange, onSort, sortDir, alig
 
   const openMenu = () => {
     const r = btnRef.current.getBoundingClientRect();
+    const z = uiZoom();
     const width = 260;
-    const left = Math.min(Math.max(8, align === 'right' ? r.right - width : r.left), window.innerWidth - width - 8);
-    setPos({ top: r.bottom + 6, left });
+    const left = Math.min(Math.max(8, align === 'right' ? r.right - width * z : r.left), window.innerWidth - width * z - 8);
+    setPos({ top: r.bottom / z + 6, left: left / z });
     setDraft(new Set(selected ?? values));
     setSearch('');
     setOpen(true);
@@ -9203,7 +9210,8 @@ const SalesColumnFilter = ({ label, values, selected, onChange, right = false })
     e.stopPropagation();
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 270)) });
+      const z = uiZoom();
+      setPos({ top: r.bottom / z + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 270 * z)) / z });
       setQ('');
     }
     setOpen(o => !o);
