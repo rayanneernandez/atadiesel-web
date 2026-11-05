@@ -11403,7 +11403,6 @@ function App() {
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} isOpen={isSidebarOpen} visible={hasPermission('Dashboard')} />
           <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} visible={hasPermission('Produtos')} />
           <SidebarItem icon={Boxes} label="Estoque" active={activeTab === 'Estoque'} onClick={() => setActiveTab('Estoque')} isOpen={isSidebarOpen} visible={hasPermission('Estoque')} />
-          <SidebarItem icon={MapPin} label="Mapa da Loja" active={activeTab === 'Mapa da Loja'} onClick={() => setActiveTab('Mapa da Loja')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
           <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} visible={hasPermission('Destaques')} />
           <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} visible={hasPermission('Fidelidade')} />
           <SidebarItem icon={Ticket} label="Cupons" active={activeTab === 'Cupons'} onClick={() => setActiveTab('Cupons')} isOpen={isSidebarOpen} visible={hasPermission('Cupons')} />
@@ -11427,6 +11426,7 @@ function App() {
           />
           <SidebarItem icon={Clock} label="Retirada" active={activeTab === 'Retirada'} onClick={() => setActiveTab('Retirada')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
+          <SidebarItem icon={MapPin} label="Mapa da Loja" active={activeTab === 'Mapa da Loja'} onClick={() => setActiveTab('Mapa da Loja')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
           <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
           <SidebarItem icon={Plug} label="Integrações" active={activeTab === 'Integrações'} onClick={() => setActiveTab('Integrações')} isOpen={isSidebarOpen} visible={hasPermission('Integrações')} />
           <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} isOpen={isSidebarOpen} visible={hasPermission('Configurações')} />
