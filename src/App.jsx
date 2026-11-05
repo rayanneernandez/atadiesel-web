@@ -76,6 +76,7 @@ import {
 } from 'lucide-react';
 import LoginScreen from './login';
 import CuponsScreen from './Cupons';
+import MapaLojaScreen from './MapaLoja';
 
 // --- CARGOS ---
 // No banco os cargos aparecem com variações (admin, client, cliente, driver...).
@@ -5018,6 +5019,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, can
     { id: 'Destaques', label: 'Destaques' },
     { id: 'Fidelidade', label: 'Fidelidade' },
     { id: 'Cupons', label: 'Cupons' },
+    { id: 'Mapa da Loja', label: 'Mapa da Loja' },
     { id: 'Checklist', label: 'Checklist' },
     { id: 'checklist_view_only_responses', label: 'Checklist: Apenas Respostas', simple: true },
     { id: 'checklist_dashboard_view', label: 'Checklist: Dashboard', simple: true },
@@ -11255,6 +11257,7 @@ function App() {
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Mapa da Loja': return renderIfAllowed('Mapa da Loja', <MapaLojaScreen canEdit={can('Mapa da Loja', 'edit')} canDelete={can('Mapa da Loja', 'delete')} showToast={showToast} logAction={logAction} />);
       case 'Cupons': return renderIfAllowed('Cupons', <CuponsScreen canEdit={can('Cupons', 'edit')} canDelete={can('Cupons', 'delete')} currentUser={{ id: session?.user?.id, name: userProfile?.name || session?.user?.email }} showToast={showToast} logAction={logAction} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} canEdit={can('Fidelidade', 'edit')} canDelete={can('Fidelidade', 'delete')} />);
       case 'Checklist': return renderIfAllowed('Checklist', <ChecklistScreen session={session} showToast={showToast} />);
@@ -11301,6 +11304,7 @@ function App() {
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} isOpen={isSidebarOpen} visible={hasPermission('Dashboard')} />
           <SidebarItem icon={Package} label="Produtos" active={activeTab === 'Produtos'} onClick={() => setActiveTab('Produtos')} isOpen={isSidebarOpen} visible={hasPermission('Produtos')} />
           <SidebarItem icon={Boxes} label="Estoque" active={activeTab === 'Estoque'} onClick={() => setActiveTab('Estoque')} isOpen={isSidebarOpen} visible={hasPermission('Estoque')} />
+          <SidebarItem icon={MapPin} label="Mapa da Loja" active={activeTab === 'Mapa da Loja'} onClick={() => setActiveTab('Mapa da Loja')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
           <SidebarItem icon={Star} label="Destaques" active={activeTab === 'Destaques'} onClick={() => setActiveTab('Destaques')} isOpen={isSidebarOpen} visible={hasPermission('Destaques')} />
           <SidebarItem icon={Award} label="Fidelidade" active={activeTab === 'Fidelidade'} onClick={() => setActiveTab('Fidelidade')} isOpen={isSidebarOpen} visible={hasPermission('Fidelidade')} />
           <SidebarItem icon={Ticket} label="Cupons" active={activeTab === 'Cupons'} onClick={() => setActiveTab('Cupons')} isOpen={isSidebarOpen} visible={hasPermission('Cupons')} />
