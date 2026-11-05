@@ -83,3 +83,26 @@ body {
 .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
 .sidebar-scroll::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 9999px; }
 .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+/* ---------------------------------------------------------------------------
+   Escala padrão do painel: a tela abre como se o navegador estivesse em 67%.
+   Muda o valor de --ui-scale (1 = 100%). Quem quiser outro tamanho abre o painel
+   com ?escala=100 (ou 80, 90...) e o navegador lembra.
+   Alturas em vh/screen precisam compensar o zoom para continuar ocupando a janela toda.
+--------------------------------------------------------------------------- */
+:root { --ui-scale: 0.67; }
+@supports (zoom: 1) {
+  html { zoom: var(--ui-scale); }
+  .h-screen { height: calc(100vh / var(--ui-scale)); }
+  .min-h-screen { min-height: calc(100vh / var(--ui-scale)); }
+  [class~="h-[60vh]"] { height: calc(60vh / var(--ui-scale)); }
+  [class~="max-h-[45vh]"] { max-height: calc(45vh / var(--ui-scale)); }
+  [class~="max-h-[50vh]"] { max-height: calc(50vh / var(--ui-scale)); }
+  [class~="max-h-[70vh]"] { max-height: calc(70vh / var(--ui-scale)); }
+  [class~="max-h-[85vh]"] { max-height: calc(85vh / var(--ui-scale)); }
+  [class~="max-h-[90vh]"] { max-height: calc(90vh / var(--ui-scale)); }
+  [class~="max-h-[92vh]"] { max-height: calc(92vh / var(--ui-scale)); }
+  @media (min-width: 1024px) {
+    [class~="lg:max-h-[78vh]"] { max-height: calc(78vh / var(--ui-scale)); }
+  }
+}
