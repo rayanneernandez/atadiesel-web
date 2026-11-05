@@ -1,6 +1,6 @@
 // Módulo "Regras de Entrega" (Entregas > Regras de Entrega): define o pedido mínimo para entrega e quais produtos
-// podem ser entregues (com quantidade mínima opcional). SQL: entrega_regras_kits.sql (cria delivery_settings,
-// products.delivery_min_qty, kits e kit_items). Sem 'Editar' em Entregas a tela é somente leitura.
+// podem ser entregues (com quantidade mínima e/ou valor mínimo opcionais por produto). SQL: entrega_regras_kits.sql (cria delivery_settings,
+// products.delivery_min_qty, kits e kit_items) e entrega_minimo_valor.sql (products.delivery_min_value). Sem 'Editar' em Entregas a tela é somente leitura.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Save, AlertTriangle, Truck } from 'lucide-react';
 import { supabase } from './supabaseClient';
@@ -14,6 +14,9 @@ const toNum = (v) => {
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const inputCls = 'w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed';
 const SQL_MSG = "Faltam colunas/tabelas no banco. Rode o arquivo 'entrega_regras_kits.sql' no Supabase (SQL Editor) e recarregue.";
+const SQL_MSG_VAL = "A coluna de valor mínimo ainda não existe no banco. Rode 'entrega_minimo_valor.sql' no Supabase (SQL Editor): alter table public.products add column if not exists delivery_min_value numeric;";
+// 1234.5 -> '1234,5' (os campos aceitam vírgula)
+const fmtField = (n) => (n == null ? '' : String(n).replace('.', ','));
 
 const isMissing = (err) => /does not exist|could not find|relation|schema cache|column/i.test(String(err?.message || ''));
 
@@ -26,7 +29,8 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
 
   const [products, setProducts] = useState([]);
   const [hasMinQtyCol, setHasMinQtyCol] = useState(true);
-  const [edits, setEdits] = useState({}); // id -> { allowed, minQty }
+  const [hasMinValCol, setHasMinValCol] = useState(true);
+  const [edits, setEdits] = useState({}); // id -> { allowed, minQty, minVal }
   const [savingProducts, setSavingProducts] = useState(false);
 
   const [search, setSearch] = useState('');
@@ -53,6 +57,7 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
     } else {
       const rows = (prods || []).filter((p) => p.is_active !== false && !p.archived);
       setHasMinQtyCol(rows.length === 0 || Object.prototype.hasOwnProperty.call(rows[0], 'delivery_min_qty'));
+      setHasMinValCol(rows.length === 0 || Object.prototype.hasOwnProperty.call(rows[0], 'delivery_min_value'));
       if (rows.length && !Object.prototype.hasOwnProperty.call(rows[0], 'delivery_allowed')) setMissing(true);
       setProducts(rows);
     }
@@ -66,19 +71,20 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
     const e = edits[p.id];
     return {
       allowed: e ? e.allowed : !!p.delivery_allowed,
-      minQty: e ? e.minQty : (p.delivery_min_qty == null ? '' : String(p.delivery_min_qty).replace('.', ',')),
+      minQty: e ? e.minQty : fmtField(p.delivery_min_qty),
+      minVal: e ? e.minVal : fmtField(p.delivery_min_value),
     };
   };
 
   const setEdit = (p, patch) => {
     if (!canEdit) return;
     setEdits((prev) => {
-      const base = prev[p.id] || { allowed: !!p.delivery_allowed, minQty: p.delivery_min_qty == null ? '' : String(p.delivery_min_qty).replace('.', ',') };
+      const orig = { allowed: !!p.delivery_allowed, minQty: fmtField(p.delivery_min_qty), minVal: fmtField(p.delivery_min_value) };
+      const base = prev[p.id] || orig;
       const next = { ...base, ...patch };
-      // sem permitir entrega não existe quantidade mínima
-      if (!next.allowed) next.minQty = '';
-      const orig = { allowed: !!p.delivery_allowed, minQty: p.delivery_min_qty == null ? '' : String(p.delivery_min_qty).replace('.', ',') };
-      const same = next.allowed === orig.allowed && String(next.minQty) === String(orig.minQty);
+      // sem permitir entrega não existe mínimo (nem de quantidade nem de valor)
+      if (!next.allowed) { next.minQty = ''; next.minVal = ''; }
+      const same = next.allowed === orig.allowed && String(next.minQty) === String(orig.minQty) && String(next.minVal) === String(orig.minVal);
       const copy = { ...prev };
       if (same) delete copy[p.id];
       else copy[p.id] = next;
@@ -132,6 +138,13 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
           return showToast?.(`Quantidade mínima inválida em "${p?.title}". Use um número maior que zero ou deixe vazio.`, 'warning');
         }
       }
+      if (e.allowed && e.minVal !== '') {
+        const v = toNum(e.minVal);
+        if (Number.isNaN(v) || v < 0) {
+          const p = products.find((x) => String(x.id) === String(id));
+          return showToast?.(`Valor mínimo inválido em "${p?.title}". Use um valor de R$ 0 ou mais, ou deixe vazio.`, 'warning');
+        }
+      }
     }
     setSavingProducts(true);
     let ok = 0;
@@ -142,6 +155,8 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
       const p = products.find((x) => String(x.id) === String(id));
       const patch = { delivery_allowed: !!e.allowed };
       if (hasMinQtyCol) patch.delivery_min_qty = e.allowed && e.minQty !== '' ? toNum(e.minQty) : null;
+      // valor mínimo 0 = sem mínimo por valor; se a coluna não existir ainda, salva o resto e avisa no final
+      if (hasMinValCol) patch.delivery_min_value = e.allowed && e.minVal !== '' && toNum(e.minVal) > 0 ? toNum(e.minVal) : null;
       const { error } = await supabase.from('products').update(patch).eq('id', id);
       if (error) {
         fail++;
@@ -151,13 +166,18 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
       ok++;
       const changes = [];
       if (!!p.delivery_allowed !== !!e.allowed) changes.push({ field: 'Permite entrega', old: p.delivery_allowed ? 'Sim' : 'Não', new: e.allowed ? 'Sim' : 'Não' });
-      const oldQ = p.delivery_min_qty == null ? '' : String(p.delivery_min_qty).replace('.', ',');
+      const oldQ = fmtField(p.delivery_min_qty);
       if (hasMinQtyCol && oldQ !== (e.allowed ? e.minQty : '')) changes.push({ field: 'Quantidade mínima para entrega', old: oldQ || '—', new: (e.allowed ? e.minQty : '') || '—' });
+      const oldV = fmtField(p.delivery_min_value);
+      const newV = e.allowed && e.minVal !== '' && toNum(e.minVal) > 0 ? e.minVal : '';
+      if (hasMinValCol && oldV !== newV) changes.push({ field: 'Valor mínimo para entrega (R$)', old: oldV || '—', new: newV || '—' });
       if (changes.length) done.push({ title: p.title, changes });
     }
     setSavingProducts(false);
     done.forEach((d) => logAction?.('PRODUCT_CHANGE', d.title, { changes: d.changes }));
+    const tentouValor = !hasMinValCol && entries.some(([, e]) => e.allowed && e.minVal !== '' && toNum(e.minVal) > 0);
     if (fail) showToast?.(`${ok} salvo(s), ${fail} com erro: ${isMissing({ message: firstError }) ? SQL_MSG : firstError}`, 'error');
+    else if (tentouValor) showToast?.(`${ok} produto(s) atualizado(s), mas o valor mínimo NÃO foi salvo. ${SQL_MSG_VAL}`, 'warning');
     else showToast?.(`${ok} produto(s) atualizado(s).`, 'success');
     load();
   };
@@ -168,7 +188,7 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
     <div className="space-y-6 animate-fade-in">
       <div>
         <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Truck size={24} className="text-primary" /> Regras de Entrega</h2>
-        <p className="text-slate-500 text-sm">Define o valor mínimo do pedido de entrega e quais produtos podem ser entregues. Retirada na loja não tem regra.</p>
+        <p className="text-slate-500 text-sm">Define o valor mínimo do pedido de entrega e quais produtos podem ser entregues, com quantidade mínima e/ou valor mínimo por produto. Retirada na loja não tem regra.</p>
       </div>
 
       {missing && (
@@ -225,6 +245,13 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
         {!hasMinQtyCol && (
           <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">A coluna de quantidade mínima ainda não existe no banco: rode o SQL para habilitar esse campo.</p>
         )}
+        {!hasMinValCol && (
+          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">{SQL_MSG_VAL}</p>
+        )}
+        <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+          <strong>Como funciona o mínimo por produto:</strong> se você preencher só a <em>quantidade</em>, vale a quantidade; se preencher só o <em>valor</em>, vale o valor (em compras daquele produto);
+          se preencher <strong>os dois</strong>, o produto passa quando o pedido atingir <strong>qualquer um</strong> deles (quantidade <strong>ou</strong> valor). Vazio = sem mínimo.
+        </p>
 
         <div className="overflow-x-auto border border-slate-100 rounded-xl">
           <table className="w-full text-sm">
@@ -233,12 +260,13 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
                 <th className="text-left px-4 py-3">Produto</th>
                 <th className="text-left px-4 py-3">Código</th>
                 <th className="text-left px-4 py-3">Permite entrega</th>
-                <th className="text-left px-4 py-3">Quantidade mínima</th>
+                <th className="text-left px-4 py-3" title="Quantidade mínima do produto no pedido de entrega">Quantidade mínima</th>
+                <th className="text-left px-4 py-3" title="Valor mínimo em compras deste produto no pedido de entrega. Com os dois preenchidos, vale quantidade OU valor.">Valor mínimo (R$)</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.length === 0 ? (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">Nenhum produto encontrado.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">Nenhum produto encontrado.</td></tr>
               ) : pageRows.map((p) => {
                 const c = cur(p);
                 const dirty = !!edits[p.id];
@@ -260,7 +288,7 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
                         <span className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${c.allowed ? 'translate-x-5' : ''}`}></span>
                       </button>
                     </td>
-                    <td className="px-4 py-3 w-48">
+                    <td className="px-4 py-3 w-44">
                       <input
                         className={inputCls}
                         inputMode="decimal"
@@ -269,6 +297,19 @@ export default function RegrasEntregaScreen({ showToast, logAction, canEdit = tr
                         onChange={(e) => setEdit(p, { minQty: e.target.value })}
                         placeholder={c.allowed ? 'Sem mínimo' : '—'}
                       />
+                    </td>
+                    <td className="px-4 py-3 w-48">
+                      <div className="relative">
+                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-sm ${c.allowed && hasMinValCol ? 'text-slate-500' : 'text-slate-300'}`}>R$</span>
+                        <input
+                          className={inputCls + ' pl-9'}
+                          inputMode="decimal"
+                          disabled={!canEdit || !c.allowed || !hasMinValCol}
+                          value={c.minVal}
+                          onChange={(e) => setEdit(p, { minVal: e.target.value.replace(/[^0-9.,]/g, '') })}
+                          placeholder={c.allowed ? 'Sem mínimo' : '—'}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );
