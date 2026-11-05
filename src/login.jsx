@@ -73,7 +73,8 @@ const LoginScreen = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-700">
+      {/* a tela de login fica um pouco maior que o resto do painel (que abre em 67%): aqui vale ~85% */}
+      <div style={{ zoom: 'calc(0.85 / var(--ui-scale, 1))' }} className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-700">
         
         {/* Header */}
         <div className="bg-slate-900/50 p-6 text-center border-b border-slate-700">
