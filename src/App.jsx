@@ -12,6 +12,8 @@ import {
   Package, 
   Star, 
   Ticket, 
+  Gift,
+  SlidersHorizontal,
   Users, 
   Truck, 
   Bell, 
@@ -77,6 +79,8 @@ import {
 import LoginScreen from './login';
 import CuponsScreen from './Cupons';
 import MapaLojaScreen from './MapaLoja';
+import RegrasEntregaScreen from './RegrasEntrega';
+import KitsEntregaScreen from './KitsEntrega';
 
 // --- CARGOS ---
 // No banco os cargos aparecem com variações (admin, client, cliente, driver...).
@@ -10084,15 +10088,64 @@ const PickupScheduleScreen = ({ logAction, showToast, canEdit = true }) => {
   );
 };
 
+const SidebarGroup = ({ icon: Icon, label, items, activeTab, setActiveTab, isOpen, visible = true, expanded, onToggle }) => {
+  if (!visible) return null;
+  const groupActive = items.some((it) => it.tab === activeTab);
+  return (
+    <div>
+      <button
+        onClick={() => {
+          // barra recolhida: o ícone abre o primeiro submódulo; barra aberta: só abre/fecha o grupo
+          if (!isOpen) setActiveTab(items[0].tab);
+          else onToggle();
+        }}
+        title={!isOpen ? label : ''}
+        aria-expanded={isOpen ? expanded : undefined}
+        className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 group relative
+        ${groupActive && (!isOpen || !expanded) ? 'bg-primary text-white shadow-lg shadow-blue-900/50 font-medium' : 'text-slate-400 hover:bg-white/10 hover:text-white'}
+        ${!isOpen ? 'justify-center px-2' : ''}`}
+      >
+        <Icon size={20} className={`shrink-0 ${groupActive && (!isOpen || !expanded) ? 'text-white' : 'text-slate-400 group-hover:text-white'}`} />
+        <span className={`tracking-wide whitespace-nowrap overflow-hidden transition-all duration-300 ${isOpen ? 'w-auto opacity-100 ml-3' : 'w-0 opacity-0 ml-0 hidden md:block'}`}>{label}</span>
+        {isOpen && <ChevronDown size={16} className={`ml-auto shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+        {!isOpen && (
+          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 shadow-xl">{label}</div>
+        )}
+      </button>
+      {isOpen && expanded && (
+        <div className="mt-1 ml-5 pl-3 border-l border-white/10 space-y-1">
+          {items.map((it) => {
+            const on = it.tab === activeTab;
+            return (
+              <button
+                key={it.tab}
+                onClick={() => setActiveTab(it.tab)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${on ? 'bg-primary text-white shadow-lg shadow-blue-900/50 font-medium' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+              >
+                <it.icon size={16} className="shrink-0" />
+                <span className="whitespace-nowrap">{it.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const DEFAULT_DELIVERY = {
   tiers: [{ maxKm: 2, fee: 6 }, { maxKm: 5, fee: 9 }, { maxKm: 8, fee: 13 }, { maxKm: 12, fee: 18 }],
   prepMinutes: 15,
   freeShipping: { enabled: false, minOrder: '', maxKm: '' },
+  anyDistance: false,
+  alwaysFree: false,
 };
 const normalizeDelivery = (d) => ({
   tiers: Array.isArray(d?.tiers) && d.tiers.length ? d.tiers.map(t => ({ maxKm: t.maxKm ?? '', fee: t.fee ?? '' })) : DEFAULT_DELIVERY.tiers,
   prepMinutes: d?.prepMinutes ?? DEFAULT_DELIVERY.prepMinutes,
   freeShipping: { enabled: !!d?.freeShipping?.enabled, minOrder: d?.freeShipping?.minOrder ?? '', maxKm: d?.freeShipping?.maxKm ?? '' },
+  anyDistance: !!d?.anyDistance,
+  alwaysFree: !!d?.alwaysFree,
 });
 const toNum = (v) => (v === '' || v == null ? NaN : Number(String(v).replace(',', '.')));
 const brlText = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -10174,6 +10227,8 @@ const SettingsScreen = ({ logAction, showToast, canEdit = true }) => {
       tiers: tiersClean,
       prepMinutes: prep,
       freeShipping: { enabled: fsOn, minOrder: isNaN(fsMin) ? 0 : fsMin, maxKm: isNaN(fsKm) || fsKm <= 0 ? null : fsKm },
+      anyDistance: !!form.delivery.anyDistance,
+      alwaysFree: !!form.delivery.alwaysFree,
     };
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -10217,6 +10272,8 @@ const SettingsScreen = ({ logAction, showToast, canEdit = true }) => {
       cmp('Tempo de separação (min)', original.delivery?.prepMinutes, prep);
       const fsText = (f) => (f?.enabled ? `acima de ${brlText(toNum(f.minOrder))}${toNum(f.maxKm) > 0 ? ` até ${f.maxKm} km` : ''}` : 'Desativado');
       cmp('Frete grátis', fsText(original.delivery?.freeShipping), fsText({ enabled: fsOn, minOrder: fsMin, maxKm: fsKm }));
+      cmp('Entrega em qualquer distância', original.delivery?.anyDistance ? 'Sim' : 'Não', deliveryConfig.anyDistance ? 'Sim' : 'Não');
+      cmp('Entrega sem taxa para todos os pedidos', original.delivery?.alwaysFree ? 'Sim' : 'Não', deliveryConfig.alwaysFree ? 'Sim' : 'Não');
       cmp('Loja Autônoma', original.autonomous_enabled ? 'Exibida' : 'Oculta', payload.autonomous_enabled ? 'Exibida' : 'Oculta');
       cmp('Título Loja Autônoma', original.autonomous_title, payload.autonomous_title);
       cmp('Texto Loja Autônoma', original.autonomous_text, payload.autonomous_text);
@@ -10373,7 +10430,7 @@ const SettingsScreen = ({ logAction, showToast, canEdit = true }) => {
             <h3 className="font-bold text-slate-800 flex items-center gap-2"><Truck size={18} className="text-primary" /> Entrega e frete</h3>
             <p className="text-xs text-slate-500">
               O app calcula a distância (de carro) entre a loja, no endereço acima, e o endereço do cliente, e cobra o valor da faixa correspondente.
-              Acima da última faixa a loja não entrega.
+              {form.delivery.anyDistance ? 'Acima da última faixa cobra-se o valor da última faixa (entrega em qualquer distância).' : 'Acima da última faixa a loja não entrega.'}
             </p>
             <div className="space-y-2">
               <div className="grid grid-cols-12 gap-2 text-xs font-bold text-slate-500 px-2">
@@ -10393,6 +10450,27 @@ const SettingsScreen = ({ logAction, showToast, canEdit = true }) => {
               <label className={labelClass}>Tempo de separação do pedido (min)</label>
               <input className={inputClass} inputMode="numeric" value={form.delivery.prepMinutes} onChange={e => setDelivery({ prepMinutes: e.target.value })} />
               <p className="text-xs text-slate-400 mt-1">Somado ao tempo de viagem para mostrar ao cliente o prazo de entrega.</p>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              {[
+                { key: 'anyDistance', title: 'Entregar em qualquer distância', help: 'Acima da última faixa cobra o valor da última faixa, em vez de não entregar.' },
+                { key: 'alwaysFree', title: 'Entrega sem taxa para todos os pedidos', help: 'O cliente não paga frete em nenhuma entrega (ignora a tabela de faixas e o frete grátis abaixo).' },
+              ].map((o) => (
+                <div key={o.key} className="flex justify-between items-center gap-4">
+                  <div>
+                    <p className="font-bold text-slate-800 text-sm">{o.title}</p>
+                    <p className="text-xs text-slate-500">{o.help}</p>
+                  </div>
+                  <div
+                    role="switch"
+                    aria-checked={!!form.delivery[o.key]}
+                    onClick={() => canEdit && setDelivery({ [o.key]: !form.delivery[o.key] })}
+                    className={`w-11 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors ${canEdit ? 'cursor-pointer' : 'opacity-60'} ${form.delivery[o.key] ? 'bg-primary' : 'bg-slate-300'}`}>
+                    <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${form.delivery[o.key] ? 'translate-x-5' : ''}`}></div>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="border-t border-slate-100 pt-4 space-y-3">
@@ -10419,6 +10497,11 @@ const SettingsScreen = ({ logAction, showToast, canEdit = true }) => {
                     onChange={e => setDelivery({ freeShipping: { ...form.delivery.freeShipping, maxKm: e.target.value } })} placeholder="Vazio = qualquer distância" />
                 </div>
               </div>
+              {form.delivery.alwaysFree && (
+                <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                  O cliente verá a entrega sem taxa em todos os pedidos. O valor mínimo do pedido é definido em Entregas &gt; Regras de Entrega.
+                </p>
+              )}
               {form.delivery.freeShipping.enabled && toNum(form.delivery.freeShipping.minOrder) > 0 && (
                 <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
                   O cliente verá: "Frete grátis em compras acima de {brlText(toNum(form.delivery.freeShipping.minOrder))}
@@ -10626,6 +10709,12 @@ function App() {
   const [session, setSession] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('Dashboard');
+  const ENTREGAS_TABS = ['Entregas', 'Regras de Entrega', 'Kits de Entrega'];
+  const [entregasGroupOpen, setEntregasGroupOpen] = useState(false);
+  useEffect(() => {
+    if (ENTREGAS_TABS.includes(activeTab)) setEntregasGroupOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState('');
@@ -11257,6 +11346,8 @@ function App() {
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Regras de Entrega': return renderIfAllowed('Entregas', <RegrasEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} />);
+      case 'Kits de Entrega': return renderIfAllowed('Entregas', <KitsEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Mapa da Loja': return renderIfAllowed('Mapa da Loja', <MapaLojaScreen canEdit={can('Mapa da Loja', 'edit')} canDelete={can('Mapa da Loja', 'delete')} showToast={showToast} logAction={logAction} />);
       case 'Cupons': return renderIfAllowed('Cupons', <CuponsScreen canEdit={can('Cupons', 'edit')} canDelete={can('Cupons', 'delete')} currentUser={{ id: session?.user?.id, name: userProfile?.name || session?.user?.email }} showToast={showToast} logAction={logAction} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} canEdit={can('Fidelidade', 'edit')} canDelete={can('Fidelidade', 'delete')} />);
@@ -11311,7 +11402,21 @@ function App() {
           <SidebarItem icon={ClipboardList} label="Checklist" active={activeTab === 'Checklist'} onClick={() => setActiveTab('Checklist')} isOpen={isSidebarOpen} visible={hasPermission('Checklist')} />
           <SidebarItem icon={Users} label="Usuários" active={activeTab === 'Usuários'} onClick={() => setActiveTab('Usuários')} isOpen={isSidebarOpen} visible={hasPermission('Usuários')} />
           <SidebarItem icon={List} label="Logs" active={activeTab === 'Logs'} onClick={() => setActiveTab('Logs')} isOpen={isSidebarOpen} visible={hasPermission('Logs')} />
-          <SidebarItem icon={Truck} label="Entregas" active={activeTab === 'Entregas'} onClick={() => setActiveTab('Entregas')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
+          <SidebarGroup
+            icon={Truck}
+            label="Entregas"
+            items={[
+              { tab: 'Entregas', label: 'Controle de Entregas', icon: Truck },
+              { tab: 'Regras de Entrega', label: 'Regras de Entrega', icon: SlidersHorizontal },
+              { tab: 'Kits de Entrega', label: 'Kits de Entrega', icon: Gift },
+            ]}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            isOpen={isSidebarOpen}
+            visible={hasPermission('Entregas')}
+            expanded={entregasGroupOpen}
+            onToggle={() => setEntregasGroupOpen((v) => !v)}
+          />
           <SidebarItem icon={Clock} label="Retirada" active={activeTab === 'Retirada'} onClick={() => setActiveTab('Retirada')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
           <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
