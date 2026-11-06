@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import IntegracoesScreen from './Integracoes';
 import PausaRetirada from './PausaRetirada';
-import SaiParaEntregar from './SaiParaEntregar';
+import SaiuParaEntregaModal from './SaiuParaEntregaModal';
 import UserDetailTabs from './UserDetail';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import { ProductAppPreview, HighlightAppPreview, HomeHighlightsPreview } from './AppPreview';
@@ -7340,6 +7340,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
   const [driverPickFor, setDriverPickFor] = useState(null);   // pedido que vai receber entregador
   const [earlyPickup, setEarlyPickup] = useState(null);        // retirada tentada antes do horário marcado
   const [refuseTarget, setRefuseTarget] = useState(null);      // pedido que vai ser recusado (janela de confirmação)
+  const [leaveFor, setLeaveFor] = useState(null);              // entrega que está saindo (botão "Saiu para entrega" do card)
   const [availableDrivers, setAvailableDrivers] = useState([]);
   const [driversLoading, setDriversLoading] = useState(false);
 
@@ -7601,23 +7602,22 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
       <div>
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans mb-6">{mode === 'retirada' ? 'Controle de Retirada' : 'Controle de Entregas'}</h1>
         <div className="mb-6 space-y-3">
-          {mode === 'entregas' && canEdit && (
-            <div className="flex flex-wrap items-center gap-3">
-              <SaiParaEntregar
-                orders={modeList.filter((d) => stageLabelOf(d) === STAGE_DELIVERY_PREPARING)}
-                session={session}
-                canPause={canPause}
-                logAction={logAction}
-                showToast={showToast}
-                onDone={onRefresh}
-                formatNumber={formatOrderNumber}
-              />
-              <span className="text-xs text-slate-500">Ao sair, marque os pedidos que está levando. Eles passam para "Saiu para entrega".</span>
-            </div>
-          )}
           <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} readOnly={mode === 'retirada'} />
         </div>
         
+        {leaveFor && (
+          <SaiuParaEntregaModal
+            target={leaveFor}
+            number={formatOrderNumber(leaveFor)}
+            session={session}
+            canPause={canPause}
+            onUpdateStatus={onUpdateStatus}
+            logAction={logAction}
+            showToast={showToast}
+            onClose={() => setLeaveFor(null)}
+          />
+        )}
+
         {activeDeliveries.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {activeDeliveries.map((delivery) => (
@@ -7702,13 +7702,21 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
                          </button>
                        ) : (
                          <button
-                             onClick={() => openDriverPicker(delivery)}
+                             onClick={() => setLeaveFor(delivery)}
                              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
                          >
-                             Atribuir Entregador
+                             Saiu para entrega
                          </button>
                        )}
                     </div>
+                 )}
+                 {canEdit && !delivery.isPickup && (delivery.status === 'Pendente' || delivery.status === 'Em Preparação' || delivery.status === 'Aguardando Retirada') && (
+                    <button
+                        onClick={() => openDriverPicker(delivery)}
+                        className="w-full py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline"
+                    >
+                        Atribuir entregador (opcional)
+                    </button>
                  )}
                  {delivery.status === 'Entregador Atribuído' && (
                     <div className="flex flex-col gap-2 w-full">
@@ -7723,7 +7731,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
                               Trocar entregador
                           </button>
                           <button
-                              onClick={() => onUpdateStatus(delivery.id, 'Em Trânsito')}
+                              onClick={() => setLeaveFor(delivery)}
                               className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
                           >
                               Saiu para entrega
