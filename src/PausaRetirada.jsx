@@ -23,6 +23,23 @@ const leftLabel = (iso, now) => {
 };
 const minLabel = (m) => (m % 60 === 0 ? `${m / 60}h` : m > 60 ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}` : `${m} min`);
 
+/** Inicia a pausa de retiradas (usada pelo botão "Pausar retiradas" e pelo "Saí para entregar"). Devolve { error, until }. */
+export async function iniciarPausa({ session, minutes = DEFAULT_MINUTES }) {
+  const start = new Date();
+  const until = new Date(start.getTime() + minutes * 60000);
+  const { error } = await supabase.from('delivery_pause').upsert({
+    id: 1,
+    active: true,
+    started_at: start.toISOString(),
+    until: until.toISOString(),
+    minutes,
+    started_by: session?.user?.id ?? null,
+    updated_at: start.toISOString(),
+  });
+  return { error, until };
+}
+export { OPTIONS as PAUSE_OPTIONS, DEFAULT_MINUTES, minLabel, hhmm };
+
 /** Quantas retiradas já agendadas encostam no período [fromIso, untilIso). Só informativo: elas continuam valendo. */
 async function countScheduled(fromIso, untilIso) {
   const { count, error } = await supabase

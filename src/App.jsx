@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import IntegracoesScreen from './Integracoes';
 import PausaRetirada from './PausaRetirada';
+import SaiParaEntregar from './SaiParaEntregar';
 import UserDetailTabs from './UserDetail';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import { ProductAppPreview, HighlightAppPreview, HomeHighlightsPreview } from './AppPreview';
@@ -7332,7 +7333,7 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction, showToa
   );
 };
 
-const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: onUpdateStatusRaw, onAssignDriver: onAssignDriverRaw, onToggleSeparated: onToggleSeparatedRaw, canEdit = true, showToast, session, logAction, canPause = false }) => {
+const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: onUpdateStatusRaw, onAssignDriver: onAssignDriverRaw, onToggleSeparated: onToggleSeparatedRaw, canEdit = true, showToast, session, logAction, canPause = false, mode = 'entregas', onRefresh }) => {
   // sem permissão de editar: nenhuma ação muda pedido (os botões também ficam escondidos)
   const denyEdit = () => showToast?.(NO_PERM_MSG, 'warning');
   const onUpdateStatus = (...args) => (canEdit ? onUpdateStatusRaw(...args) : denyEdit());
@@ -7375,7 +7376,9 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
     'Entregue': 5
   };
 
-  const filteredDeliveries = deliveries
+  // Toda entrega vai para o Controle de Entregas e todo pedido de retirada para o Controle de Retirada
+  const modeList = deliveries.filter((d) => (mode === 'retirada' ? d.isPickup : !d.isPickup));
+  const filteredDeliveries = modeList
     .filter(d => {
       const term = globalSearchTerm?.trim().toLowerCase() || '';
       if (!term) return true;
@@ -7409,6 +7412,13 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
 
   const getStatusColor = (status) => {
     switch (status) {
+      case STAGE_PICKUP_SEPARATING: return 'bg-blue-100 text-blue-800 border-blue-200';
+      case STAGE_PICKUP_WAITING: return 'bg-orange-100 text-orange-800 border-orange-200';
+      case STAGE_PICKUP_DONE: return 'bg-green-100 text-green-800 border-green-200';
+      case STAGE_DELIVERY_PREPARING: return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      case STAGE_DELIVERY_OUT: return 'bg-amber-100 text-amber-800 border-amber-200';
+      case STAGE_DELIVERY_DONE: return 'bg-green-100 text-green-800 border-green-200';
+      case 'Pagamento falhou': return 'bg-red-100 text-red-800 border-red-200';
       case 'Entregue': return 'bg-green-100 text-green-800 border-green-200';
       case 'Aguardando Retirada': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'Entregador Atribuído': return 'bg-orange-100 text-orange-800 border-orange-200';
@@ -7532,7 +7542,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up">
                 <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <h3 className="font-bold text-lg text-slate-800">Confirmar Entrega</h3>
+                    <h3 className="font-bold text-lg text-slate-800">{deliveryToVerify?.isPickup ? 'Confirmar Retirada' : 'Confirmar Entrega'}</h3>
                     <button onClick={() => setIsVerificationModalOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 p-1 rounded-full transition-colors">
                         <X size={20} />
                     </button>
@@ -7544,7 +7554,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
                         <div>
                             <p className="text-sm text-blue-800 font-medium">Confirmação de Segurança</p>
                             <p className="text-xs text-blue-600 mt-1">
-                                Insira o código de verificação fornecido pelo cliente para confirmar a entrega do pedido <strong>#{formatOrderNumber(deliveryToVerify)}</strong>.
+                                Insira o código de verificação fornecido pelo cliente para confirmar {deliveryToVerify?.isPickup ? 'a retirada' : 'a entrega'} do pedido <strong>#{formatOrderNumber(deliveryToVerify)}</strong>.
                             </p>
                         </div>
                     </div>
@@ -7591,8 +7601,24 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
       )}
 
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 font-parkinsans mb-6">Controle de Entregas</h1>
-        <div className="mb-6"><PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} /></div>
+        <h1 className="text-2xl font-bold text-slate-900 font-parkinsans mb-6">{mode === 'retirada' ? 'Controle de Retirada' : 'Controle de Entregas'}</h1>
+        <div className="mb-6 space-y-3">
+          {mode === 'entregas' && canEdit && (
+            <div className="flex flex-wrap items-center gap-3">
+              <SaiParaEntregar
+                orders={modeList.filter((d) => stageLabelOf(d) === STAGE_DELIVERY_PREPARING)}
+                session={session}
+                canPause={canPause}
+                logAction={logAction}
+                showToast={showToast}
+                onDone={onRefresh}
+                formatNumber={formatOrderNumber}
+              />
+              <span className="text-xs text-slate-500">Ao sair, marque os pedidos que está levando. Eles passam para "Saiu para entrega".</span>
+            </div>
+          )}
+          <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} />
+        </div>
         
         {activeDeliveries.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -7612,8 +7638,8 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
                         <Calendar size={12} /> {delivery.date} às {delivery.time}
                     </p>
                  </div>
-                 <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(delivery.status)}`}>
-                    {delivery.status}
+                 <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(stageLabelOf(delivery))}`}>
+                    {stageLabelOf(delivery)}
                  </span>
               </div>
               <div className="space-y-2 mb-4">
@@ -7653,7 +7679,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
                  </div>
                  
                  {/* Action Buttons */}
-                 {canEdit && delivery.isPickup && delivery.status === 'Aguardando Retirada' && (
+                 {canEdit && delivery.isPickup && ['Aguardando Retirada', 'Pendente', 'Em Preparação'].includes(delivery.status) && (
                     <button
                       onClick={() => onToggleSeparated(delivery)}
                       className={`w-full py-2 rounded-lg text-sm font-medium border transition-colors ${delivery.separatedAt ? 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}
@@ -7702,7 +7728,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
                               onClick={() => onUpdateStatus(delivery.id, 'Em Trânsito')}
                               className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
                           >
-                              Enviar para Entrega
+                              Saiu para entrega
                           </button>
                         </div>}
                     </div>
@@ -7731,7 +7757,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
           </div>
         ) : (
           <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-100 mb-6">
-            <p className="text-slate-500">Nenhuma entrega em andamento.</p>
+            <p className="text-slate-500">{mode === 'retirada' ? 'Nenhuma retirada em andamento.' : 'Nenhuma entrega em andamento.'}</p>
           </div>
         )}
       </div>
@@ -7740,7 +7766,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
         <div className="space-y-4">
            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <CheckCircle className="text-emerald-600" size={20} />
-              Histórico de Entregas
+              {mode === 'retirada' ? 'Histórico de Retiradas' : 'Histórico de Entregas'}
            </h2>
            <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="overflow-x-auto">
@@ -7774,8 +7800,8 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
                                 R$ {delivery.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                              </td>
                              <td className="px-6 py-4">
-                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(delivery.status === 'payment_failed' ? 'Cancelado' : delivery.status)}`}>
-                                   {deliveryStatusLabel(delivery.status)}
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(stageLabelOf(delivery))}`}>
+                                   {stageLabelOf(delivery)}
                                 </span>
                              </td>
                              <td className="px-6 py-4 text-right">
@@ -7808,7 +7834,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <Truck className="text-primary" />
-                Detalhes da Entrega #{formatOrderNumber(selectedDelivery)}
+                Detalhes {selectedDelivery.isPickup ? 'da Retirada' : 'da Entrega'} #{formatOrderNumber(selectedDelivery)}
               </h2>
               <button 
                 onClick={() => setIsDetailsModalOpen(false)}
@@ -7820,12 +7846,12 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
             
             <div className="p-6 space-y-6 overflow-y-auto">
               {/* Status Banner */}
-              <div className={`p-4 rounded-xl border ${getStatusColor(selectedDelivery.status)} flex items-center justify-between`}>
+              <div className={`p-4 rounded-xl border ${getStatusColor(stageLabelOf(selectedDelivery))} flex items-center justify-between`}>
                  <div className="flex items-center gap-3">
                     {selectedDelivery.status === 'Entregue' ? <CheckCircle size={24} /> : <Clock size={24} />}
                     <div>
                        <p className="font-bold text-sm uppercase tracking-wider opacity-80">Status Atual</p>
-                       <p className="font-bold text-lg">{selectedDelivery.status}</p>
+                       <p className="font-bold text-lg">{stageLabelOf(selectedDelivery)}</p>
                     </div>
                  </div>
                  <div className="text-right">
@@ -9964,8 +9990,6 @@ const PickupScheduleScreen = ({ logAction, showToast, canEdit = true, session, c
         </button>}
       </div>
 
-      <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} />
-
       <fieldset disabled={!canEdit} className="space-y-6 min-w-0 border-0 p-0 m-0">
       <div className={cardClass}>
         <div className="flex justify-between items-center flex-wrap gap-2">
@@ -10101,9 +10125,39 @@ const PickupScheduleScreen = ({ logAction, showToast, canEdit = true, session, c
   );
 };
 
+// Etapas mostradas ao estoque. O banco continua com os mesmos status de sempre (pending/paid/preparing/out_for_delivery/delivered...);
+// só o nome na tela muda. Retirada: Separando pedido -> Aguardando retirada -> Retirada concluída.
+// Entrega: Preparando pedido -> Saiu para entrega -> Entrega concluída.
+const STAGE_PICKUP_SEPARATING = 'Separando pedido';
+const STAGE_PICKUP_WAITING = 'Aguardando retirada';
+const STAGE_PICKUP_DONE = 'Retirada concluída';
+const STAGE_DELIVERY_PREPARING = 'Preparando pedido';
+const STAGE_DELIVERY_OUT = 'Saiu para entrega';
+const STAGE_DELIVERY_DONE = 'Entrega concluída';
+const stageLabelOf = (d) => {
+  if (!d) return '';
+  const st = String(d.status || '');
+  if (st === 'Cancelado' || st === 'cancelled') return 'Cancelado';
+  if (st === 'payment_failed') return 'Pagamento falhou';
+  if (d.isPickup) {
+    if (st === 'Entregue') return STAGE_PICKUP_DONE;
+    return d.separatedAt ? STAGE_PICKUP_WAITING : STAGE_PICKUP_SEPARATING;
+  }
+  if (st === 'Entregue') return STAGE_DELIVERY_DONE;
+  if (st === 'Em Trânsito') return STAGE_DELIVERY_OUT;
+  return STAGE_DELIVERY_PREPARING;
+};
+// "Aguardando ação" do estoque: pedido novo que ainda não foi separado (retirada) ou preparado/levado (entrega)
+const isAwaitingAction = (d) => [STAGE_PICKUP_SEPARATING, STAGE_DELIVERY_PREPARING].includes(stageLabelOf(d));
+
+const CountBadge = ({ n, className = '' }) => (n > 0 ? (
+  <span className={`min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold inline-flex items-center justify-center shrink-0 ${className}`}>{n > 99 ? '99+' : n}</span>
+) : null);
+
 const SidebarGroup = ({ icon: Icon, label, items, activeTab, setActiveTab, isOpen, visible = true, expanded, onToggle }) => {
   if (!visible) return null;
   const groupActive = items.some((it) => it.tab === activeTab);
+  const totalBadge = items.reduce((sum, it) => sum + (it.badge || 0), 0);
   return (
     <div>
       <button
@@ -10120,7 +10174,9 @@ const SidebarGroup = ({ icon: Icon, label, items, activeTab, setActiveTab, isOpe
       >
         <Icon size={20} className={`shrink-0 ${groupActive && (!isOpen || !expanded) ? 'text-white' : 'text-slate-400 group-hover:text-white'}`} />
         <span className={`tracking-wide whitespace-nowrap overflow-hidden transition-all duration-300 ${isOpen ? 'w-auto opacity-100 ml-3' : 'w-0 opacity-0 ml-0 hidden md:block'}`}>{label}</span>
-        {isOpen && <ChevronDown size={16} className={`ml-auto shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+        {isOpen && !expanded && <CountBadge n={totalBadge} className="ml-auto" />}
+        {isOpen && <ChevronDown size={16} className={`${expanded || totalBadge <= 0 ? 'ml-auto ' : ''}shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+        {!isOpen && totalBadge > 0 && <CountBadge n={totalBadge} className="absolute top-1 right-1 !min-w-[18px] !h-[18px] !text-[10px]" />}
         {!isOpen && (
           <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 shadow-xl">{label}</div>
         )}
@@ -10137,6 +10193,7 @@ const SidebarGroup = ({ icon: Icon, label, items, activeTab, setActiveTab, isOpe
               >
                 <it.icon size={16} className="shrink-0" />
                 <span className="whitespace-nowrap">{it.label}</span>
+                <CountBadge n={it.badge || 0} className="ml-auto" />
               </button>
             );
           })}
@@ -10723,9 +10780,12 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('Dashboard');
   const ENTREGAS_TABS = ['Entregas', 'Regras de Entrega', 'Kits de Entrega'];
+  const RETIRADA_TABS = ['Controle de Retirada', 'Regras de Retirada', 'Retirada'];
   const [entregasGroupOpen, setEntregasGroupOpen] = useState(false);
+  const [retiradaGroupOpen, setRetiradaGroupOpen] = useState(false);
   useEffect(() => {
     if (ENTREGAS_TABS.includes(activeTab)) setEntregasGroupOpen(true);
+    if (RETIRADA_TABS.includes(activeTab)) setRetiradaGroupOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -10929,6 +10989,7 @@ function App() {
       
       if (ordersData.length === 0) {
         setDeliveries([]);
+        notifiedPickupReady.current = true; // fila vazia: o primeiro pedido que chegar já avisa
         return;
       }
 
@@ -11041,7 +11102,7 @@ function App() {
       // já conhecidos: só pedidos que chegarem depois disparam o aviso
       // (pedidos ainda pendentes de pagamento ficam de fora, para avisar quando o PIX confirmar)
       ordersData
-        .filter(o => o.delivery === 'loja' && ['paid', 'preparing', 'driver_assigned', 'out_for_delivery', 'delivered', 'cancelled'].includes(String(o.status)))
+        .filter(o => ['paid', 'preparing', 'driver_assigned', 'out_for_delivery', 'delivered', 'cancelled'].includes(String(o.status)))
         .forEach(o => notifiedPickupRef.current.add(o.id));
       notifiedPickupReady.current = true;
     } catch (error) {
@@ -11150,12 +11211,17 @@ function App() {
       const channel = supabase
         .channel('entregas_changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-           // pedido de retirada novo (ou que acabou de ser pago): avisa o estoque com som e mensagem
+           // pedido novo (ou que acabou de ser pago), de retirada ou de entrega: avisa o estoque com som e mensagem
            const n = payload?.new;
-           if (n && n.delivery === 'loja' && ['paid', 'preparing'].includes(String(n.status)) && !notifiedPickupRef.current.has(n.id) && notifiedPickupReady.current) {
+           if (n && ['paid', 'preparing'].includes(String(n.status)) && !notifiedPickupRef.current.has(n.id) && notifiedPickupReady.current) {
              notifiedPickupRef.current.add(n.id);
              beepNewPickup();
-             showToast(`Novo pedido de retirada #${String(n.order_number ?? n.id).slice(0, 6).toUpperCase()}${n.pickup_at ? ' para ' + formatPickupWindow(n.pickup_at, n.pickup_until) : ''}. Separe os produtos.`, 'warning');
+             const num = String(n.order_number ?? n.id).slice(0, 6).toUpperCase();
+             if (n.delivery === 'loja') {
+               showToast(`Novo pedido de RETIRADA #${num}${n.pickup_at ? ' para ' + formatPickupWindow(n.pickup_at, n.pickup_until) : ''}. Separe os produtos.`, 'warning');
+             } else {
+               showToast(`Novo pedido de ENTREGA #${num}. Prepare os produtos.`, 'warning');
+             }
            }
            fetchDeliveries();
         })
@@ -11293,33 +11359,45 @@ function App() {
     fetchDeliveries();
   };
 
+  // "Entrega concluída" só acontece quando o código do cliente é digitado (antes, o painel dava a entrega como feita sozinho após 2 h).
+
+  // Pedidos aguardando ação do estoque: retirada em "Separando pedido" e entrega em "Preparando pedido".
+  const awaitingOrders = deliveries.filter(isAwaitingAction);
+  const pendingPickupCount = awaitingOrders.filter((d) => d.isPickup).length;
+  const pendingDeliveryCount = awaitingOrders.filter((d) => !d.isPickup).length;
+
+  // Sininho: quais pedidos o usuário já viu (guardado neste navegador, por usuário)
+  const seenKey = session?.user?.id ? `atd_seen_orders_${session.user.id}` : null;
+  const [seenOrders, setSeenOrders] = useState(() => new Set());
+  const [seenReady, setSeenReady] = useState(false);
+  const persistSeen = (set) => {
+    try { if (seenKey) localStorage.setItem(seenKey, JSON.stringify([...set].slice(-1000))); } catch { /* sem armazenamento: segue sem lembrar */ }
+  };
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const TWO_HOURS = 2 * 60 * 60 * 1000;
-      
-      setDeliveries(prev => {
-        const hasUpdates = prev.some(d => 
-          d.status === 'Em Trânsito' && 
-          d.statusTimestamp && 
-          (now - d.statusTimestamp > TWO_HOURS)
-        );
-
-        if (!hasUpdates) return prev;
-
-        return prev.map(d => {
-          if (d.status === 'Em Trânsito' && d.statusTimestamp && (now - d.statusTimestamp > TWO_HOURS)) {
-            return { ...d, status: 'Entregue' };
-          }
-          return d;
-        });
-      });
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const deliveryRequests = deliveries.filter(d => d.status === 'Pendente' || d.status === 'Em Preparação' || d.status === 'Aguardando Retirada' || d.status === 'Entregador Atribuído' || d.status === 'Em Trânsito');
+    if (seenReady || !seenKey || !notifiedPickupReady.current) return;
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(seenKey) || 'null'); } catch { stored = null; }
+    // primeiro uso neste navegador: o que já estava na fila não vira "novo" (evita encher o sino de uma vez)
+    const base = new Set(Array.isArray(stored) ? stored : deliveries.filter(isAwaitingAction).map((d) => d.id));
+    setSeenOrders(base);
+    if (!Array.isArray(stored)) persistSeen(base);
+    setSeenReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveries, seenKey, seenReady]);
+  const markSeen = (ids) => {
+    setSeenOrders((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      persistSeen(next);
+      return next;
+    });
+  };
+  const unreadOrders = seenReady ? awaitingOrders.filter((d) => !seenOrders.has(d.id)) : [];
+  const goToOrder = (d) => {
+    markSeen([d.id]);
+    setActiveTab(d.isPickup ? 'Controle de Retirada' : 'Entregas');
+    setShowNotifications(false);
+  };
 
   const handleLogout = async () => {
     try {
@@ -11353,12 +11431,14 @@ function App() {
       case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} canEdit={can('Destaques', 'edit')} canDelete={can('Destaques', 'delete')} />);
       case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} canEdit={can('Usuários', 'edit')} canDelete={can('Usuários', 'delete')} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
-      case 'Retirada': return renderIfAllowed('Entregas', <PickupScheduleScreen logAction={logAction} showToast={showToast} session={session} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Controle de Retirada': return renderIfAllowed('Entregas', <DeliveriesScreen mode="retirada" globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} onRefresh={fetchDeliveries} showToast={showToast} session={session} logAction={logAction} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Retirada':
+      case 'Regras de Retirada': return renderIfAllowed('Entregas', <PickupScheduleScreen logAction={logAction} showToast={showToast} session={session} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} canEdit={can('Configurações', 'edit')} canDelete={can('Configurações', 'delete')} />);
       case 'Integrações': return renderIfAllowed('Integrações', <IntegracoesScreen showToast={showToast} session={session} />);
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
-      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} session={session} logAction={logAction} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen mode="entregas" onRefresh={fetchDeliveries} globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} session={session} logAction={logAction} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Regras de Entrega': return renderIfAllowed('Entregas', <RegrasEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} />);
       case 'Kits de Entrega': return renderIfAllowed('Entregas', <KitsEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Mapa da Loja': return renderIfAllowed('Mapa da Loja', <MapaLojaScreen canEdit={can('Mapa da Loja', 'edit')} canDelete={can('Mapa da Loja', 'delete')} showToast={showToast} logAction={logAction} />);
@@ -11418,7 +11498,7 @@ function App() {
             icon={Truck}
             label="Entregas"
             items={[
-              { tab: 'Entregas', label: 'Controle de Entregas', icon: Truck },
+              { tab: 'Entregas', label: 'Controle de Entregas', icon: Truck, badge: pendingDeliveryCount },
               { tab: 'Regras de Entrega', label: 'Regras de Entrega', icon: SlidersHorizontal },
               { tab: 'Kits de Entrega', label: 'Kits de Entrega', icon: Gift },
             ]}
@@ -11429,7 +11509,20 @@ function App() {
             expanded={entregasGroupOpen}
             onToggle={() => setEntregasGroupOpen((v) => !v)}
           />
-          <SidebarItem icon={Clock} label="Retirada" active={activeTab === 'Retirada'} onClick={() => setActiveTab('Retirada')} isOpen={isSidebarOpen} visible={hasPermission('Entregas')} />
+          <SidebarGroup
+            icon={Clock}
+            label="Retirada"
+            items={[
+              { tab: 'Controle de Retirada', label: 'Controle de Retirada', icon: Package, badge: pendingPickupCount },
+              { tab: 'Regras de Retirada', label: 'Regras de Retirada', icon: SlidersHorizontal },
+            ]}
+            activeTab={activeTab === 'Retirada' ? 'Regras de Retirada' : activeTab}
+            setActiveTab={setActiveTab}
+            isOpen={isSidebarOpen}
+            visible={hasPermission('Entregas')}
+            expanded={retiradaGroupOpen}
+            onToggle={() => setRetiradaGroupOpen((v) => !v)}
+          />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
           <SidebarItem icon={MapPin} label="Mapa da Loja" active={activeTab === 'Mapa da Loja'} onClick={() => setActiveTab('Mapa da Loja')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
           <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
@@ -11475,52 +11568,61 @@ function App() {
 
           <div className="flex items-center gap-4">
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="relative p-2 hover:bg-slate-100 rounded-full transition-colors"
+                aria-label="Notificações"
               >
                 <Bell size={20} className="text-slate-600" />
-                {deliveryRequests.length > 0 && (
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white animate-pulse"></span>
+                {unreadOrders.length > 0 && (
+                  <CountBadge n={unreadOrders.length} className="absolute -top-0.5 -right-0.5 !min-w-[18px] !h-[18px] !text-[10px] border border-white" />
                 )}
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 top-full mt-4 w-80 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 animate-fade-in origin-top-right ring-1 ring-black/5">
-                   <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                      <h3 className="font-bold text-slate-800 text-sm">Solicitações de Entrega</h3>
-                      <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">{deliveryRequests.length} NOVAS</span>
+                <div className="absolute right-0 top-full mt-4 w-[22rem] max-w-[92vw] bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden z-50 animate-fade-in origin-top-right ring-1 ring-black/5">
+                   <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 gap-3">
+                      <h3 className="font-bold text-slate-800 text-sm">Pedidos aguardando você</h3>
+                      <span className={`${unreadOrders.length > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'} text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap`}>{unreadOrders.length} {unreadOrders.length === 1 ? 'NOVO' : 'NOVOS'}</span>
                    </div>
-                   <div className="max-h-[350px] overflow-y-auto">
-                      {deliveryRequests.map((req) => (
-                        <div key={req.id} className="p-4 hover:bg-slate-50 transition-colors border-b border-slate-50 group cursor-pointer relative">
-                            <div className="flex justify-between items-start mb-1">
-                               <p className="font-semibold text-slate-900 text-sm">{req.client}</p>
-                               <span className="text-[10px] text-slate-400 font-medium">{req.time}</span>
-                            </div>
-                            <p className="text-xs text-slate-500 mb-2">Solicitou: <span className="text-slate-700 font-medium">{req.items}</span></p>
-                            <div className="flex items-center gap-2 text-xs text-slate-400 mb-3">
-                               <Truck size={12} />
-                               <span>Distância: {req.distance}</span>
-                            </div>
-                            <div className="flex gap-2">
-                               <button className="flex-1 bg-primary text-white text-xs font-semibold py-1.5 rounded-lg hover:bg-blue-700 transition-colors shadow-sm shadow-blue-500/30">
-                                 Aceitar
-                               </button>
-                               <button className="flex-1 bg-white border border-slate-200 text-slate-600 text-xs font-semibold py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
-                                 Recusar
-                               </button>
-                            </div>
-                        </div>
-                      ))}
+                   <div className="max-h-[380px] overflow-y-auto">
+                      {awaitingOrders.length === 0 && (
+                        <p className="p-6 text-center text-sm text-slate-400">Nenhum pedido novo para separar ou preparar.</p>
+                      )}
+                      {awaitingOrders.slice(0, 30).map((req) => {
+                        const unread = !seenOrders.has(req.id) && seenReady;
+                        return (
+                          <button key={req.id} onClick={() => goToOrder(req)} className={`w-full text-left p-4 border-b border-slate-50 transition-colors flex gap-3 ${unread ? 'bg-blue-50/60 hover:bg-blue-50' : 'hover:bg-slate-50'}`}>
+                            <span className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${req.isPickup ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                              {req.isPickup ? <Clock size={16} /> : <Truck size={16} />}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-start justify-between gap-2">
+                                <span className="font-semibold text-slate-900 text-sm">Novo pedido de {req.isPickup ? 'RETIRADA' : 'ENTREGA'} #{formatOrderNumber(req)}</span>
+                                {unread && <span className="w-2 h-2 bg-red-500 rounded-full shrink-0 mt-1.5" />}
+                              </span>
+                              <span className="block text-xs text-slate-600 mt-0.5">{req.client} · R$ {Number(req.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                              <span className="block text-xs text-slate-500 mt-0.5 break-words">
+                                {req.isPickup ? (req.pickupAt ? `Retirada: ${formatPickupWindow(req.pickupAt, req.pickupUntil)}` : 'Retirada sem horário marcado') : req.fullAddress}
+                              </span>
+                              <span className="block text-[11px] text-slate-400 mt-1">{req.date} às {req.time} · {stageLabelOf(req)}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
                    </div>
-                   <div className="p-3 bg-slate-50 text-center border-t border-slate-100">
-                      <button 
-                        className="text-xs font-bold text-primary hover:text-blue-700 transition-colors" 
-                        onClick={() => { setActiveTab('Entregas'); setShowNotifications(false); }}
+                   <div className="p-3 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        className="text-xs font-bold text-slate-500 hover:text-slate-800 disabled:opacity-40"
+                        disabled={unreadOrders.length === 0}
+                        onClick={() => markSeen(awaitingOrders.map((d) => d.id))}
                       >
-                        Ver Todas as Entregas
+                        Marcar todas como lidas
                       </button>
+                      <span className="flex gap-3">
+                        <button className="text-xs font-bold text-primary hover:text-blue-700" onClick={() => { setActiveTab('Controle de Retirada'); setShowNotifications(false); }}>Retiradas</button>
+                        <button className="text-xs font-bold text-primary hover:text-blue-700" onClick={() => { setActiveTab('Entregas'); setShowNotifications(false); }}>Entregas</button>
+                      </span>
                    </div>
                 </div>
               )}
