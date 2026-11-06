@@ -371,18 +371,15 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                             </div>
                             <button type="button" onClick={() => removeItem(idx)} className="p-1.5 -mr-1 -mt-1 text-red-400 hover:text-red-600 shrink-0" title="Remover do kit"><Trash2 size={16} /></button>
                           </div>
-                          <div className={`text-xs mt-0.5 ${ok ? 'text-slate-500' : 'text-red-500 font-semibold'}`}>{!p ? 'Produto removido ou inativo' : ok ? `${brl(productPrice(p))} cada` : 'Produto sem preço'}</div>
-                          <div className="mt-2 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-slate-500">Qtd.</span>
-                              <div className="w-20 shrink-0">
-                                <input className={inputCls + ' text-center'} inputMode="decimal" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} aria-label="Quantidade" />
+                          <div className="mt-1.5 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                              <span className={`text-xs ${ok ? 'text-slate-500' : 'text-red-500 font-semibold'}`}>{!p ? 'Produto removido ou inativo' : ok ? `${brl(productPrice(p))} cada` : 'Produto sem preço'}</span>
+                              <span className="text-xs text-slate-300">×</span>
+                              <div className="w-14 shrink-0">
+                                <input className={inputCls + ' text-center !py-1 text-sm'} inputMode="decimal" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} aria-label="Quantidade" />
                               </div>
                             </div>
-                            <div className="text-right">
-                              <div className="text-[11px] text-slate-400 leading-none">Subtotal</div>
-                              <div className="text-sm font-bold text-slate-800">{brl((centsOf(p) * (toNum(it.quantity) || 0)) / 100)}</div>
-                            </div>
+                            <div className="text-sm font-bold text-slate-800 shrink-0">{brl((centsOf(p) * (toNum(it.quantity) || 0)) / 100)}</div>
                           </div>
                         </div>
                       </div>
