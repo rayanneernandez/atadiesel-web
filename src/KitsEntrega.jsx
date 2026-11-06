@@ -386,6 +386,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                         </div>
                       </div>
                     );
+                  })}
                 </div>
               </div>
 
