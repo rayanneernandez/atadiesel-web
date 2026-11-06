@@ -356,18 +356,36 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                   {form.items.length === 0 && <p className="text-sm text-slate-400">Nenhum produto no kit ainda.</p>}
                   {form.items.map((it, idx) => {
                     const p = prodById.get(String(it.product_id));
+                    const ok = !!p && centsOf(p) > 0;
                     return (
-                      <div key={it.product_id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl p-2.5">
+                      <div key={it.product_id} className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl p-3">
+                        <span className="w-12 h-12 rounded-lg bg-white border border-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
+                          {p?.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Gift size={18} className="text-slate-300" />}
+                        </span>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-slate-800 truncate">{p?.title || 'Produto removido'}</div>
-                          <div className={`text-xs ${p && centsOf(p) > 0 ? 'text-slate-400' : 'text-red-500 font-semibold'}`}>{!p ? 'Produto removido ou inativo' : centsOf(p) > 0 ? `${brl(productPrice(p))} cada (preço do produto)` : 'Produto sem preço'}</div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-slate-800 leading-snug break-words">{p?.title || 'Produto removido'}</div>
+                              <div className="text-[11px] text-slate-400">{p?.sku ? `Cód. ${p.sku}` : ''}</div>
+                            </div>
+                            <button type="button" onClick={() => removeItem(idx)} className="p-1.5 -mr-1 -mt-1 text-red-400 hover:text-red-600 shrink-0" title="Remover do kit"><Trash2 size={16} /></button>
+                          </div>
+                          <div className={`text-xs mt-0.5 ${ok ? 'text-slate-500' : 'text-red-500 font-semibold'}`}>{!p ? 'Produto removido ou inativo' : ok ? `${brl(productPrice(p))} cada` : 'Produto sem preço'}</div>
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-500">Qtd.</span>
+                              <div className="w-20 shrink-0">
+                                <input className={inputCls + ' text-center'} inputMode="decimal" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} aria-label="Quantidade" />
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[11px] text-slate-400 leading-none">Subtotal</div>
+                              <div className="text-sm font-bold text-slate-800">{brl((centsOf(p) * (toNum(it.quantity) || 0)) / 100)}</div>
+                            </div>
+                          </div>
                         </div>
-                        <input className={inputCls + ' w-20'} inputMode="decimal" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} aria-label="Quantidade" />
-                        <div className="w-24 text-right text-sm font-bold text-slate-700 shrink-0">{brl((centsOf(p) * (toNum(it.quantity) || 0)) / 100)}</div>
-                        <button type="button" onClick={() => removeItem(idx)} className="p-2 text-red-400 hover:text-red-600" title="Remover"><Trash2 size={16} /></button>
                       </div>
                     );
-                  })}
                 </div>
               </div>
 
