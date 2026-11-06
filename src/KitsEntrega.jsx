@@ -1,5 +1,6 @@
 // Módulo "Kits de Entrega" (Entregas > Kits de Entrega): kits de produtos vendidos só para ENTREGA no app.
-// O cliente vê o kit com foto e preço fixo; para a Viasoft o pedido é enviado item por item.
+// O preço do kit NÃO é digitado: é a soma dos preços atuais dos produtos × quantidade (puxado de cada produto).
+// O cliente vê o kit com foto; para a Viasoft o pedido é enviado item por item, cada um pelo preço do seu produto.
 // SQL: entrega_regras_kits.sql (tabelas kits e kit_items). Fotos: bucket público 'banners', pasta kits/.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Gift, Plus, Pencil, Trash2, X, Search, ImagePlus, AlertTriangle } from 'lucide-react';
@@ -21,7 +22,15 @@ const productPrice = (p) => {
   return 0;
 };
 
-const EMPTY = { id: null, name: '', description: '', price: '', image_url: '', active: true, items: [] };
+// preço do produto em centavos inteiros (0 = sem preço)
+const centsOf = (p) => Math.max(0, Math.round(productPrice(p) * 100));
+// soma do kit em centavos: preço atual de cada produto × quantidade (qtd pode ser decimal, igual ao que já existia)
+const sumCents = (items, prodById, qtyOf = (it) => Number(it.quantity || 0)) =>
+  items.reduce((acc, it) => acc + Math.round(centsOf(prodById.get(String(it.product_id))) * (qtyOf(it) || 0)), 0);
+// o kit só pode ser vendido se todo produto existe, está ativo e tem preço
+const hasProblem = (items, prodById) => items.some((it) => !prodById.get(String(it.product_id)) || centsOf(prodById.get(String(it.product_id))) <= 0);
+
+const EMPTY = { id: null, name: '', description: '', image_url: '', active: true, items: [] };
 
 export default function KitsEntregaScreen({ showToast, logAction, canEdit = true, canDelete = true }) {
   const [loading, setLoading] = useState(true);
@@ -70,8 +79,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
 
   const itemsText = (items) =>
     items.map((it) => `${Number(it.quantity)}× ${prodById.get(String(it.product_id))?.title || 'Produto removido'}`).join(', ');
-  const itemsSum = (items) =>
-    items.reduce((s, it) => s + productPrice(prodById.get(String(it.product_id))) * Number(it.quantity || 0), 0);
+  const kitTotal = (items) => sumCents(items, prodById) / 100;
 
   const openNew = () => setForm({ ...EMPTY, items: [] });
   const openEdit = (k) =>
@@ -79,7 +87,6 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
       id: k.id,
       name: k.name || '',
       description: k.description || '',
-      price: k.price != null ? String(k.price).replace('.', ',') : '',
       image_url: k.image_url || '',
       active: !!k.active,
       items: k.items.map((it) => ({ product_id: String(it.product_id), quantity: String(it.quantity).replace('.', ',') })),
@@ -113,9 +120,9 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
     setUploading(false);
   };
 
-  const formSum = form ? form.items.reduce((s, it) => s + productPrice(prodById.get(String(it.product_id))) * (toNum(it.quantity) || 0), 0) : 0;
-  const formPrice = form ? toNum(form.price) : NaN;
-  const saving_pct = formSum > 0 && formPrice > 0 ? Math.round((1 - formPrice / formSum) * 100) : null;
+  const formCents = form ? sumCents(form.items, prodById, (it) => toNum(it.quantity)) : 0;
+  const formSum = formCents / 100;
+  const formProblem = form ? hasProblem(form.items, prodById) : false;
 
   const candidates = useMemo(() => {
     const q = norm(pick).trim();
@@ -126,12 +133,13 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
   const save = async () => {
     if (!canEdit) return showToast?.('Você não tem permissão para esta ação.', 'warning');
     const name = form.name.trim();
-    const price = toNum(form.price);
     if (!name) return showToast?.('Informe o nome do kit.', 'warning');
-    if (!(price > 0)) return showToast?.('Informe o preço do kit.', 'warning');
     if (form.items.length === 0) return showToast?.('Adicione ao menos um produto ao kit.', 'warning');
     const items = form.items.map((it) => ({ product_id: it.product_id, quantity: toNum(it.quantity) }));
     if (items.some((it) => !(it.quantity > 0))) return showToast?.('Todas as quantidades precisam ser maiores que zero.', 'warning');
+    if (formProblem) return showToast?.('Há produto removido, inativo ou sem preço no kit. Remova-o ou corrija o preço no cadastro de produtos.', 'warning');
+    // o preço do kit é só a soma dos produtos (o app e o servidor sempre recalculam com o preço atual de cada produto)
+    const price = formCents / 100;
 
     setSaving(true);
     try {
@@ -168,7 +176,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
       logAction?.('SETTINGS_CHANGE', `Kit: ${name}`, {
         action: form.id ? 'update_kit' : 'create_kit',
         changes: [
-          { field: 'Preço do kit', old: form.id ? brl(toNum(kits.find((k) => k.id === form.id)?.price)) : '—', new: brl(price) },
+          { field: 'Total do kit (soma dos produtos)', old: form.id ? brl(kitTotal(kits.find((k) => k.id === form.id)?.items || [])) : '—', new: brl(price) },
           { field: 'Itens', old: form.id ? itemsText(kits.find((k) => k.id === form.id)?.items || []) || '—' : '—', new: items.map((it) => `${it.quantity}× ${prodById.get(String(it.product_id))?.title || ''}`).join(', ') },
         ],
       });
@@ -205,7 +213,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><Gift size={24} className="text-primary" /> Kits de Entrega</h2>
-          <p className="text-slate-500 text-sm">Kits só aparecem no app para ENTREGA. Para a Viasoft o pedido é enviado item por item.</p>
+          <p className="text-slate-500 text-sm">Kits só aparecem no app para ENTREGA. O valor do kit é a soma dos produtos; para a Viasoft o pedido é enviado item por item.</p>
         </div>
         {canEdit && !missing && (
           <button onClick={openNew} className="bg-primary text-white font-bold px-4 py-2.5 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 inline-flex items-center gap-2">
@@ -238,9 +246,18 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                   <h3 className="font-bold text-slate-800">{k.name}</h3>
                   <span className={`text-[11px] font-bold px-2 py-1 rounded-full shrink-0 ${k.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{k.active ? 'Ativo' : 'Inativo'}</span>
                 </div>
-                <div className="text-lg font-extrabold text-primary">{brl(k.price)}</div>
+                {hasProblem(k.items, prodById) || k.items.length === 0 ? (
+                  <>
+                    <div className="text-lg font-extrabold text-slate-400">{brl(kitTotal(k.items))}</div>
+                    <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2 py-1 font-semibold">Tem produto removido, inativo ou sem preço: o kit não aparece no app até corrigir.</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-lg font-extrabold text-primary">{brl(kitTotal(k.items))}</div>
+                    <p className="text-[11px] text-slate-400">Soma dos preços atuais dos produtos</p>
+                  </>
+                )}
                 <p className="text-xs text-slate-500">{itemsText(k.items) || 'Sem itens'}</p>
-                {itemsSum(k.items) > 0 && <p className="text-[11px] text-slate-400">Soma dos itens: {brl(itemsSum(k.items))}</p>}
                 <div className="mt-auto pt-2 flex flex-wrap gap-2">
                   {canEdit && (
                     <>
@@ -296,9 +313,15 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                   {candidates.length > 0 && (
                     <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
                       {candidates.map((p) => (
-                        <button key={p.id} type="button" onClick={() => addProduct(p)} className="w-full text-left px-4 py-2.5 hover:bg-blue-50 flex justify-between gap-3 text-sm">
-                          <span className="font-medium text-slate-800">{p.title}</span>
-                          <span className="text-slate-400 shrink-0">{brl(productPrice(p))}</span>
+                        <button key={p.id} type="button" onClick={() => addProduct(p)} disabled={centsOf(p) <= 0} className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                          <span className="w-9 h-9 rounded-lg bg-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
+                            {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Gift size={16} className="text-slate-300" />}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block font-medium text-slate-800 truncate">{p.title}</span>
+                            <span className="block text-[11px] text-slate-400">{p.sku ? `Cód. ${p.sku}` : 'Sem código'}</span>
+                          </span>
+                          <span className={`shrink-0 font-semibold ${centsOf(p) > 0 ? 'text-slate-700' : 'text-red-500'}`}>{centsOf(p) > 0 ? brl(productPrice(p)) : 'Sem preço'}</span>
                         </button>
                       ))}
                     </div>
@@ -313,9 +336,10 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                       <div key={it.product_id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl p-2.5">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold text-slate-800 truncate">{p?.title || 'Produto removido'}</div>
-                          <div className="text-xs text-slate-400">{p ? `${brl(productPrice(p))} cada` : 'Indisponível'}</div>
+                          <div className={`text-xs ${p && centsOf(p) > 0 ? 'text-slate-400' : 'text-red-500 font-semibold'}`}>{!p ? 'Produto removido ou inativo' : centsOf(p) > 0 ? `${brl(productPrice(p))} cada (preço do produto)` : 'Produto sem preço'}</div>
                         </div>
-                        <input className={inputCls + ' w-24'} inputMode="decimal" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} aria-label="Quantidade" />
+                        <input className={inputCls + ' w-20'} inputMode="decimal" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} aria-label="Quantidade" />
+                        <div className="w-24 text-right text-sm font-bold text-slate-700 shrink-0">{brl((centsOf(p) * (toNum(it.quantity) || 0)) / 100)}</div>
                         <button type="button" onClick={() => removeItem(idx)} className="p-2 text-red-400 hover:text-red-600" title="Remover"><Trash2 size={16} /></button>
                       </div>
                     );
@@ -323,30 +347,26 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+              <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Preço do kit (R$)</label>
-                  <input className={inputCls} inputMode="decimal" value={form.price} onChange={(e) => set({ price: e.target.value })} placeholder="Ex: 650,00" />
+                  <div className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Total do kit</div>
+                  <div className="text-[11px] text-slate-500">Soma automática dos preços dos produtos × quantidade. Não é editável: muda quando o preço do produto mudar.</div>
                 </div>
-                <div className="text-sm text-slate-600 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5">
-                  <div>Soma dos itens: <strong>{brl(formSum)}</strong></div>
-                  {saving_pct != null && (
-                    <div className={saving_pct >= 0 ? 'text-emerald-700 font-semibold' : 'text-red-600 font-semibold'}>
-                      {saving_pct >= 0 ? `Economia de ${saving_pct}% para o cliente` : `Kit ${Math.abs(saving_pct)}% mais caro que os itens`}
-                    </div>
-                  )}
-                </div>
+                <div className="text-2xl font-extrabold text-primary shrink-0">{brl(formSum)}</div>
               </div>
+              {formProblem && form.items.length > 0 && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-semibold">Há produto removido, inativo ou sem preço no kit. Remova-o ou corrija o preço no cadastro de produtos para poder salvar.</p>
+              )}
 
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                 <input type="checkbox" checked={form.active} onChange={(e) => set({ active: e.target.checked })} /> Kit ativo (aparece no app)
               </label>
-              <p className="text-xs text-slate-400">Kits só aparecem no app para ENTREGA e valem para o pedido mínimo de entrega. Para a Viasoft o pedido é enviado item por item, com o preço do kit dividido entre os itens.</p>
+              <p className="text-xs text-slate-400">Kits só aparecem no app para ENTREGA e valem para o pedido mínimo de entrega. O cliente compra os produtos juntos, cada um pelo seu preço; para a Viasoft o pedido é enviado item por item, com o preço de cada produto.</p>
             </div>
 
             <div className="p-6 border-t border-slate-100 bg-slate-50 flex gap-3 sticky bottom-0">
               <button onClick={() => setForm(null)} className="flex-1 bg-white border border-slate-200 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-50">Cancelar</button>
-              <button onClick={save} disabled={saving || uploading} className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-60">{saving ? 'Salvando...' : 'Salvar kit'}</button>
+              <button onClick={save} disabled={saving || uploading || formProblem} className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-60">{saving ? 'Salvando...' : 'Salvar kit'}</button>
             </div>
           </div>
         </div>
