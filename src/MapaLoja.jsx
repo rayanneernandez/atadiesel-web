@@ -302,17 +302,6 @@ export default function MapaLojaScreen({ canEdit = false, canDelete = false, sho
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><MapPin size={24} className="text-primary" /> Mapa da Loja</h2>
           <p className="text-slate-500 text-sm">Encontre onde cada produto está na planta da loja (gôndolas, prateleiras e nichos).</p>
         </div>
-        {canEdit && (
-          <div className="flex flex-wrap items-center gap-2">
-            <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} />
-            <button onClick={() => fileRef.current?.click()} disabled={importing} className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 font-semibold px-4 py-2.5 rounded-xl hover:bg-slate-50 disabled:opacity-60">
-              <Upload size={16} /> {importing ? 'Importando...' : 'Importar CSV'}
-            </button>
-            <button onClick={openNew} className="flex items-center gap-2 bg-primary text-white font-bold px-4 py-2.5 rounded-xl hover:bg-blue-800 shadow-lg shadow-blue-500/20">
-              <Plus size={16} /> Nova localização
-            </button>
-          </div>
-        )}
       </div>
 
       {missingTable && (
