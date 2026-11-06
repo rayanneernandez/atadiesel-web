@@ -52,7 +52,8 @@ async function countScheduled(fromIso, untilIso) {
   return error ? null : count ?? 0;
 }
 
-export default function PausaRetirada({ session, canPause = false, logAction, showToast }) {
+// readOnly: só mostra o aviso quando há pausa ativa (sem botões). Usado no Controle de Retirada; pausar e retomar ficam em Controle de Entregas.
+export default function PausaRetirada({ session, canPause = false, logAction, showToast, readOnly = false }) {
   const [row, setRow] = useState(null);
   const [missing, setMissing] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -157,13 +158,13 @@ export default function PausaRetirada({ session, canPause = false, logAction, sh
 
   if (!loaded) return null;
   if (missing) {
-    return canPause ? (
+    return canPause && !readOnly ? (
       <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
         <AlertTriangle size={16} className="shrink-0" /> {SQL_MSG}
       </div>
     ) : null;
   }
-  if (!active && !canPause) return null;
+  if (!active && (!canPause || readOnly)) return null;
 
   return (
     <>
@@ -183,7 +184,8 @@ export default function PausaRetirada({ session, canPause = false, logAction, sh
               ) : null}
             </p>
           </div>
-          {canPause && (
+          {readOnly && <p className="text-xs text-amber-800 font-semibold w-full sm:w-auto">Para retomar antes, use o botão em Entregas → Controle de Entregas.</p>}
+          {canPause && !readOnly && (
             <button
               onClick={resume}
               disabled={busy}

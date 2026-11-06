@@ -7615,7 +7615,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
               <span className="text-xs text-slate-500">Ao sair, marque os pedidos que está levando. Eles passam para "Saiu para entrega".</span>
             </div>
           )}
-          <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} />
+          <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} readOnly={mode === 'retirada'} />
         </div>
         
         {activeDeliveries.length > 0 ? (
