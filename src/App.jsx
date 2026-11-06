@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import IntegracoesScreen from './Integracoes';
+import PausaRetirada from './PausaRetirada';
 import UserDetailTabs from './UserDetail';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import { ProductAppPreview, HighlightAppPreview, HomeHighlightsPreview } from './AppPreview';
@@ -5036,6 +5037,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, can
     { id: 'Usuários', label: 'Usuários' },
     { id: 'Logs', label: 'Logs' },
     { id: 'Entregas', label: 'Entregas' },
+    { id: 'Pausar Retirada', label: 'Pausar Retirada' },
     { id: 'Vendas', label: 'Vendas' },
     { id: 'Loja Autônoma', label: 'Loja Autônoma' },
     { id: 'Configurações', label: 'Configurações' }
@@ -7330,7 +7332,7 @@ const StockScreen = ({ globalSearchTerm, products, onRefresh, logAction, showToa
   );
 };
 
-const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: onUpdateStatusRaw, onAssignDriver: onAssignDriverRaw, onToggleSeparated: onToggleSeparatedRaw, canEdit = true, showToast }) => {
+const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: onUpdateStatusRaw, onAssignDriver: onAssignDriverRaw, onToggleSeparated: onToggleSeparatedRaw, canEdit = true, showToast, session, logAction, canPause = false }) => {
   // sem permissão de editar: nenhuma ação muda pedido (os botões também ficam escondidos)
   const denyEdit = () => showToast?.(NO_PERM_MSG, 'warning');
   const onUpdateStatus = (...args) => (canEdit ? onUpdateStatusRaw(...args) : denyEdit());
@@ -7590,6 +7592,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
 
       <div>
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans mb-6">Controle de Entregas</h1>
+        <div className="mb-6"><PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} /></div>
         
         {activeDeliveries.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -9806,7 +9809,7 @@ const pickupDaysOfLabel = (label) => {
 };
 const hhmmToMin = (v) => { const m = /^(\d{1,2}):(\d{2})/.exec(v || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
 
-const PickupScheduleScreen = ({ logAction, showToast, canEdit = true }) => {
+const PickupScheduleScreen = ({ logAction, showToast, canEdit = true, session, canPause = false }) => {
   const [form, setForm] = useState(null);
   const [original, setOriginal] = useState(null);
   const [storeHours, setStoreHours] = useState([]);
@@ -9960,6 +9963,8 @@ const PickupScheduleScreen = ({ logAction, showToast, canEdit = true }) => {
           <Save size={18} /> {isSaving ? 'Salvando...' : 'Salvar'}
         </button>}
       </div>
+
+      <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} />
 
       <fieldset disabled={!canEdit} className="space-y-6 min-w-0 border-0 p-0 m-0">
       <div className={cardClass}>
@@ -11348,12 +11353,12 @@ function App() {
       case 'Destaques': return renderIfAllowed('Destaques', <HighlightsScreen globalSearchTerm={globalSearchTerm} products={products} logAction={logAction} showToast={showToast} canEdit={can('Destaques', 'edit')} canDelete={can('Destaques', 'delete')} />);
       case 'Usuários': return renderIfAllowed('Usuários', <UsersScreen globalSearchTerm={globalSearchTerm} session={session} showToast={showToast} logAction={logAction} canEdit={can('Usuários', 'edit')} canDelete={can('Usuários', 'delete')} />);
       case 'Logs': return renderIfAllowed('Logs', <LogsScreen globalSearchTerm={globalSearchTerm} session={session} />);
-      case 'Retirada': return renderIfAllowed('Entregas', <PickupScheduleScreen logAction={logAction} showToast={showToast} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Retirada': return renderIfAllowed('Entregas', <PickupScheduleScreen logAction={logAction} showToast={showToast} session={session} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Configurações': return renderIfAllowed('Configurações', <SettingsScreen logAction={logAction} showToast={showToast} canEdit={can('Configurações', 'edit')} canDelete={can('Configurações', 'delete')} />);
       case 'Integrações': return renderIfAllowed('Integrações', <IntegracoesScreen showToast={showToast} session={session} />);
       case 'Loja Autônoma': return renderIfAllowed('Loja Autônoma', <LojaAutonomaScreen showToast={showToast} />);
       case 'Vendas': return renderIfAllowed('Vendas', <SalesScreen globalSearchTerm={globalSearchTerm} showToast={showToast} />);
-      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} session={session} logAction={logAction} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Regras de Entrega': return renderIfAllowed('Entregas', <RegrasEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} />);
       case 'Kits de Entrega': return renderIfAllowed('Entregas', <KitsEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Mapa da Loja': return renderIfAllowed('Mapa da Loja', <MapaLojaScreen canEdit={can('Mapa da Loja', 'edit')} canDelete={can('Mapa da Loja', 'delete')} showToast={showToast} logAction={logAction} />);
