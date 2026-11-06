@@ -3,6 +3,7 @@
 // O cliente vê o kit com foto; para a Viasoft o pedido é enviado item por item, cada um pelo preço do seu produto.
 // SQL: entrega_regras_kits.sql (tabelas kits e kit_items). Fotos: bucket público 'banners', pasta kits/.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Gift, Plus, Pencil, Trash2, X, Search, ImagePlus, AlertTriangle } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -287,7 +288,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
         </div>
       )}
 
-      {form && (
+      {form && createPortal(
         <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => !saving && setForm(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 sticky top-0 z-10">
@@ -412,7 +413,8 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
               <button onClick={save} disabled={saving || uploading || formProblem} className="flex-1 bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-60">{saving ? 'Salvando...' : 'Salvar kit'}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
