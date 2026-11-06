@@ -4922,8 +4922,6 @@ const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, can
   const [error, setError] = useState(null);
   const [roleFilter, setRoleFilter] = useState('all');
   const [toasts, setToasts] = useState([]);
-  const notifiedPickupRef = React.useRef(new Set());   // pedidos de retirada que já foram avisados
-  const notifiedPickupReady = React.useRef(false);      // só avisa depois da primeira carga
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -10776,6 +10774,8 @@ const ForcePasswordChangeModal = ({ userName, onDone, onLogout }) => {
 };
 
 function App() {
+  const notifiedPickupRef = React.useRef(new Set());   // pedidos de retirada que já foram avisados
+  const notifiedPickupReady = React.useRef(false);      // só avisa depois da primeira carga
   const [session, setSession] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('Dashboard');
