@@ -41,7 +41,17 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pick, setPick] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef(null);
   const fileRef = useRef(null);
+
+  // fecha a lista de produtos ao clicar fora dela
+  useEffect(() => {
+    if (!pickerOpen) return undefined;
+    const onDown = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [pickerOpen]);
 
   const prodById = useMemo(() => {
     const m = new Map();
@@ -95,10 +105,11 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
-  const addProduct = (p) => {
-    if (form.items.some((it) => String(it.product_id) === String(p.id))) return showToast?.('Esse produto já está no kit. Ajuste a quantidade.', 'info');
-    set({ items: [...form.items, { product_id: String(p.id), quantity: '1' }] });
-    setPick('');
+  // marca/desmarca o produto no kit (a lista fica aberta para escolher vários de uma vez)
+  const toggleProduct = (p) => {
+    const id = String(p.id);
+    if (form.items.some((it) => String(it.product_id) === id)) return set({ items: form.items.filter((it) => String(it.product_id) !== id) });
+    set({ items: [...form.items, { product_id: id, quantity: '1' }] });
   };
   const setQty = (idx, quantity) => set({ items: form.items.map((it, i) => (i === idx ? { ...it, quantity } : it)) });
   const removeItem = (idx) => set({ items: form.items.filter((_, i) => i !== idx) });
@@ -126,9 +137,10 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
 
   const candidates = useMemo(() => {
     const q = norm(pick).trim();
-    if (!q) return [];
-    return products.filter((p) => [p.title, p.sku].some((f) => norm(f).includes(q))).slice(0, 8);
+    const list = q ? products.filter((p) => [p.title, p.sku].some((f) => norm(f).includes(q))) : products;
+    return list.slice(0, 80);
   }, [pick, products]);
+  const selectedIds = useMemo(() => new Set((form?.items ?? []).map((it) => String(it.product_id))), [form]);
 
   const save = async () => {
     if (!canEdit) return showToast?.('Você não tem permissão para esta ação.', 'warning');
@@ -307,23 +319,35 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Produtos do kit</label>
-                <div className="relative">
+                <div className="relative" ref={pickerRef}>
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input className={inputCls + ' pl-9'} value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Buscar produto por nome ou código para adicionar" />
-                  {candidates.length > 0 && (
+                  <input className={inputCls + ' pl-9'} value={pick} onFocus={() => setPickerOpen(true)} onChange={(e) => { setPick(e.target.value); setPickerOpen(true); }} placeholder="Buscar produto por nome ou código, ou clique para ver a lista" />
+                  {pickerOpen && (
                     <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
-                      {candidates.map((p) => (
-                        <button key={p.id} type="button" onClick={() => addProduct(p)} disabled={centsOf(p) <= 0} className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                          <span className="w-9 h-9 rounded-lg bg-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
-                            {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Gift size={16} className="text-slate-300" />}
-                          </span>
-                          <span className="flex-1 min-w-0">
-                            <span className="block font-medium text-slate-800 truncate">{p.title}</span>
-                            <span className="block text-[11px] text-slate-400">{p.sku ? `Cód. ${p.sku}` : 'Sem código'}</span>
-                          </span>
-                          <span className={`shrink-0 font-semibold ${centsOf(p) > 0 ? 'text-slate-700' : 'text-red-500'}`}>{centsOf(p) > 0 ? brl(productPrice(p)) : 'Sem preço'}</span>
-                        </button>
-                      ))}
+                      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100 text-xs">
+                        <span className="text-slate-500">{selectedIds.size === 0 ? 'Marque os produtos que fazem parte do kit' : `${selectedIds.size} produto(s) no kit`}</span>
+                        <button type="button" onClick={() => setPickerOpen(false)} className="font-bold text-primary hover:underline">Concluir</button>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto">
+                        {candidates.length === 0 && <p className="px-3 py-4 text-sm text-slate-400">Nenhum produto encontrado.</p>}
+                        {candidates.map((p) => {
+                          const on = selectedIds.has(String(p.id));
+                          const noPrice = centsOf(p) <= 0;
+                          return (
+                            <button key={p.id} type="button" onClick={() => toggleProduct(p)} disabled={noPrice && !on} className={`w-full text-left px-3 py-2 flex items-center gap-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed ${on ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                              <input type="checkbox" readOnly checked={on} className="pointer-events-none shrink-0" tabIndex={-1} />
+                              <span className="w-9 h-9 rounded-lg bg-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
+                                {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Gift size={16} className="text-slate-300" />}
+                              </span>
+                              <span className="flex-1 min-w-0">
+                                <span className="block font-medium text-slate-800 truncate">{p.title}</span>
+                                <span className="block text-[11px] text-slate-400">{p.sku ? `Cód. ${p.sku}` : 'Sem código'}</span>
+                              </span>
+                              <span className={`shrink-0 font-semibold ${noPrice ? 'text-red-500' : 'text-slate-700'}`}>{noPrice ? 'Sem preço' : brl(productPrice(p))}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
