@@ -375,6 +375,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
                               <span className={`text-xs ${ok ? 'text-slate-500' : 'text-red-500 font-semibold'}`}>{!p ? 'Produto removido ou inativo' : ok ? `${brl(productPrice(p))} cada` : 'Produto sem preço'}</span>
                               <span className="text-xs text-slate-300">×</span>
+                              <span className="text-xs text-slate-500">Qnt.</span>
                               <div className="w-14 shrink-0">
                                 <input className={inputCls + ' text-center !py-1 text-sm'} inputMode="decimal" value={it.quantity} onChange={(e) => setQty(idx, e.target.value)} aria-label="Quantidade" />
                               </div>
