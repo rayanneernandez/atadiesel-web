@@ -53,7 +53,7 @@ async function countScheduled(fromIso, untilIso) {
 }
 
 // readOnly: só mostra o aviso quando há pausa ativa (sem botões). Usado no Controle de Retirada; pausar e retomar ficam em Controle de Entregas.
-export default function PausaRetirada({ session, canPause = false, logAction, showToast, readOnly = false }) {
+export default function PausaRetirada({ session, canPause = false, logAction, showToast, readOnly = false, hideIdle = false }) {
   const [row, setRow] = useState(null);
   const [missing, setMissing] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -164,7 +164,8 @@ export default function PausaRetirada({ session, canPause = false, logAction, sh
       </div>
     ) : null;
   }
-  if (!active && (!canPause || readOnly)) return null;
+  // hideIdle: sem pausa ativa não mostra o cartão manual (a pausa começa sozinha no botão "Saiu para entrega" do card)
+  if (!active && (!canPause || readOnly || hideIdle)) return null;
 
   return (
     <>

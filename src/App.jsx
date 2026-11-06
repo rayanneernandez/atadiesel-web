@@ -7602,7 +7602,7 @@ const DeliveriesScreen = ({ globalSearchTerm, deliveries = [], onUpdateStatus: o
       <div>
         <h1 className="text-2xl font-bold text-slate-900 font-parkinsans mb-6">{mode === 'retirada' ? 'Controle de Retirada' : 'Controle de Entregas'}</h1>
         <div className="mb-6 space-y-3">
-          <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} readOnly={mode === 'retirada'} />
+          <PausaRetirada session={session} canPause={canPause} logAction={logAction} showToast={showToast} readOnly={mode === 'retirada'} hideIdle />
         </div>
         
         {leaveFor && (
