@@ -517,8 +517,111 @@ function PaymentTab({ showToast }) {
   );
 }
 
+// ---------------------------------------------------------------- Abrir porta
+// Botão que abre e fecha a porta da loja. O painel só grava o pedido (SQL abrir_porta.sql); quem liga o relé
+// é a Raspberry Pi da catraca, que consulta a Edge Function "porta". Abrir sempre tem prazo e fecha sozinha.
+const DOOR_MINUTES = [5, 10, 15, 30];
+const DOOR_LOG = { open: 'Abriu', close: 'Fechou', auto_close: 'Fechou sozinha', pi_failsafe: 'Fechou (proteção do Pi)' };
+
+function DoorTab({ showToast }) {
+  const [st, setSt] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [minutes, setMinutes] = useState(5);
+  const [tick, setTick] = useState(0);
+  // diferença entre o relógio do servidor e o deste computador, para a contagem regressiva ficar certa
+  const skew = useMemo(() => (st?.now ? new Date(st.now).getTime() - Date.now() : 0), [st?.now]);
+
+  const load = useCallback(async () => {
+    const { data, error: e } = await supabase.rpc('door_get');
+    if (e) { setError(/door_get|function/i.test(e.message) ? 'Falta rodar o SQL abrir_porta.sql no Supabase.' : e.message); return; }
+    setError('');
+    setSt(data);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(() => { if (!document.hidden) load(); }, 2000);
+    return () => clearInterval(t);
+  }, [load]);
+  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
+
+  const toggle = async () => {
+    const wantOpen = st?.desired !== 'open';
+    setBusy(true);
+    try {
+      const { data, error: e } = await supabase.rpc('door_set', { p_open: wantOpen, p_minutes: minutes });
+      if (e) throw new Error(e.message);
+      setSt(data);
+      showToast(wantOpen ? `Porta liberada por ${minutes} min. Clique de novo para fechar.` : 'Porta fechada.', 'success');
+    } catch (e) { showToast(e.message, 'error'); } finally { setBusy(false); }
+  };
+
+  if (error) return <div className={`${card} p-5 text-sm text-red-600`}>{error}</div>;
+  if (!st) return <div className={`${card} p-5 text-sm text-slate-500`}>Carregando…</div>;
+  if (!st.allowed) return <div className={`${card} p-5 text-sm text-slate-600`}>Você não tem permissão para abrir a porta. Peça a um administrador para liberar <b>Abrir Porta</b> no seu perfil (Usuários &gt; Permissões).</div>;
+
+  const open = st.desired === 'open';
+  const secondsLeft = open && st.open_until ? Math.max(0, Math.round((new Date(st.open_until).getTime() - (Date.now() + skew)) / 1000)) : 0;
+  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+  const ss = String(secondsLeft % 60).padStart(2, '0');
+  const waiting = st.pi_online && (st.pi_state === 'open') !== open; // pedido feito, o Pi ainda não confirmou
+  const piAgo = st.pi_seen_at ? Math.max(0, Math.round((Date.now() + skew - new Date(st.pi_seen_at).getTime()) / 1000)) : null;
+  void tick;
+
+  return (
+    <div className="space-y-4 max-w-xl">
+      {st.pi_online ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 p-3 text-sm">Raspberry Pi da porta <b>conectada</b>.</div>
+      ) : (
+        <div className="rounded-2xl border border-red-200 bg-red-50 text-red-700 p-3 text-sm">
+          Raspberry Pi da porta <b>sem contato</b>{piAgo != null ? ` há ${piAgo > 120 ? `${Math.round(piAgo / 60)} min` : `${piAgo} s`}` : ' (nunca se conectou)'}. Para abrir, ela precisa estar ligada e com internet.
+        </div>
+      )}
+
+      <div className={`${card} p-8 text-center space-y-4`}>
+        <div className={`mx-auto w-28 h-28 rounded-full flex items-center justify-center text-5xl ${open ? 'bg-emerald-100' : 'bg-slate-100'}`}>{open ? '🔓' : '🔒'}</div>
+        <div>
+          <p className="text-xl font-bold text-slate-800">{open ? 'Porta aberta' : 'Porta fechada'}</p>
+          {open && <p className="text-sm text-slate-500">Fecha sozinha em <b>{mm}:{ss}</b></p>}
+          {waiting && <p className="text-xs text-amber-600 mt-1">Aguardando a porta confirmar…</p>}
+        </div>
+        {!open && (
+          <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+            Fechar sozinha depois de
+            <select className="border border-slate-200 rounded-lg px-2 py-1 text-sm" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
+              {DOOR_MINUTES.map((m) => <option key={m} value={m}>{m} min</option>)}
+            </select>
+          </label>
+        )}
+        <div>
+          <button onClick={toggle} disabled={busy || (!open && !st.pi_online)}
+            className={`w-full sm:w-auto sm:min-w-[240px] px-8 py-4 rounded-2xl text-lg font-bold text-white transition-colors disabled:opacity-50 ${open ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+            {busy ? 'Enviando…' : open ? 'Fechar porta' : 'Abrir porta'}
+          </button>
+        </div>
+        {st.requested_by_name && <p className="text-xs text-slate-400">Último pedido: {st.requested_by_name}, {fmtDate(st.requested_at)}</p>}
+      </div>
+
+      <div className={`${card} p-5`}>
+        <h3 className="font-bold text-slate-800 mb-2">Últimos registros</h3>
+        {(st.log || []).length === 0 ? <p className="text-sm text-slate-500">Nenhum ainda.</p> : (
+          <ul className="divide-y divide-slate-100 text-sm">
+            {st.log.map((l, i) => (
+              <li key={i} className="py-2 flex justify-between gap-3">
+                <span className="text-slate-700">{DOOR_LOG[l.action] || l.action}{l.by_name ? ` · ${l.by_name}` : ''}{l.note ? <span className="text-slate-400"> ({l.note})</span> : null}</span>
+                <span className="text-slate-400 whitespace-nowrap">{fmtDate(l.at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Tela
-const TABS = [['qr', 'QR da loja', QrTab], ['funcionarios', 'Funcionários', StaffTab], ['vendas', 'Vendas', SalesTab], ['pagamento', 'Pagamento', PaymentTab], ['sync', 'Sincronização', SyncTab]];
+const TABS = [['qr', 'QR da loja', QrTab], ['funcionarios', 'Funcionários', StaffTab], ['vendas', 'Vendas', SalesTab], ['porta', 'Abrir porta', DoorTab], ['pagamento', 'Pagamento', PaymentTab], ['sync', 'Sincronização', SyncTab]];
 
 export default function LojaAutonomaScreen({ showToast }) {
   const [tab, setTab] = useState('qr');

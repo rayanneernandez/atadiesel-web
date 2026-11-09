@@ -5039,6 +5039,7 @@ const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, can
     { id: 'Pausar Retirada', label: 'Pausar Retirada' },
     { id: 'Vendas', label: 'Vendas' },
     { id: 'Loja Autônoma', label: 'Loja Autônoma' },
+    { id: 'Abrir Porta', label: 'Abrir Porta (Loja Autônoma)', simple: true },
     { id: 'Configurações', label: 'Configurações' }
   ];
 
