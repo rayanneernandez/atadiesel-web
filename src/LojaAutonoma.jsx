@@ -2,6 +2,7 @@
 // autônoma e as vendas feitas por lá. Fala com a Edge Function "loja-autonoma" (que guarda a chave)
 // e, para cadastros e leituras, direto com as tabelas autonomous_* (protegidas por RLS).
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { DoorClosed, DoorOpen } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 const money = (cents) => (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -520,14 +521,17 @@ function PaymentTab({ showToast }) {
 // ---------------------------------------------------------------- Abrir porta
 // Botão que abre e fecha a porta da loja. O painel só grava o pedido (SQL abrir_porta.sql); quem liga o relé
 // é a Raspberry Pi da catraca, que consulta a Edge Function "porta". Abrir sempre tem prazo e fecha sozinha.
-const DOOR_MINUTES = [5, 10, 15, 30];
+const DOOR_MIN_SECONDS = 5;
+const DOOR_MAX_SECONDS = 1800; // 30 min
+const fmtSpan = (s) => (s % 60 === 0 ? `${s / 60} min` : s > 60 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${s} s`);
 const DOOR_LOG = { open: 'Abriu', close: 'Fechou', auto_close: 'Fechou sozinha', pi_failsafe: 'Fechou (proteção do Pi)' };
 
 function DoorTab({ showToast }) {
   const [st, setSt] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [minutes, setMinutes] = useState(5);
+  const [amount, setAmount] = useState('5'); // quanto tempo fica aberta (o usuário digita)
+  const [unit, setUnit] = useState('min'); // 'seg' | 'min'
   const [tick, setTick] = useState(0);
   // diferença entre o relógio do servidor e o deste computador, para a contagem regressiva ficar certa
   const skew = useMemo(() => (st?.now ? new Date(st.now).getTime() - Date.now() : 0), [st?.now]);
@@ -548,12 +552,16 @@ function DoorTab({ showToast }) {
 
   const toggle = async () => {
     const wantOpen = st?.desired !== 'open';
+    const seconds = Math.round(Number(String(amount).replace(',', '.')) * (unit === 'min' ? 60 : 1));
+    if (wantOpen && (!Number.isFinite(seconds) || seconds < DOOR_MIN_SECONDS || seconds > DOOR_MAX_SECONDS)) {
+      return showToast('Informe um tempo entre 5 segundos e 30 minutos.', 'warning');
+    }
     setBusy(true);
     try {
-      const { data, error: e } = await supabase.rpc('door_set', { p_open: wantOpen, p_minutes: minutes });
-      if (e) throw new Error(e.message);
+      const { data, error: e } = await supabase.rpc('door_set', { p_open: wantOpen, p_seconds: wantOpen ? seconds : 300 });
+      if (e) throw new Error(/door_set|function/i.test(e.message) ? 'Falta atualizar o SQL abrir_porta.sql no Supabase (função door_set).' : e.message);
       setSt(data);
-      showToast(wantOpen ? `Porta liberada por ${minutes} min. Clique de novo para fechar.` : 'Porta fechada.', 'success');
+      showToast(wantOpen ? `Porta liberada por ${fmtSpan(seconds)}. Clique de novo para fechar.` : 'Porta fechada.', 'success');
     } catch (e) { showToast(e.message, 'error'); } finally { setBusy(false); }
   };
 
@@ -580,7 +588,7 @@ function DoorTab({ showToast }) {
       )}
 
       <div className={`${card} p-8 text-center space-y-4`}>
-        <div className={`mx-auto w-28 h-28 rounded-full flex items-center justify-center text-5xl ${open ? 'bg-emerald-100' : 'bg-slate-100'}`}>{open ? '🔓' : '🔒'}</div>
+        <div className={`mx-auto w-28 h-28 rounded-full flex items-center justify-center ${open ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{open ? <DoorOpen size={52} strokeWidth={1.6} /> : <DoorClosed size={52} strokeWidth={1.6} />}</div>
         <div>
           <p className="text-xl font-bold text-slate-800">{open ? 'Porta aberta' : 'Porta fechada'}</p>
           {open && <p className="text-sm text-slate-500">Fecha sozinha em <b>{mm}:{ss}</b></p>}
@@ -589,8 +597,11 @@ function DoorTab({ showToast }) {
         {!open && (
           <label className="inline-flex items-center gap-2 text-sm text-slate-600">
             Fechar sozinha depois de
-            <select className="border border-slate-200 rounded-lg px-2 py-1 text-sm" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-              {DOOR_MINUTES.map((m) => <option key={m} value={m}>{m} min</option>)}
+            <input type="number" inputMode="decimal" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)}
+              className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-sm text-center outline-none focus:ring-2 focus:ring-primary/30" />
+            <select className="border border-slate-200 rounded-lg px-2 py-1 text-sm" value={unit} onChange={(e) => setUnit(e.target.value)}>
+              <option value="seg">segundos</option>
+              <option value="min">minutos</option>
             </select>
           </label>
         )}
