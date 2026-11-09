@@ -11652,7 +11652,8 @@ function App() {
         {/* Área de Scroll */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-100">
           <div className="max-w-7xl mx-auto pb-8">
-            {hasPermission('Produtos') && <ErpAlerta />}
+            {/* Aviso de falha do ERP: só para quem está na lista de desenvolvedores (integration_admins), nem administrador vê */}
+            {canIntegrations && <ErpAlerta />}
             {renderContent()}
           </div>
         </main>
