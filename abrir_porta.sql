@@ -82,10 +82,11 @@ begin
 end;
 $$;
 
--- 6. Abrir (p_open = true) ou fechar (false). Abrir sempre tem prazo: 1 a 30 minutos, padrão 5.
-create or replace function public.door_set(p_open boolean, p_minutes integer default 5) returns jsonb
+-- 6. Abrir (p_open = true) ou fechar (false). Abrir sempre tem prazo: de 5 segundos a 30 minutos, padrão 5 minutos.
+drop function if exists public.door_set(boolean, integer);
+create or replace function public.door_set(p_open boolean, p_seconds integer default 300) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare v_name text; v_min integer := least(greatest(coalesce(p_minutes, 5), 1), 30); v_seen timestamptz;
+declare v_name text; v_sec integer := least(greatest(coalesce(p_seconds, 300), 5), 1800); v_seen timestamptz;
 begin
   if auth.uid() is null or not public.can_open_door() then
     raise exception 'Sem permissão para abrir a porta.' using errcode = '42501';
@@ -99,11 +100,11 @@ begin
   select name into v_name from public.profiles where id = auth.uid();
   update public.door_state set
     desired = case when p_open then 'open' else 'closed' end,
-    open_until = case when p_open then now() + make_interval(mins => v_min) else null end,
+    open_until = case when p_open then now() + make_interval(secs => v_sec) else null end,
     requested_by = auth.uid(), requested_by_name = v_name, requested_at = now(), updated_at = now()
   where id = 1;
   insert into public.door_log (action, by_id, by_name, note)
-  values (case when p_open then 'open' else 'close' end, auth.uid(), v_name, case when p_open then v_min || ' min' else null end);
+  values (case when p_open then 'open' else 'close' end, auth.uid(), v_name, case when not p_open then null when v_sec % 60 = 0 then (v_sec / 60) || ' min' else v_sec || ' s' end);
   return public.door_get();
 end;
 $$;
