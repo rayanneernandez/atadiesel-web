@@ -5,6 +5,7 @@ import IntegracoesScreen from './Integracoes';
 import PausaRetirada from './PausaRetirada';
 import SaiuParaEntregaModal from './SaiuParaEntregaModal';
 import UserDetailTabs from './UserDetail';
+import ErpAlerta from './ErpAlerta';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import { ProductAppPreview, HighlightAppPreview, HomeHighlightsPreview } from './AppPreview';
 import logoSmall from './assets/logoso.png';
@@ -11651,6 +11652,7 @@ function App() {
         {/* Área de Scroll */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-100">
           <div className="max-w-7xl mx-auto pb-8">
+            {hasPermission('Produtos') && <ErpAlerta />}
             {renderContent()}
           </div>
         </main>
