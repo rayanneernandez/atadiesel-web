@@ -565,6 +565,22 @@ function DoorTab({ showToast }) {
     } catch (e) { showToast(e.message, 'error'); } finally { setBusy(false); }
   };
 
+  // Modo direto: mesmo caminho que o app já usa hoje (função abrir-porta -> Pi /door/open). Um pulso abre a porta e ela fecha sozinha.
+  const pulse = async () => {
+    setBusy(true);
+    try {
+      const { data, error: e } = await supabase.functions.invoke('abrir-porta', { body: {} });
+      if (e) {
+        let msg = e.message;
+        try { const b = await e.context?.json?.(); if (b?.error) msg = b.error; } catch { /* sem corpo */ }
+        throw new Error(msg);
+      }
+      if (data?.error) throw new Error(data.error);
+      showToast('Comando enviado: a porta abre agora e fecha sozinha.', 'success');
+      load();
+    } catch (e) { showToast(e.message, 'error'); } finally { setBusy(false); }
+  };
+
   if (error) return <div className={`${card} p-5 text-sm text-red-600`}>{error}</div>;
   if (!st) return <div className={`${card} p-5 text-sm text-slate-500`}>Carregando…</div>;
   if (!st.allowed) return <div className={`${card} p-5 text-sm text-slate-600`}>Você não tem permissão para abrir a porta. Peça a um administrador para liberar <b>Abrir Porta</b> no seu perfil (Usuários &gt; Permissões).</div>;
@@ -582,8 +598,9 @@ function DoorTab({ showToast }) {
       {st.pi_online ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 p-3 text-sm">Raspberry Pi da porta <b>conectada</b>.</div>
       ) : (
-        <div className="rounded-2xl border border-red-200 bg-red-50 text-red-700 p-3 text-sm">
-          Raspberry Pi da porta <b>sem contato</b>{piAgo != null ? ` há ${piAgo > 120 ? `${Math.round(piAgo / 60)} min` : `${piAgo} s`}` : ' (nunca se conectou)'}. Para abrir, ela precisa estar ligada e com internet.
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 text-blue-800 p-3 text-sm">
+          <b>Abertura direta:</b> o clique manda o comando de abrir e a porta fecha sozinha em seguida (igual ao app).
+          {piAgo != null ? ` O controle com tempo e botão de fechar está sem contato há ${piAgo > 120 ? `${Math.round(piAgo / 60)} min` : `${piAgo} s`}.` : ''}
         </div>
       )}
 
@@ -594,7 +611,7 @@ function DoorTab({ showToast }) {
           {open && <p className="text-sm text-slate-500">Fecha sozinha em <b>{mm}:{ss}</b></p>}
           {waiting && <p className="text-xs text-amber-600 mt-1">Aguardando a porta confirmar…</p>}
         </div>
-        {!open && (
+        {!open && st.pi_online && (
           <label className="inline-flex items-center gap-2 text-sm text-slate-600">
             Fechar sozinha depois de
             <input type="number" inputMode="decimal" min="1" step="any" value={amount} onChange={(e) => setAmount(e.target.value)}
@@ -606,7 +623,7 @@ function DoorTab({ showToast }) {
           </label>
         )}
         <div>
-          <button onClick={toggle} disabled={busy || (!open && !st.pi_online)}
+          <button onClick={st.pi_online || open ? toggle : pulse} disabled={busy}
             className={`w-full sm:w-auto sm:min-w-[240px] px-8 py-4 rounded-2xl text-lg font-bold text-white transition-colors disabled:opacity-50 ${open ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
             {busy ? 'Enviando…' : open ? 'Fechar porta' : 'Abrir porta'}
           </button>
