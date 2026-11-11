@@ -2,11 +2,14 @@
 // As localizações ficam na tabela product_locations (SQL: mapa_loja.sql). Nome, preço e estoque vêm do cadastro vivo
 // (products, ligado pelo código = products.sku). Quem tem 'Editar' no módulo importa CSV e edita; 'Excluir' remove.
 // Se a tabela ainda não existir, mostra os dados do mapa original (somente leitura) e avisa para rodar o SQL.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, X, Plus, Pencil, Trash2, Upload, ZoomIn, ZoomOut, RotateCcw, MapPin, AlertTriangle } from 'lucide-react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, X, Plus, Pencil, Trash2, Upload, ZoomIn, ZoomOut, RotateCcw, MapPin, AlertTriangle, Box, Map as MapIcon } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import mapaImg from './assets/mapa-loja.webp';
 import SEED from './mapaLojaSeed';
+
+// A maquete 3D (Three.js) só é baixada quando alguém abre a aba "Loja 3D".
+const Loja3D = lazy(() => import('./Loja3D'));
 
 // Áreas clicáveis da planta (coordenadas na imagem 1536 x 1024)
 const REGIONS = [
@@ -126,6 +129,7 @@ export default function MapaLojaScreen({ canEdit = false, canDelete = false, sho
   const [area, setArea] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [zoom, setZoom] = useState(1);
+  const [view, setView] = useState('2d'); // '2d' planta | '3d' maquete com as fotos dos móveis
   const [visible, setVisible] = useState(65);
 
   const [form, setForm] = useState(null);
@@ -184,6 +188,14 @@ export default function MapaLojaScreen({ canEdit = false, canDelete = false, sho
   const selected = records.find((r) => r.id === selectedId) || null;
   const selectedRegion = selected ? regionFor(selected.movel) : null;
   const pinRegion = selectedRegion || (area ? REGIONS.find((r) => r.keys.join() === area.join()) : null);
+  // O que a maquete 3D destaca: o produto escolhido (móvel + nível + posição) ou a área clicada.
+  const highlight3d = useMemo(() => {
+    if (selected) {
+      const lvl = simpleLevel(selected.nivel);
+      return { sector: canonicalMove(selected.movel), level: /^\d+$/.test(lvl) ? lvl : null, pos: selected.posicao || null };
+    }
+    return area ? { sector: area[0], level: null, pos: null } : null;
+  }, [selected, area]);
 
   const scrollToRegion = useCallback((reg) => {
     requestAnimationFrame(() => {
@@ -422,21 +434,32 @@ export default function MapaLojaScreen({ canEdit = false, canDelete = false, sho
         <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 min-w-0 flex flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div>
-              <div className="text-[10px] uppercase tracking-widest font-extrabold text-slate-400">Visão superior</div>
-              <div className="text-sm font-bold text-slate-800">Planta da loja</div>
+              <div className="text-[10px] uppercase tracking-widest font-extrabold text-slate-400">{view === '3d' ? 'Maquete 3D' : 'Visão superior'}</div>
+              <div className="text-sm font-bold text-slate-800">{view === '3d' ? 'Loja em 3D com fotos dos móveis' : 'Planta da loja'}</div>
               <div className="text-xs text-slate-400">
-                {selected ? `${canonicalMove(selected.movel)} · nível ${simpleLevel(selected.nivel)} · posição ${selected.posicao || '—'}` : area ? `Exibindo produtos de ${area.join(' / ')}.` : 'Clique nas áreas da planta para ver seus produtos.'}
+                {selected ? `${canonicalMove(selected.movel)} · nível ${simpleLevel(selected.nivel)} · posição ${selected.posicao || '—'}` : area ? `Exibindo produtos de ${area.join(' / ')}.` : view === '3d' ? 'Clique numa gôndola ou prateleira para ver seus produtos.' : 'Clique nas áreas da planta para ver seus produtos.'}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={reset} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50"><RotateCcw size={14} /> Restaurar</button>
-              <div className="flex border border-slate-200 rounded-lg overflow-hidden">
-                <button onClick={() => changeZoom(zoom - 0.25)} aria-label="Diminuir zoom" className="px-3 py-2 text-slate-600 hover:bg-slate-50"><ZoomOut size={16} /></button>
-                <button onClick={() => changeZoom(zoom + 0.25)} aria-label="Aumentar zoom" className="px-3 py-2 text-slate-600 hover:bg-slate-50 border-l border-slate-200"><ZoomIn size={16} /></button>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex border border-slate-200 rounded-lg overflow-hidden" role="tablist" aria-label="Tipo de visualização">
+                <button role="tab" aria-selected={view === '2d'} onClick={() => setView('2d')} className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 ${view === '2d' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'}`}><MapIcon size={14} /> Planta 2D</button>
+                <button role="tab" aria-selected={view === '3d'} onClick={() => setView('3d')} className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 border-l border-slate-200 ${view === '3d' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'}`}><Box size={14} /> Loja 3D</button>
               </div>
+              <button onClick={reset} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 border border-slate-200 rounded-lg px-3 py-2 hover:bg-slate-50"><RotateCcw size={14} /> Restaurar</button>
+              {view === '2d' && (
+                <div className="flex border border-slate-200 rounded-lg overflow-hidden">
+                  <button onClick={() => changeZoom(zoom - 0.25)} aria-label="Diminuir zoom" className="px-3 py-2 text-slate-600 hover:bg-slate-50"><ZoomOut size={16} /></button>
+                  <button onClick={() => changeZoom(zoom + 0.25)} aria-label="Aumentar zoom" className="px-3 py-2 text-slate-600 hover:bg-slate-50 border-l border-slate-200"><ZoomIn size={16} /></button>
+                </div>
+              )}
             </div>
           </div>
 
+          {view === '3d' ? (
+            <Suspense fallback={<div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 h-[62vh] min-h-[340px] text-sm text-slate-400">Carregando a loja em 3D…</div>}>
+              <Loja3D regions={REGIONS} highlight={highlight3d} onPick={chooseArea} />
+            </Suspense>
+          ) : (
           <div ref={viewportRef} className="overflow-auto rounded-xl border border-slate-200 bg-white flex-1 min-h-[260px] max-h-[70vh]">
             <div ref={frameRef} className="relative select-none leading-[0]" style={{ width: `${zoom * 100}%`, minWidth: 560 }}>
               <img src={mapaImg} alt="Planta da loja" className="block w-full h-auto" draggable={false} />
@@ -467,6 +490,7 @@ export default function MapaLojaScreen({ canEdit = false, canDelete = false, sho
               </svg>
             </div>
           </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-3 text-xs text-slate-400">
             <span className="flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-full bg-red-600" /> Destaque da localização selecionada</span>
