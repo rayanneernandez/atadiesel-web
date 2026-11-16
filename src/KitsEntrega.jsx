@@ -248,11 +248,11 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
       ) : kits.length === 0 && !missing ? (
         <div className="p-12 text-center text-slate-400 bg-white rounded-2xl border border-slate-100">Nenhum kit criado ainda.</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,290px))] gap-4">
           {kits.map((k) => (
             <div key={k.id} className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col ${k.active ? '' : 'opacity-70'}`}>
-              {/* Altura fixa e imagem inteira (sem cortar), como nos cartões de produto */}
-              <div className="h-48 bg-white border-b border-slate-100 flex items-center justify-center p-3">
+              {/* Altura fixa e imagem inteira (sem cortar), como nos cartões de produto. Cartão com no máximo 290 px de largura. */}
+              <div className="h-36 bg-white border-b border-slate-100 flex items-center justify-center p-2">
                 {k.image_url ? <img src={k.image_url} alt={k.name} className="max-w-full max-h-full object-contain" /> : <Gift size={48} className="text-slate-300" />}
               </div>
               <div className="p-4 flex-1 flex flex-col gap-2">
