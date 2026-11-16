@@ -251,8 +251,9 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {kits.map((k) => (
             <div key={k.id} className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col ${k.active ? '' : 'opacity-70'}`}>
-              <div className="aspect-square bg-slate-100 flex items-center justify-center">
-                {k.image_url ? <img src={k.image_url} alt={k.name} className="w-full h-full object-cover" /> : <Gift size={48} className="text-slate-300" />}
+              {/* Altura fixa e imagem inteira (sem cortar), como nos cartões de produto */}
+              <div className="h-48 bg-white border-b border-slate-100 flex items-center justify-center p-3">
+                {k.image_url ? <img src={k.image_url} alt={k.name} className="max-w-full max-h-full object-contain" /> : <Gift size={48} className="text-slate-300" />}
               </div>
               <div className="p-4 flex-1 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
@@ -299,7 +300,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
             <div className="p-6 space-y-5">
               <div className="flex gap-4 items-start">
                 <button type="button" onClick={() => fileRef.current?.click()} className="w-32 h-32 shrink-0 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:border-primary flex items-center justify-center overflow-hidden">
-                  {form.image_url ? <img src={form.image_url} alt="" className="w-full h-full object-cover" /> : (
+                  {form.image_url ? <img src={form.image_url} alt="" className="w-full h-full object-contain bg-white p-1" /> : (
                     <span className="text-xs text-slate-400 text-center px-2 inline-flex flex-col items-center gap-1"><ImagePlus size={22} />{uploading ? 'Enviando...' : 'Foto do kit'}</span>
                   )}
                 </button>
@@ -338,7 +339,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                             <button key={p.id} type="button" onClick={() => toggleProduct(p)} disabled={noPrice && !on} className={`w-full text-left px-3 py-2 flex items-center gap-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed ${on ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
                               <input type="checkbox" readOnly checked={on} className="pointer-events-none shrink-0" tabIndex={-1} />
                               <span className="w-9 h-9 rounded-lg bg-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
-                                {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Gift size={16} className="text-slate-300" />}
+                                {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-contain bg-white" /> : <Gift size={16} className="text-slate-300" />}
                               </span>
                               <span className="flex-1 min-w-0">
                                 <span className="block font-medium text-slate-800 truncate">{p.title}</span>
@@ -361,7 +362,7 @@ export default function KitsEntregaScreen({ showToast, logAction, canEdit = true
                     return (
                       <div key={it.product_id} className="flex items-start gap-3 bg-slate-50 border border-slate-100 rounded-xl p-3">
                         <span className="w-12 h-12 rounded-lg bg-white border border-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
-                          {p?.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Gift size={18} className="text-slate-300" />}
+                          {p?.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-contain" /> : <Gift size={18} className="text-slate-300" />}
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
