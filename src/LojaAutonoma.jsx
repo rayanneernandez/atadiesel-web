@@ -407,16 +407,17 @@ function SalesTab({ showToast }) {
       </div>
       <div className={`${card} overflow-x-auto`}>
         <table className="w-full text-sm">
-          <thead className="text-xs uppercase text-slate-500 bg-slate-50"><tr><th className="p-3 text-left">Data</th><th className="p-3 text-left">Cliente</th><th className="p-3 text-left">Itens</th><th className="p-3 text-left">Pagamento</th><th className="p-3 text-right">Valor</th><th className="p-3 text-left">Cupom</th></tr></thead>
+          <thead className="text-xs uppercase text-slate-500 bg-slate-50"><tr><th className="p-3 text-left">Data</th><th className="p-3 text-left">Cliente</th><th className="p-3 text-left">Itens</th><th className="p-3 text-left">Pagamento</th><th className="p-3 text-center">Pessoas</th><th className="p-3 text-right">Valor</th><th className="p-3 text-left">Cupom</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {loading ? <tr><td colSpan={6} className="p-8 text-center text-slate-400">Carregando…</td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhuma venda da loja autônoma ainda.</td></tr>
+            {loading ? <tr><td colSpan={7} className="p-8 text-center text-slate-400">Carregando…</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={7} className="p-8 text-center text-slate-400">Nenhuma venda da loja autônoma ainda.</td></tr>
               : rows.map((r) => (
                 <tr key={r.id}>
                   <td className="p-3 whitespace-nowrap">{fmtDate(r.paid_at)}</td>
                   <td className="p-3">{r.customer_name || '—'}<div className="text-xs text-slate-500">{r.customer_cpf ? maskCpf(r.customer_cpf) : ''}</div></td>
                   <td className="p-3 text-xs text-slate-600">{(r.items || []).map((i) => `${i.quantity}× ${i.name}`).join(', ')}</td>
                   <td className="p-3">{METHODS[r.method] || r.method || '—'}</td>
+                  <td className="p-3 text-center">{r.party_size ?? '—'}</td>
                   <td className="p-3 text-right font-medium">{money(r.amount_cents)}</td>
                   <td className="p-3">{r.coupon?.url ? <a className="text-primary hover:underline" href={r.coupon.url} target="_blank" rel="noreferrer">{r.coupon.number || 'Ver'}</a> : '—'}</td>
                 </tr>
