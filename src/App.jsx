@@ -181,6 +181,21 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
+// Miniatura do produto na lista: sem foto (ou foto quebrada) aparece um quadrado âmbar tracejado, para achar rápido o que falta.
+const ProductThumb = ({ src, alt }) => {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [src]);
+  const has = !!src && !broken;
+  return has ? (
+    <img src={src} alt={alt || ''} loading="lazy" onError={() => setBroken(true)}
+      className="w-10 h-10 shrink-0 object-contain rounded-lg bg-white border border-slate-200" />
+  ) : (
+    <div title="Produto sem imagem" className="w-10 h-10 shrink-0 rounded-lg border border-dashed border-amber-300 bg-amber-50 text-amber-500 flex items-center justify-center">
+      <Package size={16} />
+    </div>
+  );
+};
+
 const Toast = ({ message, type, onClose }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 3000);
@@ -2334,9 +2349,14 @@ const ProductsScreen = ({ globalSearchTerm, products, onRefresh, logAction, show
           <tbody>
             {pagedProducts.map((product) => (
               <tr key={product.id} className="bg-white border-b hover:bg-slate-50">
-                <td className="px-6 py-4 font-medium text-slate-900">
-                  <HighlightText text={product.name} highlight={globalSearchTerm} />
-                  {product.deliveryAllowed && <span className="ml-2 align-middle text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Entrega</span>}
+                <td className="px-6 py-3 font-medium text-slate-900">
+                  <div className="flex items-center gap-3">
+                    <ProductThumb src={product.image} alt={product.name} />
+                    <div>
+                      <HighlightText text={product.name} highlight={globalSearchTerm} />
+                      {product.deliveryAllowed && <span className="ml-2 align-middle text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Entrega</span>}
+                    </div>
+                  </div>
                 </td>
                 <td className="px-6 py-4"><HighlightText text={product.category} highlight={globalSearchTerm} /></td>
                 <td className="px-6 py-4">
