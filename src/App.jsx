@@ -5183,6 +5183,19 @@ const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, can
 
   const roleOptions = buildRoleOptions(rolesList);
   const [showNewUserPassword, setShowNewUserPassword] = useState(false);
+  const [userErrors, setUserErrors] = useState({}); // erros mostrados dentro do modal Novo Usuário: { name, email, password, form }
+  useEffect(() => { setUserErrors({}); }, [isModalOpen]);
+
+  // Confere se o e-mail já existe (ao sair do campo), para avisar antes de enviar
+  const checkNewUserEmail = async () => {
+    const email = newUser.email.trim().toLowerCase();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setUserErrors(e => ({ ...e, email: 'Digite um e-mail válido (exemplo: ana@atadiesel.com).' })); return; }
+    try {
+      const { data } = await supabase.from('profiles').select('id').ilike('email', email.replace(/[%_\\]/g, (m) => '\\' + m)).limit(1); // escapa % _ para não casar e-mails parecidos
+      if (data && data.length > 0) setUserErrors(e => ({ ...e, email: 'Este e-mail já está cadastrado.' }));
+    } catch { /* sem rede: a conferência final acontece ao criar */ }
+  };
   const [staffAccess, setStaffAccess] = useState({ ...EMPTY_STAFF_ACCESS }); // acesso à loja autônoma (cargo Funcionário)
 
   const openNewUserModal = () => {
@@ -5207,15 +5220,18 @@ const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, can
     const password = newUser.password.trim();
     const name = newUser.name.trim();
 
-    if (!name || !email || !password) {
-      showToast("Por favor, preencha todos os campos.", "warning");
+    const errs = {};
+    if (!name) errs.name = 'Preencha o nome completo.';
+    if (!email) errs.email = 'Preencha o e-mail.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Digite um e-mail válido (exemplo: ana@atadiesel.com).';
+    if (!password) errs.password = 'Preencha a senha provisória.';
+    else if (password.length < 6) errs.password = 'A senha deve ter pelo menos 6 caracteres.';
+    if (Object.keys(errs).length) {
+      setUserErrors(errs);
+      showToast("Corrija os campos destacados.", "warning");
       return;
     }
-
-    if (password.length < 6) {
-      showToast("A senha provisória deve ter pelo menos 6 caracteres.", "warning");
-      return;
-    }
+    setUserErrors({});
 
     const roleConfig = roleOptions.find(r => r.key === normalizeRoleKey(newUser.role)) || roleOptions[0];
     const isStaff = ['funcionario', 'entregador'].includes(normalizeRoleKey(newUser.role)); // quem entra na loja autônoma
@@ -5270,7 +5286,11 @@ const UsersScreen = ({ globalSearchTerm, session, logAction, canEdit = true, can
       setShowNewUserPassword(false);
     } catch (error) {
       console.error("Erro ao criar usuário:", error);
-      showToast("Não foi possível criar o usuário: " + translateUserRpcError(error), "error");
+      const msg = translateUserRpcError(error);
+      if (/e-?mail.*(já|ja).*cadastrad|already (registered|exists)|duplicate key/i.test(msg)) setUserErrors({ email: 'Este e-mail já está cadastrado.' });
+      else if (/senha|password/i.test(msg)) setUserErrors({ password: msg });
+      else setUserErrors({ form: msg });
+      showToast("Não foi possível criar o usuário: " + msg, "error");
     }
   };
 
@@ -5710,10 +5730,11 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                       name="novo-usuario-nome"
                       autoComplete="off"
                       value={newUser.name}
-                      onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                      onChange={(e) => { setNewUser({...newUser, name: e.target.value}); if (userErrors.name) setUserErrors(er => ({ ...er, name: undefined })); }}
                       placeholder="Ex: Ana Pereira"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400"
+                      className={`w-full bg-slate-50 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400 ${userErrors.name ? 'border-red-400 bg-red-50/40' : 'border-slate-200'}`}
                    />
+                   {userErrors.name && <p className="text-xs text-red-600 mt-1.5 flex items-center gap-1"><AlertCircle size={13} />{userErrors.name}</p>}
                 </div>
 
                 <div>
@@ -5723,10 +5744,12 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                       name="novo-usuario-email"
                       autoComplete="off"
                       value={newUser.email}
-                      onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                      onChange={(e) => { setNewUser({...newUser, email: e.target.value}); if (userErrors.email) setUserErrors(er => ({ ...er, email: undefined })); }}
+                      onBlur={checkNewUserEmail}
                       placeholder="Ex: ana@atadiesel.com"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400"
+                      className={`w-full bg-slate-50 border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400 ${userErrors.email ? 'border-red-400 bg-red-50/40' : 'border-slate-200'}`}
                    />
+                   {userErrors.email && <p className="text-xs text-red-600 mt-1.5 flex items-center gap-1"><AlertCircle size={13} />{userErrors.email}</p>}
                 </div>
 
                 <div>
@@ -5737,9 +5760,9 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                         name="novo-usuario-senha"
                         autoComplete="new-password"
                         value={newUser.password}
-                        onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                        onChange={(e) => { setNewUser({...newUser, password: e.target.value}); if (userErrors.password) setUserErrors(er => ({ ...er, password: undefined })); }}
                         placeholder="Mínimo 6 caracteres"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400"
+                        className={`w-full bg-slate-50 border rounded-xl px-4 pr-11 py-3 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-slate-700 placeholder:text-slate-400 ${userErrors.password ? 'border-red-400 bg-red-50/40' : 'border-slate-200'}`}
                      />
                      <button
                         type="button"
@@ -5750,7 +5773,11 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
                         {showNewUserPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                      </button>
                    </div>
-                   <p className="text-xs text-slate-400 mt-1.5">No primeiro acesso ao painel, o usuário será obrigado a criar uma senha nova.</p>
+                   {userErrors.password
+                     ? <p className="text-xs text-red-600 mt-1.5 flex items-center gap-1"><AlertCircle size={13} />{userErrors.password}</p>
+                     : <p className={`text-xs mt-1.5 ${newUser.password && newUser.password.trim().length < 6 ? 'text-amber-600' : 'text-slate-400'}`}>
+                         {newUser.password && newUser.password.trim().length < 6 ? `Faltam ${6 - newUser.password.trim().length} caractere(s) (mínimo 6). ` : ''}No primeiro acesso ao painel, o usuário será obrigado a criar uma senha nova.
+                       </p>}
                 </div>
                 
                 <div>
@@ -5772,6 +5799,7 @@ No próximo acesso ao painel, depois de entrar com a senha atual, ele será obri
              </div>
 
              <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+                {userErrors.form && <div className="mb-3 bg-red-50 text-red-700 border border-red-200 rounded-lg p-3 text-sm flex items-start gap-2"><AlertCircle size={16} className="mt-0.5 shrink-0" /><span>{userErrors.form}</span></div>}
                 <button 
                    onClick={handleSaveUser}
                    className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-blue-800 transition-all shadow-lg shadow-blue-500/20 active:scale-[0.99]"
