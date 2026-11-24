@@ -6,6 +6,7 @@ import PausaRetirada from './PausaRetirada';
 import SaiuParaEntregaModal from './SaiuParaEntregaModal';
 import UserDetailTabs from './UserDetail';
 import ErpAlerta from './ErpAlerta';
+import AlertasPrateleiraScreen, { shelfFetch } from './AlertasPrateleira';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import { ProductAppPreview, HighlightAppPreview, HomeHighlightsPreview } from './AppPreview';
 import logoSmall from './assets/logoso.png';
@@ -11450,6 +11451,31 @@ function App() {
       return next;
     });
   };
+  // Produtos fora do lugar (alertas da câmera da loja): total de abertos para o sininho, conferido a cada 2 minutos
+  const [shelfOpen, setShelfOpen] = useState(0);
+  const shelfPrevRef = React.useRef(null);
+  useEffect(() => {
+    if (!session?.user || !hasPermission('Mapa da Loja')) return undefined;
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await shelfFetch('/count');
+        if (!r.ok) return;
+        const { open } = await r.json();
+        if (!alive) return;
+        if (shelfPrevRef.current !== null && open > shelfPrevRef.current) {
+          const n = open - shelfPrevRef.current;
+          showToast(`${n} ${n === 1 ? 'novo produto fora do lugar' : 'novos produtos fora do lugar'}`, 'warning');
+        }
+        shelfPrevRef.current = open;
+        setShelfOpen(open);
+      } catch { /* sem rede ou servidor sem acesso ao portal: o sininho só não mostra o total */ }
+    };
+    check();
+    const t = setInterval(check, 120000);
+    return () => { alive = false; clearInterval(t); };
+  }, [session?.user?.id, userProfile]);
+
   const unreadOrders = seenReady ? awaitingOrders.filter((d) => !seenOrders.has(d.id)) : [];
   const goToOrder = (d) => {
     markSeen([d.id]);
@@ -11499,6 +11525,7 @@ function App() {
       case 'Entregas': return renderIfAllowed('Entregas', <DeliveriesScreen mode="entregas" onRefresh={fetchDeliveries} globalSearchTerm={globalSearchTerm} deliveries={deliveries} onUpdateStatus={handleUpdateDeliveryStatus} onAssignDriver={handleAssignDriver} onToggleSeparated={handleToggleSeparated} showToast={showToast} session={session} logAction={logAction} canPause={can('Pausar Retirada', 'edit')} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
       case 'Regras de Entrega': return renderIfAllowed('Entregas', <RegrasEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} />);
       case 'Kits de Entrega': return renderIfAllowed('Entregas', <KitsEntregaScreen showToast={showToast} logAction={logAction} canEdit={can('Entregas', 'edit')} canDelete={can('Entregas', 'delete')} />);
+      case 'Produtos fora do lugar': return renderIfAllowed('Mapa da Loja', <AlertasPrateleiraScreen showToast={showToast} />);
       case 'Mapa da Loja': return renderIfAllowed('Mapa da Loja', <MapaLojaScreen canEdit={can('Mapa da Loja', 'edit')} canDelete={can('Mapa da Loja', 'delete')} showToast={showToast} logAction={logAction} />);
       case 'Cupons': return renderIfAllowed('Cupons', <CuponsScreen canEdit={can('Cupons', 'edit')} canDelete={can('Cupons', 'delete')} currentUser={{ id: session?.user?.id, name: userProfile?.name || session?.user?.email }} showToast={showToast} logAction={logAction} />);
       case 'Fidelidade': return renderIfAllowed('Fidelidade', <LoyaltyScreen globalSearchTerm={globalSearchTerm} logAction={logAction} showToast={showToast} canEdit={can('Fidelidade', 'edit')} canDelete={can('Fidelidade', 'delete')} />);
@@ -11583,6 +11610,7 @@ function App() {
           />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
           <SidebarItem icon={MapPin} label="Mapa da Loja" active={activeTab === 'Mapa da Loja'} onClick={() => setActiveTab('Mapa da Loja')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
+          <SidebarItem icon={AlertTriangle} label="Produtos fora do lugar" active={activeTab === 'Produtos fora do lugar'} onClick={() => setActiveTab('Produtos fora do lugar')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
           <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
           <SidebarItem icon={Plug} label="Integrações" active={activeTab === 'Integrações'} onClick={() => setActiveTab('Integrações')} isOpen={isSidebarOpen} visible={hasPermission('Integrações')} />
           <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} isOpen={isSidebarOpen} visible={hasPermission('Configurações')} />
@@ -11632,8 +11660,8 @@ function App() {
                 aria-label="Notificações"
               >
                 <Bell size={20} className="text-slate-600" />
-                {unreadOrders.length > 0 && (
-                  <CountBadge n={unreadOrders.length} className="absolute -top-0.5 -right-0.5 !min-w-[18px] !h-[18px] !text-[10px] border border-white" />
+                {(unreadOrders.length + shelfOpen) > 0 && (
+                  <CountBadge n={unreadOrders.length + shelfOpen} className="absolute -top-0.5 -right-0.5 !min-w-[18px] !h-[18px] !text-[10px] border border-white" />
                 )}
               </button>
 
@@ -11643,6 +11671,15 @@ function App() {
                       <h3 className="font-bold text-slate-800 text-sm">Pedidos aguardando você</h3>
                       <span className={`${unreadOrders.length > 0 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'} text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap`}>{unreadOrders.length} {unreadOrders.length === 1 ? 'NOVO' : 'NOVOS'}</span>
                    </div>
+                   {shelfOpen > 0 && (
+                     <button onClick={() => { setActiveTab('Produtos fora do lugar'); setShowNotifications(false); }} className="w-full text-left p-4 border-b border-amber-100 bg-amber-50 hover:bg-amber-100/70 flex gap-3 items-center transition-colors">
+                       <span className="w-9 h-9 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><AlertTriangle size={16} /></span>
+                       <span className="text-sm">
+                         <b className="text-slate-900">{shelfOpen} {shelfOpen === 1 ? 'produto fora do lugar' : 'produtos fora do lugar'}</b>
+                         <span className="block text-xs text-slate-500">Toque para ver e marcar como arrumado.</span>
+                       </span>
+                     </button>
+                   )}
                    <div className="max-h-[380px] overflow-y-auto">
                       {awaitingOrders.length === 0 && (
                         <p className="p-6 text-center text-sm text-slate-400">Nenhum pedido novo para separar ou preparar.</p>
