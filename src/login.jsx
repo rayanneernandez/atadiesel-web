@@ -88,51 +88,51 @@ const LoginScreen = ({ onLogin }) => {
       </aside>
 
       {/* Formulário */}
-      <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-slate-900">
+      <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-white">
         <div style={{ zoom: 'calc(0.85 / var(--ui-scale, 1))' }} className="w-full max-w-md">
-          <div className="lg:hidden mb-8 w-64 mx-auto">
-            <img src={logo} alt="Atadiesel" className="w-full h-auto object-contain" />
+          <div className="lg:hidden mb-8 rounded-2xl bg-gradient-to-br from-blue-700 to-blue-900 p-5">
+            <img src={logo} alt="Atadiesel" className="w-56 max-w-full h-auto object-contain mx-auto" />
           </div>
 
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-white">Bem-vindo de volta!</h1>
-            <p className="mt-2 text-slate-400">Acesse o painel administrativo da Atadiesel.</p>
+            <h1 className="text-3xl font-bold text-slate-900">Bem-vindo de volta!</h1>
+            <p className="mt-2 text-slate-500">Acesse o painel administrativo da Atadiesel.</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300 ml-1">Email</label>
+              <label className="text-sm font-medium text-slate-700 ml-1">Email</label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                  <Mail className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                 </div>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-12 pr-4 py-3.5 bg-slate-800/70 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                  className="block w-full pl-12 pr-4 py-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
                   placeholder="voce@atadiesel.com.br"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300 ml-1">Senha</label>
+              <label className="text-sm font-medium text-slate-700 ml-1">Senha</label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                  <Lock className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                 </div>
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-12 pr-12 py-3.5 bg-slate-800/70 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                  className="block w-full pl-12 pr-12 py-3.5 bg-white border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
                   placeholder="Sua senha"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-blue-400 transition-colors focus:outline-none"
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-blue-600 transition-colors focus:outline-none"
                   aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -141,7 +141,7 @@ const LoginScreen = ({ onLogin }) => {
             </div>
 
             {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm text-center">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm text-center">
                 {error}
               </div>
             )}
@@ -149,7 +149,7 @@ const LoginScreen = ({ onLogin }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex items-center justify-center py-3.5 px-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center py-3.5 px-4 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold rounded-xl shadow-lg shadow-blue-600/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 focus:ring-offset-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -162,7 +162,7 @@ const LoginScreen = ({ onLogin }) => {
             </button>
           </form>
 
-          <p className="mt-10 text-center text-xs text-slate-500 lg:hidden">© 2026 Atadiesel</p>
+          <p className="mt-10 text-center text-xs text-slate-400 lg:hidden">© 2026 Atadiesel</p>
         </div>
       </main>
     </div>
