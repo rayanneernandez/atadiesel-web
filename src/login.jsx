@@ -84,7 +84,7 @@ const LoginScreen = ({ onLogin }) => {
           <h2 className="text-4xl font-bold leading-tight">Tudo da sua operação em um só lugar.</h2>
           <p className="mt-4 text-lg text-white/75">Produtos, pedidos, entregas e a loja autônoma, com a gestão da Atadiesel.</p>
         </div>
-        <p className="relative text-sm text-white/60">© 2026 Atadiesel Global IA</p>
+        <p className="relative text-sm text-white/60">© 2026 Atadiesel</p>
       </aside>
 
       {/* Formulário */}
@@ -162,7 +162,7 @@ const LoginScreen = ({ onLogin }) => {
             </button>
           </form>
 
-          <p className="mt-10 text-center text-xs text-slate-500 lg:hidden">© 2026 Atadiesel Global IA. Todos os direitos reservados.</p>
+          <p className="mt-10 text-center text-xs text-slate-500 lg:hidden">© 2026 Atadiesel</p>
         </div>
       </main>
     </div>
