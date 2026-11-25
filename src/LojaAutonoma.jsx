@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { DoorClosed, DoorOpen } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import BrandTab from './LojaAutonomaMarca.jsx';
 
 const money = (cents) => (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const onlyDigits = (v) => String(v || '').replace(/\D/g, '');
@@ -633,7 +634,7 @@ function DoorTab({ showToast }) {
 }
 
 // ---------------------------------------------------------------- Tela
-const TABS = [['qr', 'QR da loja', QrTab], ['funcionarios', 'Funcionários', StaffTab], ['vendas', 'Vendas', SalesTab], ['porta', 'Abrir porta', DoorTab], ['pagamento', 'Pagamento', PaymentTab], ['sync', 'Sincronização', SyncTab]];
+const TABS = [['qr', 'QR da loja', QrTab], ['funcionarios', 'Funcionários', StaffTab], ['vendas', 'Vendas', SalesTab], ['porta', 'Abrir porta', DoorTab], ['pagamento', 'Pagamento', PaymentTab], ['config', 'Configuração', BrandTab], ['sync', 'Sincronização', SyncTab]];
 
 export default function LojaAutonomaScreen({ showToast }) {
   const [tab, setTab] = useState('qr');
@@ -642,7 +643,7 @@ export default function LojaAutonomaScreen({ showToast }) {
     <div className="space-y-5 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Loja Autônoma</h1>
-        <p className="text-sm text-slate-500">QR da loja, funcionários, vendas e sincronização da loja sem caixa.</p>
+        <p className="text-sm text-slate-500">QR da loja, funcionários, vendas, identidade visual e sincronização da loja sem caixa.</p>
       </div>
       <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
         {TABS.map(([key, label]) => (
