@@ -74,17 +74,19 @@ const LoginScreen = ({ onLogin }) => {
   return (
     <div className="min-h-screen grid lg:grid-cols-[1.05fr_1fr] bg-slate-950">
       {/* Lado da marca (só em telas grandes) */}
-      <aside className="relative hidden lg:flex flex-col justify-between overflow-hidden p-12 bg-gradient-to-br from-blue-700 via-blue-800 to-slate-950 text-white">
+      <aside className="relative hidden lg:flex items-stretch justify-center overflow-hidden px-12 py-14 xl:px-20 2xl:px-28 bg-gradient-to-br from-blue-700 via-blue-800 to-slate-950 text-white">
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-white/10" />
         <div className="pointer-events-none absolute -bottom-32 -left-20 h-[28rem] w-[28rem] rounded-full bg-blue-400/10" />
         <div className="pointer-events-none absolute bottom-28 right-16 h-40 w-40 rounded-full border-2 border-white/15" />
-        <p className="relative text-sm font-semibold uppercase tracking-[0.2em] text-white/70">Painel administrativo</p>
-        <div className="relative max-w-md">
-          <img src={logo} alt="Atadiesel" className="w-72 h-auto object-contain mb-10" />
-          <h2 className="text-4xl font-bold leading-tight">Tudo da sua operação em um só lugar.</h2>
-          <p className="mt-4 text-lg text-white/75">Produtos, pedidos, entregas e a loja autônoma, com a gestão da Atadiesel.</p>
+        <div className="relative flex w-full max-w-xl flex-col justify-between">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white/70">Painel administrativo</p>
+          <div>
+            <img src={logo} alt="Atadiesel" className="w-72 h-auto object-contain mb-10" />
+            <h2 className="text-4xl font-bold leading-tight">Tudo da sua operação em um só lugar.</h2>
+            <p className="mt-4 text-lg text-white/75">Produtos, pedidos, entregas e a loja autônoma, com a gestão da Atadiesel.</p>
+          </div>
+          <p className="text-sm text-white/60">© 2026 Atadiesel</p>
         </div>
-        <p className="relative text-sm text-white/60">© 2026 Atadiesel</p>
       </aside>
 
       {/* Formulário */}
