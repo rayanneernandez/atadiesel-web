@@ -675,6 +675,8 @@ Deno.serve(async (req) => {
             if (error) result.erros.push(`Venda ${doc.Id}: ${error.message}`);
             else result.vendas_novas++;
           }
+          // salva o ponto de retomada a cada lote: se a rodada for cortada (tempo/CPU), a próxima continua daqui em vez de reler tudo
+          await db.from('erp_sync_state').update({ docs_skip: dskip }).eq('id', 1);
           if (list.length < PAGE) break;
         }
         patch.docs_skip = dskip;
