@@ -24,9 +24,9 @@ const ERP_KEY = Deno.env.get('ERP_INTEGRADOR_KEY') ?? '';
 const ESTAB = Number(Deno.env.get('ERP_ESTAB') ?? '100');
 
 const LOG_EMAIL = 'ERP Viasoft (sincronização automática)';
-const TIME_BUDGET_MS = 230_000;      // ← NOVO (era 140_000). A rodada começa de 5 em 5 min; o agendamento aceita até 300 s
+const TIME_BUDGET_MS = 135_000;      // a plataforma corta a chamada em ~150 s: a rodada precisa terminar antes disso para gravar o resultado e liberar a trava
 const ERP_CALL_TIMEOUT_MS = 40_000;  // ← NOVO: nenhuma chamada ao ERP fica pendurada mais que isso
-const RESERVA_VENDAS_MS = 110_000;   // ← NOVO: cadastro, estoque e preço só rodam enquanto sobrar esse tempo para as vendas
+const RESERVA_VENDAS_MS = 85_000;    // cadastro, estoque e preço só rodam enquanto sobrar esse tempo para as vendas
 // Chamadas sem ser admin respeitam este intervalo. Conta a partir do FIM da última execução
 // (que leva ~1-2 min), por isso fica bem abaixo dos 5 min do agendamento.
 const MIN_INTERVAL_MS = 2 * 60_000;
@@ -349,7 +349,7 @@ Deno.serve(async (req) => {
 
   const { data: state } = await db.from('erp_sync_state').select('*').eq('id', 1).maybeSingle();
   const now = new Date();
-  if (state?.running_since && now.getTime() - new Date(state.running_since).getTime() < 5 * 60_000) {
+  if (state?.running_since && now.getTime() - new Date(state.running_since).getTime() < 4 * 60_000) { // 4 min (e não 5): o agendamento dispara 2-3 s antes dos 5 min e a rodada seguinte era pulada
     return json({ ok: true, skipped: 'Já existe uma sincronização em andamento.' });
   }
   if (!forced && state?.last_run_at && now.getTime() - new Date(state.last_run_at).getTime() < MIN_INTERVAL_MS) {
