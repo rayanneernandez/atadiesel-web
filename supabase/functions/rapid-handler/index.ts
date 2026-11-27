@@ -29,7 +29,7 @@ const ERP_CALL_TIMEOUT_MS = 40_000;  // ← NOVO: nenhuma chamada ao ERP fica pe
 const RESERVA_VENDAS_MS = 85_000;    // cadastro, estoque e preço só rodam enquanto sobrar esse tempo para as vendas
 // Chamadas sem ser admin respeitam este intervalo. Conta a partir do FIM da última execução
 // (que leva ~1-2 min), por isso fica bem abaixo dos 5 min do agendamento.
-const MIN_INTERVAL_MS = 2 * 60_000;
+const MIN_INTERVAL_MS = 30_000; // 30 s: permite o agendamento de 1 em 1 minuto (a trava de 4 min continua impedindo rodadas sobrepostas)
 const STOCK_BATCH = 100;
 
 const cors = {
