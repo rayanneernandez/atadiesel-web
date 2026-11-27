@@ -6,7 +6,7 @@ import PausaRetirada from './PausaRetirada';
 import SaiuParaEntregaModal from './SaiuParaEntregaModal';
 import UserDetailTabs from './UserDetail';
 import ErpAlerta from './ErpAlerta';
-import AlertasPrateleiraScreen, { shelfFetch } from './AlertasPrateleira';
+import AlertasPrateleiraScreen, { shelfCall } from './AlertasPrateleira';
 import LojaAutonomaScreen, { EMPTY_STAFF_ACCESS, StaffAccessFields, registerAutonomousStaff, validateStaffAccess } from './LojaAutonoma';
 import { ProductAppPreview, HighlightAppPreview, HomeHighlightsPreview } from './AppPreview';
 import logoSmall from './assets/logoso.png';
@@ -11459,9 +11459,7 @@ function App() {
     let alive = true;
     const check = async () => {
       try {
-        const r = await shelfFetch('/count');
-        if (!r.ok) return;
-        const { open } = await r.json();
+        const { open } = await shelfCall('shelf_count');
         if (!alive) return;
         if (shelfPrevRef.current !== null && open > shelfPrevRef.current) {
           const n = open - shelfPrevRef.current;
@@ -11610,7 +11608,7 @@ function App() {
           />
           <SidebarItem icon={Receipt} label="Vendas" active={activeTab === 'Vendas'} onClick={() => setActiveTab('Vendas')} isOpen={isSidebarOpen} visible={hasPermission('Vendas')} />
           <SidebarItem icon={MapPin} label="Mapa da Loja" active={activeTab === 'Mapa da Loja'} onClick={() => setActiveTab('Mapa da Loja')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
-          <SidebarItem icon={AlertTriangle} label="Produtos fora do lugar" active={activeTab === 'Produtos fora do lugar'} onClick={() => setActiveTab('Produtos fora do lugar')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
+          <SidebarItem icon={AlertTriangle} label="Fora do lugar" active={activeTab === 'Produtos fora do lugar'} onClick={() => setActiveTab('Produtos fora do lugar')} isOpen={isSidebarOpen} visible={hasPermission('Mapa da Loja')} />
           <SidebarItem icon={Store} label="Loja Autônoma" active={activeTab === 'Loja Autônoma'} onClick={() => setActiveTab('Loja Autônoma')} isOpen={isSidebarOpen} visible={hasPermission('Loja Autônoma')} />
           <SidebarItem icon={Plug} label="Integrações" active={activeTab === 'Integrações'} onClick={() => setActiveTab('Integrações')} isOpen={isSidebarOpen} visible={hasPermission('Integrações')} />
           <SidebarItem icon={Settings} label="Configurações" active={activeTab === 'Configurações'} onClick={() => setActiveTab('Configurações')} isOpen={isSidebarOpen} visible={hasPermission('Configurações')} />

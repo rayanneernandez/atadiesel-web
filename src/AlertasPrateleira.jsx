@@ -4,14 +4,18 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RefreshCw, ImageOff } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL || 'https://atadiesel-main.onrender.com';
 const fmt = (s) => (s ? new Date(s).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '—');
 
-export async function shelfFetch(path, init = {}) {
-  const { data } = await supabase.auth.getSession();
-  const token = data?.session?.access_token;
-  const res = await fetch(`${BACKEND}/shelf-alerts${path}`, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
-  return res;
+// Fala com a Edge Function "loja-autonoma", que já tem o login do portal da loja guardado.
+export async function shelfCall(action, extra = {}) {
+  const { data, error } = await supabase.functions.invoke('loja-autonoma', { body: { action, ...extra } });
+  if (error) {
+    let msg = error.message;
+    try { const j = await error.context?.json?.(); if (j?.error) msg = j.error; } catch { /* sem corpo */ }
+    throw new Error(msg || 'Não foi possível falar com a loja autônoma.');
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
 
 const STATUS_TABS = [
@@ -37,9 +41,11 @@ function AlertPhoto({ id }) {
     let made = null;
     (async () => {
       try {
-        const r = await shelfFetch(`/${encodeURIComponent(id)}/foto`);
-        if (!r.ok) throw new Error('sem foto');
-        made = URL.createObjectURL(await r.blob());
+        const f = await shelfCall('shelf_photo', { id });
+        const bin = atob(f.base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        made = URL.createObjectURL(new Blob([bytes], { type: f.content_type }));
         if (alive) setUrl(made);
       } catch {
         if (alive) setFailed(true);
@@ -64,10 +70,8 @@ export default function AlertasPrateleiraScreen({ showToast }) {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const r = await shelfFetch(`?status=${statusRef.current}`);
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error || `Erro ${r.status}`);
-      setRows(Array.isArray(j) ? j : []);
+      const j = await shelfCall('shelf_list', { status: statusRef.current });
+      setRows(Array.isArray(j?.items) ? j.items : []);
       setError('');
     } catch (e) {
       setError(e.message || 'Não foi possível carregar os alertas.');
@@ -85,9 +89,7 @@ export default function AlertasPrateleiraScreen({ showToast }) {
   const resolve = async (a) => {
     setBusyId(a.alert_id);
     try {
-      const r = await shelfFetch(`/${encodeURIComponent(a.alert_id)}/resolve`, { method: 'POST' });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error || `Erro ${r.status}`);
+      await shelfCall('shelf_resolve', { id: a.alert_id });
       showToast?.('Marcado como arrumado.', 'success');
       load(true);
     } catch (e) {

@@ -246,6 +246,27 @@ Deno.serve(async (req) => {
       });
       return json(await paymentSettings());
     }
+    // Produtos fora do lugar (alertas da câmera da loja), usando o mesmo login de dono do portal.
+    if (action === 'shelf_list') {
+      const st = ['aberto', 'resolvido', 'sumiu', 'todos'].includes(String(body.status)) ? String(body.status) : 'aberto';
+      const j = await (await portalApi(`/ops/shelf-alerts?status=${st}`)).json();
+      return json({ items: Array.isArray(j) ? j : [] });
+    }
+    if (action === 'shelf_count') {
+      const j = await (await portalApi('/ops/shelf-alerts?status=aberto')).json();
+      return json({ open: Array.isArray(j) ? j.length : 0 });
+    }
+    if (action === 'shelf_photo') {
+      const id = encodeURIComponent(String(body.id ?? ''));
+      try {
+        const r = await portalApi(`/ops/shelf-alerts/${id}/foto`);
+        return json({ content_type: r.headers.get('content-type') || 'image/jpeg', base64: toBase64(await r.arrayBuffer()) });
+      } catch { throw new HttpError(404, 'Foto não disponível.'); }
+    }
+    if (action === 'shelf_resolve') {
+      const id = encodeURIComponent(String(body.id ?? ''));
+      return json(await (await portalApi(`/ops/shelf-alerts/${id}/resolve`, { method: 'POST' })).json());
+    }
     if (action === 'sync_products') return json(await syncProducts(admin));
     if (action === 'sync_staff') return json(await syncStaff(admin));
     if (action === 'sync_all') return json({ products: await syncProducts(admin), staff: await syncStaff(admin) });
