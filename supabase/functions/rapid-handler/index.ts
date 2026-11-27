@@ -308,6 +308,58 @@ async function importMissing(db: any, dryRun: boolean, onlyWithStock: boolean, t
   return { ok: erros.length === 0, dry_run: false, criados, ...resumo, erros };
 }
 
+// ------------------------------------------------------------ só preços (leve, a cada minuto) ---
+// Confere o preço de todos os produtos do painel em ~10-15 s, sem as vendas, para a troca de preço no ERP
+// chegar em até ~1 minuto. Roda por um agendamento próprio (action "prices_only") e NÃO usa a trava das vendas.
+async function syncPrices(db: any, timeLeft: () => number) {
+  await erpLogin();
+  const { data: ours, error: oursErr } = await db
+    .from('products').select('id, sku, title, price_cents, archived, erp_archived').not('sku', 'is', null);
+  if (oursErr) throw oursErr;
+  const bySku = new Map<string, any>((ours ?? []).map((p: any) => [String(p.sku).trim(), p]));
+  const skus = [...bySku.keys()];
+  const logsP: any[] = [];
+  const erros: string[] = [];
+  let alterados = 0;
+
+  for (let i = 0; i < skus.length && timeLeft() > 15_000; i += STOCK_BATCH) {
+    try {
+      const data = await erpGet('vshub/produto-preco', { Estabs: ESTAB, Itens: skus.slice(i, i + STOCK_BATCH).join(','), Top: 1000 });
+      for (const it of data?.value ?? []) {
+        const mine = bySku.get(String(it.Item).trim());
+        if (!mine) continue;
+        const precos = it.Precos ?? [];
+        const p = precos.find((x: any) => x.Tipo === 'PrecoVigente') ?? precos.find((x: any) => x.Tipo === 'PrecoNormal');
+        const cents = p?.Preco > 0 ? Math.round(Number(p.Preco) * 100) : null;
+        if (cents == null || cents === mine.price_cents) continue;
+
+        const nowIso = new Date().toISOString();
+        const upd: Record<string, unknown> = { price_cents: cents, erp_preco_cents: cents, erp_synced_at: nowIso, updated_at: nowIso };
+        const liberar = mine.archived && !mine.erp_archived && !mine.price_cents; // produto novo que esperava preço: libera no app
+        if (liberar) Object.assign(upd, { archived: false, is_active: true });
+        const { error } = await db.from('products').update(upd).eq('id', mine.id);
+        if (error) { erros.push(`Preço ${it.Item}: ${error.message}`); continue; }
+        const changes = [{ field: 'Preço', old: brl(mine.price_cents), new: brl(cents) }];
+        if (liberar) changes.push({ field: 'Situação', old: 'Arquivado', new: 'Ativo (preço recebido do ERP)' });
+        logsP.push({ id: crypto.randomUUID(), user_id: null, user_email: LOG_EMAIL, action_type: 'PRODUCT_CHANGE', entity_name: mine.title, details: { changes, source: 'ERP' }, created_at: nowIso });
+        Object.assign(mine, upd);
+        alterados++;
+      }
+    } catch (e) { erros.push('Preço: ' + (e as Error).message); break; }
+  }
+
+  if (logsP.length) {
+    let { error } = await db.from('audit_logs').insert(logsP);
+    if (error && /user_id/.test(error.message)) {
+      const { data: adm } = await db.from('profiles').select('id').in('role', ['admin', 'administrador']).limit(1).maybeSingle();
+      ({ error } = await db.from('audit_logs').insert(logsP.map((l) => ({ ...l, user_id: adm?.id }))));
+    }
+    if (error) erros.push('Logs: ' + error.message);
+  }
+  await db.from('erp_sync_state').update({ price_available: true, price_checked_at: new Date().toISOString() }).eq('id', 1);
+  return { ok: erros.length === 0, conferidos: skus.length, precos_alterados: alterados, erros };
+}
+
 // ------------------------------------------------------------ handler ---
 
 Deno.serve(async (req) => {
@@ -342,6 +394,19 @@ Deno.serve(async (req) => {
     if (!forced) return json({ ok: false, error: 'Só administrador pode importar produtos do ERP.' }, 403);
     try {
       return json(await importMissing(db, reqBody.dry_run !== false, reqBody.only_with_stock !== false, timeLeft));
+    } catch (e) {
+      return json({ ok: false, error: (e as Error).message }, 500);
+    }
+  }
+
+  // Só preços (agendamento leve a cada minuto): fora da trava das vendas
+  if (reqBody?.action === 'prices_only') {
+    const { data: st } = await db.from('erp_sync_state').select('price_checked_at').eq('id', 1).maybeSingle();
+    if (!forced && st?.price_checked_at && Date.now() - new Date(st.price_checked_at).getTime() < 20_000) {
+      return json({ ok: true, skipped: 'Preço conferido há poucos segundos.' });
+    }
+    try {
+      return json(await syncPrices(db, timeLeft));
     } catch (e) {
       return json({ ok: false, error: (e as Error).message }, 500);
     }
